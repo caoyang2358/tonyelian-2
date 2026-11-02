@@ -1,0 +1,46 @@
+server:
+  port: ${SERVER_PORT:18280}
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+spring:
+  application:
+    name: copper-phase2-backend
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:13307}/${DB_NAME:copper_phase2_dev}?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=false&useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=3000&socketTimeout=5000
+    username: ${DB_USER:phase2_app}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: phase2-initialization
+      initialization-fail-timeout: -1
+      minimum-idle: 0
+      maximum-pool-size: 5
+      connection-timeout: 3500
+      validation-timeout: 2000
+      connection-init-sql: SET time_zone = '+08:00'
+  flyway:
+    enabled: ${PHASE2_RUN_MIGRATIONS:false}
+    locations: classpath:db/migration-phase2
+    table: p2_flyway_schema_history
+    baseline-on-migrate: true
+    baseline-version: 0
+    clean-disabled: true
+    validate-migration-naming: true
+  jackson:
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+phase2:
+  environment: ${APP_ENV:development}
+
+logging:
+  level:
+    com.zaxxer.hikari: OFF
+    org.flywaydb: WARN
+    org.springframework.jdbc: WARN
+    org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR
