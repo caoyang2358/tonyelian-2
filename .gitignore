@@ -1,0 +1,47 @@
+# Local configuration and credentials
+.local/
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local.yml
+*.local.yaml
+application-local.yml
+application-local.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+mysql-credential.xml
+
+# Dependencies and build outputs
+node_modules/
+target/
+dist/
+build/
+.next/
+.vinext/
+.vite/
+.wrangler/
+.m2/
+coverage/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Local runtime data, database dumps, attachments and logs
+*.log
+logs/
+runtime/
+uploads/
+backups/
+*.sql.gz
+*.dump
+*.bak
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
