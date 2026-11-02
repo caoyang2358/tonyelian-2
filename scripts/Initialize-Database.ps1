@@ -81,7 +81,7 @@ if (-not $owned) {
     $mysqlArguments = @('"--defaults-file=' + $nativeConfigPath + '"')
     if (Test-Path -LiteralPath $initPath) { $mysqlArguments += '"--init-file=' + $nativeInitPath + '"' }
     $dbProcess = Start-Process -FilePath $mysqldPath -ArgumentList $mysqlArguments -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logPath 'mysql-console.log') -RedirectStandardError (Join-Path $logPath 'mysql-console-error.log')
-    Save-OwnedProcess 'mysql' $dbProcess
+    Save-OwnedProcess 'mysql' $dbProcess $mysqldPath
 }
 $deadline = [datetime]::UtcNow.AddSeconds(45)
 $connected = $false
@@ -98,7 +98,7 @@ if (-not $connected) { throw 'Owned MySQL did not become ready. See .local/logs/
 $serverProcessId = [int]([System.IO.File]::ReadAllText((Join-Path $LocalRoot 'mysql.pid')).Trim())
 $serverProcess = Get-Process -Id $serverProcessId -ErrorAction Stop
 if ($serverProcess.Path -ne $mysqldPath) { throw 'MySQL server executable does not match the configured installation.' }
-Save-OwnedProcess 'mysql' $serverProcess
+Save-OwnedProcess 'mysql' $serverProcess $mysqldPath
 if (Test-Path -LiteralPath $initPath) { Remove-Item -LiteralPath $initPath }
 if (-not (Test-Path -LiteralPath $seedMarker)) {
     $tableCount = Invoke-MySql $nativeAdminPath "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='copper_phase2_dev';"

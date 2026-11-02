@@ -31,7 +31,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Stop-Dev.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Stop-Dev.ps1 -KeepDatabase
 ```
 
-重复启动会复用本工程已运行的服务并跳过构建。修改后端代码或 `.env` 后，先停止再启动，使新代码和配置生效。脚本按 PID、启动时间及程序路径核对归属，不按端口批量杀进程；端口被其他应用占用会报错。
+重复启动会复用本工程已运行的服务并跳过构建；若只剩前端或后端运行，会在配置一致时用已有构建补齐缺失服务。修改后端代码或 `.env` 后，先停止再启动，使新代码和配置生效。脚本按 PID、启动时间及程序路径核对归属，不按端口批量杀进程；端口被其他应用占用会报错。
 
 ## 数据库边界与连接
 

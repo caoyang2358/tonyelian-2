@@ -96,9 +96,34 @@ function Invoke-MySql([string]$DefaultsFile, [string]$Sql, [string]$Database = '
     return $output.Trim()
 }
 
-function Save-OwnedProcess([string]$Name, $Process) {
+function Save-OwnedProcess([string]$Name, $Process, [string]$ExecutablePath) {
+    # A Start-Process object can temporarily report a null Path on Windows.
+    # Re-query the exact process and retain the known launch path as a fallback.
+    if ([string]::IsNullOrWhiteSpace($ExecutablePath) -or -not [System.IO.Path]::IsPathRooted($ExecutablePath) -or -not (Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) {
+        throw "A known absolute executable path is required for $Name."
+    }
     $Process.Refresh()
-    $record = @{ id = $Process.Id; startTimeUtc = $Process.StartTime.ToUniversalTime().ToString('o'); executable = $Process.Path }
+    if ($Process.HasExited) { throw "$Name exited before its process record could be saved. See .local/logs." }
+    $startedAt = $Process.StartTime.ToUniversalTime()
+    $actualPath = $null
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        $current = Get-Process -Id $Process.Id -ErrorAction SilentlyContinue
+        if (-not $current -or $current.HasExited) { throw "$Name exited during startup. See .local/logs." }
+        if ([Math]::Abs(($current.StartTime.ToUniversalTime() - $startedAt).TotalSeconds) -gt 1) { throw "Process identity changed during $Name startup." }
+        $actualPath = $current.Path
+        if (-not [string]::IsNullOrWhiteSpace($actualPath)) { break }
+        Start-Sleep -Milliseconds 50
+    }
+    if ([string]::IsNullOrWhiteSpace($actualPath)) {
+        $launchItem = Get-Item -LiteralPath $ExecutablePath
+        $actualPath = $launchItem.FullName
+        if ($launchItem.LinkType -eq 'SymbolicLink' -and $launchItem.Target) {
+            $target = [string]$launchItem.Target
+            if (-not [System.IO.Path]::IsPathRooted($target)) { $target = Join-Path $launchItem.DirectoryName $target }
+            $actualPath = [System.IO.Path]::GetFullPath($target)
+        }
+    }
+    $record = @{ id = $Process.Id; startTimeUtc = $startedAt.ToString('o'); executable = $actualPath; launchExecutable = $ExecutablePath }
     Write-Utf8File (Join-Path $LocalRoot "$Name.process.json") ($record | ConvertTo-Json)
 }
 
@@ -106,8 +131,10 @@ function Get-OwnedProcess([string]$Name) {
     $recordPath = Join-Path $LocalRoot "$Name.process.json"
     if (-not (Test-Path -LiteralPath $recordPath)) { return $null }
     $record = [System.IO.File]::ReadAllText($recordPath) | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace([string]$record.executable)) { return $null }
     $process = Get-Process -Id $record.id -ErrorAction SilentlyContinue
     if (-not $process -or $process.HasExited) { return $null }
+    if ([string]::IsNullOrWhiteSpace([string]$process.Path)) { return $null }
     if ($record.startTimeUtc -is [datetime]) { $startTime = $record.startTimeUtc.ToUniversalTime() }
     else { $startTime = [datetime]::Parse($record.startTimeUtc, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() }
     if ([Math]::Abs(($process.StartTime.ToUniversalTime() - $startTime).TotalSeconds) -gt 1 -or $process.Path -ne $record.executable) {
