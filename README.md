@@ -100,6 +100,8 @@ docs/              当前需求、数据库边界、协作任务和本次验收�
 
 技术基线锁定：React/React DOM 19.3.1、TypeScript 7.0.2、Vite 8.3.5；Java 17 编译目标、Spring Boot 3.5.16、MySQL 8.x。本机使用 Node 22.21.0、Java 21.0.7、Maven 3.9.4、MySQL 8.0.42 验证。
 
-先读[当前开发约定](docs/当前开发约定.md)、[需求基线](docs/需求基线.md)、[GitHub共同开发指南](docs/GitHub共同开发指南.md)。代码仓库：[caoyang2358/tonyelian-2](https://github.com/caoyang2358/tonyelian-2)。负责人已确认使用公开仓库；源码和需求文档公开，真实密码与本地数据库文件不上传。队员从仓库 main 克隆，各自在任务分支开发；另外两名成员的协作邀请仍待负责人完成。
+先读[当前开发约定](docs/当前开发约定.md)、[需求基线](docs/需求基线.md)、[GitHub共同开发指南](docs/GitHub共同开发指南.md)。
+
+开发接口前先读[接口清单与开发入口](docs/接口清单.md)，再按[接口通用约定](docs/api/接口通用约定.md)及[首批设备接口约定](docs/api/首批接口约定.md)拆任务。接口清单属于设计稿，尚未新增业务接口。代码仓库：[caoyang2358/tonyelian-2](https://github.com/caoyang2358/tonyelian-2)。负责人已确认使用公开仓库；源码和需求文档公开，真实密码与本地数据库文件不上传。队员从仓库 main 克隆，各自在任务分支开发；另外两名成员的协作邀请仍待负责人完成。
 
 本次执行结果与剩余范围见[工程初始化验收记录](docs/工程初始化验收记录.md)。
