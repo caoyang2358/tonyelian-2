@@ -31,6 +31,8 @@ class InspectionApiTest {
 
     @Autowired private MockMvc mvc;
     @MockitoBean private InspectionRepository repository;
+    /** 本类只覆盖读接口，写路径的幂等组件按空实现注入即可。 */
+    @MockitoBean private IdempotencyService idempotencyService;
 
     private static final OffsetDateTime INSPECTED_AT = OffsetDateTime.parse("2026-11-03T09:15:00+08:00");
 

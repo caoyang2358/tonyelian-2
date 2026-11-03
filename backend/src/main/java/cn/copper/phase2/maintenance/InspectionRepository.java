@@ -5,8 +5,14 @@ import cn.copper.phase2.maintenance.InspectionModels.InspectionItem;
 import cn.copper.phase2.maintenance.InspectionModels.InspectionQuery;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -76,6 +82,85 @@ public class InspectionRepository {
         List<InspectionDetail> rows = jdbc.query(
                 INSPECTION_SELECT + " WHERE i.inspection_id = ?", INSPECTION_DETAIL_MAPPER, inspectionId);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    public boolean equipmentExists(long equipmentId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dim_equipment WHERE equipment_id = ?", Long.class, equipmentId);
+        return count != null && count > 0;
+    }
+
+    /** 新增巡检并返回主键；recorded_at 为服务器录入时间，与 inspected_at 分开保存。 */
+    public long insertInspection(long equipmentId, LocalDateTime inspectedAt, String inspectorName,
+                                 String content, String result, String description, String operatorName) {
+        KeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO p2_inspection
+                        (equipment_id, inspected_at, inspector_name, content, result, description,
+                         operator_name, recorded_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), 1)
+                    """, Statement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, equipmentId);
+            statement.setTimestamp(2, Timestamp.valueOf(inspectedAt));
+            statement.setString(3, inspectorName);
+            statement.setString(4, content);
+            statement.setString(5, result);
+            statement.setString(6, description);
+            statement.setString(7, operatorName);
+            return statement;
+        }, keys);
+        Number key = keys.getKey();
+        if (key == null) {
+            throw new IllegalStateException("巡检记录未返回主键");
+        }
+        return key.longValue();
+    }
+
+    /** 行锁读当前版本；返回 null 表示记录不存在。 */
+    public Integer lockVersion(long inspectionId) {
+        List<Integer> rows = jdbc.query(
+                "SELECT version FROM p2_inspection WHERE inspection_id = ? FOR UPDATE",
+                (rs, row) -> rs.getInt(1), inspectionId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** 更正巡检资料：设备身份不变，版本号递增。 */
+    public void updateInspection(long inspectionId, LocalDateTime inspectedAt, String inspectorName,
+                                 String content, String result, String description, String operatorName) {
+        jdbc.update("""
+                UPDATE p2_inspection
+                   SET inspected_at = ?, inspector_name = ?, content = ?, result = ?, description = ?,
+                       operator_name = ?, updated_at = CURRENT_TIMESTAMP(3), version = version + 1
+                 WHERE inspection_id = ?
+                """, Timestamp.valueOf(inspectedAt), inspectorName, content, result, description,
+                operatorName, inspectionId);
+    }
+
+    /** 重要更正留痕（p2_change_log），返回留痕编号供响应回显。 */
+    public long insertChangeLog(String objectType, String objectId, String action,
+                                String beforeJson, String afterJson, String reason, String operatorName) {
+        KeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO p2_change_log
+                        (object_type, object_id, action, before_value, after_value, reason, operator_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, Statement.RETURN_GENERATED_KEYS);
+            statement.setString(1, objectType);
+            statement.setString(2, objectId);
+            statement.setString(3, action);
+            statement.setString(4, beforeJson);
+            statement.setString(5, afterJson);
+            statement.setString(6, reason);
+            statement.setString(7, operatorName);
+            return statement;
+        }, keys);
+        Number key = keys.getKey();
+        if (key == null) {
+            throw new IllegalStateException("变更留痕未返回主键");
+        }
+        return key.longValue();
     }
 
     private static String whereClause(InspectionQuery query, List<Object> args) {

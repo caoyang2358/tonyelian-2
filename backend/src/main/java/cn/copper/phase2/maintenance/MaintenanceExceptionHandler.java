@@ -5,6 +5,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -34,6 +35,17 @@ public class MaintenanceExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> notFound(MaintenanceNotFoundException error) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiResponse.error("NOT_FOUND", error.getMessage(), null));
+    }
+
+    @ExceptionHandler(MaintenanceConflictException.class)
+    public ResponseEntity<ApiResponse<Map<String, Object>>> conflict(MaintenanceConflictException error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(error.code(), error.getMessage(), error.data()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Map<String, Object>>> unreadableBody(HttpMessageNotReadableException error) {
+        return badRequest("body", "请求体格式不正确，应为 JSON。");
     }
 
     private static ResponseEntity<ApiResponse<Map<String, Object>>> badRequest(String field, String detail) {

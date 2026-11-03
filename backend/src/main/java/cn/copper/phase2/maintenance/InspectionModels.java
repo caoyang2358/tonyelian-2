@@ -38,4 +38,30 @@ public final class InspectionModels {
 
     /** 列表查询条件；未传的项为 null，表示不参与过滤。 */
     public record InspectionQuery(String equipmentId, String result, String from, String to) {}
+
+    /** S1-I03 请求体：requestId 用于幂等，operatorName 为手填经办人（非登录身份）。 */
+    public record InspectionCreateCommand(
+            String requestId,
+            String operatorName,
+            String equipmentId,
+            String inspectedAt,
+            String inspectorName,
+            String content,
+            String result,
+            String description) {}
+
+    /** S1-I04 请求体：带 expectedVersion 做并发校验，reason 记录更正依据。 */
+    public record InspectionUpdateCommand(
+            String requestId,
+            String operatorName,
+            Integer expectedVersion,
+            String reason,
+            String inspectedAt,
+            String inspectorName,
+            String content,
+            String result,
+            String description) {}
+
+    /** S1-I04 响应：更新后的详情、版本与本次留痕编号。 */
+    public record InspectionSaved(InspectionDetail inspection, String changeLogId) {}
 }
