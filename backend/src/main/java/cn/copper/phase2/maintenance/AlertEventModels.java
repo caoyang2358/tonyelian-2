@@ -92,4 +92,22 @@ public final class AlertEventModels {
             OffsetDateTime recordedAt) {}
 
     public record HandlingRecordPage(List<HandlingRecordItem> items, int page, int pageSize, long total) {}
+
+    /** S1-A03 请求体：只记录人工动作，不改异常事实。 */
+    public record HandlingCommand(
+            String requestId,
+            String operatorName,
+            Integer expectedVersion,
+            String action,
+            String reason) {}
+
+    /**
+     * S1-A03 响应：写入后的人工状态就是本次动作，事件版本号随之递增。
+     * 不返回事件事实（触发值、恢复时间等），因为这类动作不允许改动它们。
+     */
+    public record HandlingResult(
+            String handlingRecordId,
+            String handlingState,
+            int version,
+            OffsetDateTime updatedAt) {}
 }

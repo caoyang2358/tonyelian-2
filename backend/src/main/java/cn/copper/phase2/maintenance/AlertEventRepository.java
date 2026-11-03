@@ -10,11 +10,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -238,6 +242,49 @@ public class AlertEventRepository {
                 "SELECT COUNT(*) FROM p2_alert_handling_record WHERE event_id = ?", Long.class, eventId);
         return total == null ? 0L : total;
     }
+
+    /** 行锁读事件版本；返回 null 表示事件不存在。 */
+    public Integer lockEventVersion(long eventId) {
+        List<Integer> rows = jdbc.query(
+                "SELECT version FROM p2_alert_event WHERE event_id = ? FOR UPDATE",
+                (rs, row) -> rs.getInt(1), eventId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** 追加一条人工处理记录；记录本身即审计依据，因此不再重复写 p2_change_log。 */
+    public long insertHandlingRecord(long eventId, String action, String reason, String operatorName) {
+        KeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO p2_alert_handling_record (event_id, action, reason, operator_name, recorded_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(3))
+                    """, Statement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, eventId);
+            statement.setString(2, action);
+            statement.setString(3, reason);
+            statement.setString(4, operatorName);
+            return statement;
+        }, keys);
+        Number key = keys.getKey();
+        if (key == null) {
+            throw new IllegalStateException("人工处理记录未返回主键");
+        }
+        return key.longValue();
+    }
+
+    /** 推进事件版本：人工动作不改事实列，只让并发客户端知道事件已被处理过。 */
+    public EventTouch touchEvent(long eventId) {
+        jdbc.update(
+                "UPDATE p2_alert_event SET version = version + 1, updated_at = CURRENT_TIMESTAMP(3)"
+                        + " WHERE event_id = ?", eventId);
+        return jdbc.queryForObject(
+                "SELECT version, updated_at FROM p2_alert_event WHERE event_id = ?",
+                (rs, row) -> new EventTouch(rs.getInt("version"),
+                        MaintenanceTimes.toOffset(rs, "updated_at")), eventId);
+    }
+
+    /** 版本推进后的结果，供 S1-A03 响应回显。 */
+    public record EventTouch(int version, OffsetDateTime updatedAt) {}
 
     private static String whereClause(AlertEventQuery query, List<Object> args) {
         List<String> conditions = new ArrayList<>();

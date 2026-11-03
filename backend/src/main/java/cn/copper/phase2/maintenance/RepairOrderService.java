@@ -330,6 +330,10 @@ public class RepairOrderService {
         String next = requireTransition(current, action);
 
         LocalDateTime acceptedAt = toLocal(MaintenanceTimes.parseMoment("acceptedAt", request.acceptedAt()));
+        // 验收时刻不能早于首次提交：否则概览的处理时长会算出负数，等于用脏数据污染统计。
+        if (current.firstSubmittedAt() != null && acceptedAt.isBefore(current.firstSubmittedAt())) {
+            throw new InvalidRequestException("acceptedAt", "验收时间不能早于首次提交时间。");
+        }
         LocalDateTime now = LocalDateTime.now(MaintenanceTimes.ZONE);
         long actionId = repository.insertAction(id, RepairOrderWorkflow.actionType(action), request.result(),
                 current.status(), next, acceptedAt, now, request.operatorName(), request.reason(), null);

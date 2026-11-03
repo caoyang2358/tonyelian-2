@@ -39,6 +39,8 @@ class AlertEventApiTest {
 
     @Autowired private MockMvc mvc;
     @MockitoBean private AlertEventRepository repository;
+    /** 本类只覆盖读接口，写路径的幂等组件按空实现注入即可。 */
+    @MockitoBean private IdempotencyService idempotencyService;
 
     private static final OffsetDateTime TRIGGERED_AT = OffsetDateTime.parse("2026-11-03T08:30:00+08:00");
     private static final OffsetDateTime RECOVERED_AT = OffsetDateTime.parse("2026-11-03T09:10:00+08:00");

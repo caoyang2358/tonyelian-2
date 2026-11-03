@@ -104,8 +104,15 @@ public class RepairOrderRepository {
             OffsetDateTime completedAt,
             int version) {}
 
-    /** 行锁读到的状态与版本，用于并发校验。 */
-    public record StatusRow(String status, int version) {}
+    /**
+     * 行锁读到的状态、版本与首次提交时刻，用于并发校验和"验收时间不得早于提交时间"的校验。
+     */
+    public record StatusRow(String status, int version, LocalDateTime firstSubmittedAt) {
+        /** 只需要状态与版本的场景（如尚未提交的草稿）使用此构造。 */
+        public static StatusRow of(String status, int version) {
+            return new StatusRow(status, version, null);
+        }
+    }
 
     /** 巡检来源的证据快照原料。 */
     public record InspectionSource(
@@ -191,8 +198,10 @@ public class RepairOrderRepository {
     /** 写入动作前先锁行，确保「校验状态与版本 → 写历史 → 推进状态」在同一事务内串行。 */
     public StatusRow lockOrder(long repairOrderId) {
         List<StatusRow> rows = jdbc.query(
-                "SELECT status, version FROM p2_repair_order WHERE repair_order_id = ? FOR UPDATE",
-                (rs, row) -> new StatusRow(rs.getString("status"), rs.getInt("version")),
+                "SELECT status, version, first_submitted_at FROM p2_repair_order"
+                        + " WHERE repair_order_id = ? FOR UPDATE",
+                (rs, row) -> new StatusRow(rs.getString("status"), rs.getInt("version"),
+                        rs.getObject("first_submitted_at", LocalDateTime.class)),
                 repairOrderId);
         return rows.isEmpty() ? null : rows.get(0);
     }

@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -149,7 +150,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void saveInDraftKeepsStatusAndWritesAuditTrail() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
         when(repository.findOrder(7L)).thenReturn(order("DRAFT", 2, "结晶轮异响", "张三"));
         when(repository.insertChangeLog(anyString(), anyString(), anyString(), anyString(), anyString(),
                 any(), anyString())).thenReturn(11L);
@@ -169,7 +170,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void saveIsRejectedWhenStatusIsNotEditable() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("REVIEW_PENDING", 3));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("REVIEW_PENDING", 3));
 
         mvc.perform(put("/api/v1/repair-orders/7")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -183,7 +184,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void staleVersionIsRejectedBeforeStateIsInspected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 4));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 4));
 
         mvc.perform(put("/api/v1/repair-orders/7")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -196,7 +197,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void photoFromAnotherOrderIsRejected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
         when(repository.attachmentBelongsToOrder(88L, 7L)).thenReturn(false);
 
         mvc.perform(put("/api/v1/repair-orders/7")
@@ -210,7 +211,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void submitMovesDraftToReviewPendingAndRecordsFirstSubmission() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 2));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 2));
         when(repository.findOrder(7L)).thenReturn(order("REVIEW_PENDING", 3, "结晶轮异响", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
@@ -225,7 +226,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void submitWithoutDescriptionIsRejectedBeforeStatusChanges() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
         when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, null, "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
@@ -239,7 +240,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void submitWithoutReporterIsRejected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
         when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, "结晶轮异响", null));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
@@ -253,7 +254,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void approveMovesReviewPendingToInRepair() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("REVIEW_PENDING", 3));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("REVIEW_PENDING", 3));
         when(repository.findOrder(7L)).thenReturn(order("IN_REPAIR", 4, "结晶轮异响", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/reviews")
@@ -268,7 +269,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void returnForInfoRequiresReason() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("REVIEW_PENDING", 3));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("REVIEW_PENDING", 3));
         when(repository.findOrder(7L)).thenReturn(order("REVIEW_PENDING", 3, "描述不清", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/reviews")
@@ -280,7 +281,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void duplicateClosesOrderWithoutTouchingCompletionTime() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("REVIEW_PENDING", 3));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("REVIEW_PENDING", 3));
         when(repository.findOrder(7L)).thenReturn(order("CLOSED", 4, "重复报修", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/reviews")
@@ -305,7 +306,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void reviewInWrongStatusReturnsStateConflict() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
 
         mvc.perform(post("/api/v1/repair-orders/7/reviews")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -320,7 +321,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void repairResultMovesOrderToAcceptancePending() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("IN_REPAIR", 5));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("IN_REPAIR", 5));
         when(repository.findOrder(7L)).thenReturn(order("ACCEPTANCE_PENDING", 6, "更换结晶轮", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/repair-results")
@@ -346,7 +347,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void acceptancePassCompletesOrderAndStampsCompletionTime() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("ACCEPTANCE_PENDING", 6));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("ACCEPTANCE_PENDING", 6));
         when(repository.findOrder(7L)).thenReturn(order("COMPLETED", 7, "更换结晶轮", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/acceptances")
@@ -361,7 +362,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void acceptanceFailReturnsOrderToRepairWithoutCompletionTime() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(new StatusRow("ACCEPTANCE_PENDING", 6));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("ACCEPTANCE_PENDING", 6));
         when(repository.findOrder(7L)).thenReturn(order("IN_REPAIR", 7, "更换结晶轮", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/acceptances")
@@ -372,6 +373,23 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.data.status").value("IN_REPAIR"));
 
         verify(repository).advanceStatus(eq(7L), eq("IN_REPAIR"), any(), eq(null), eq(null));
+    }
+
+    @Test
+    void acceptanceTimeEarlierThanFirstSubmissionIsRejected() throws Exception {
+        // 首次提交发生在 11-04，验收却填 11-03：会让概览的处理时长算出负数。
+        when(repository.lockOrder(7L)).thenReturn(
+                new StatusRow("ACCEPTANCE_PENDING", 6, LocalDateTime.parse("2026-11-04T10:00:00")));
+
+        mvc.perform(post("/api/v1/repair-orders/7/acceptances")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(REQUEST_ID, 6,
+                                "\"result\":\"PASS\",\"acceptedAt\":\"2026-11-03T15:00:00+08:00\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.fieldErrors[0].field").value("acceptedAt"));
+
+        verify(repository, never()).advanceStatus(anyLong(), anyString(), any(), any(), any());
     }
 
     @Test

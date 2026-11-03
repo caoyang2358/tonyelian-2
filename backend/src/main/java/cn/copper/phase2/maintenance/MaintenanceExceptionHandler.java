@@ -18,7 +18,7 @@ import java.util.Map;
  * 400 返回 code=VALIDATION_ERROR 与 data.fieldErrors；404 返回 code=NOT_FOUND。均按《接口通用约定》§4。
  */
 @RestControllerAdvice(assignableTypes = {RepairOrderController.class, InspectionController.class,
-        AlertEventController.class})
+        AlertEventController.class, MaintenanceOverviewController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class MaintenanceExceptionHandler {
 
