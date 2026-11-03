@@ -25,7 +25,4 @@ public class InitializationService {
                 repository.counts(), "INITIALIZATION_ONLY");
     }
 
-    public EquipmentList equipment() {
-        return new EquipmentList(repository.productionEquipment());
-    }
 }

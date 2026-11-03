@@ -52,6 +52,21 @@ java -jar target/copper-phase2-backend-0.1.0-SNAPSHOT.jar
 
 `ready.data.database` 为对象 `{status:'UP'或'DOWN',check:'SELECT 1'}`。概览表数量来自当前选定库的 `information_schema.tables`，一期仅数约定的 12 张核心表。缺表或查询失败返回 503，不编造零条或演示响应。此轮未提供主数据 CRUD。
 
+## 模块职责
+
+后端业务按 `cn.copper.phase2` 下的功能包组织。表中的职责用于后续开发分工，当前可用接口见上一节。
+
+| 包 | 职责 |
+| --- | --- |
+| `initialization` | 健康检查、开发库概览及工程初始化信息。 |
+| `equipment` | 生产设备只读列表及后续设备档案、供应商、维保合同、期限提醒、测点和规则配置。 |
+| `maintenance` | 异常事件查询和人工处理、巡检、报修、审核、维修及验收记录。 |
+| `knowledge` | 设备知识、人工排查步骤、手册引用及已验收维修案例。 |
+| `network` | 车间二维布局、设备和测点标记及连线，按标识引用设备与测点资料。 |
+| `attachment` | 共用附件元信息、文件内容及业务对象引用，为设备、合同、知识和报修提供文件能力。 |
+
+`maintenance`、`knowledge`、`network`、`attachment` 当前以包说明标注边界。设备、运维、知识库和组网按页面接口约定组织后续实现。[系统一接口清单](../docs/api/系统一接口清单.md)
+
 ## 验证
 
 ```powershell
