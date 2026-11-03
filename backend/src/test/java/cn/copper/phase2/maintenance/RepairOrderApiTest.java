@@ -1,8 +1,8 @@
 package cn.copper.phase2.maintenance;
 
 import cn.copper.phase2.common.ApiExceptionHandler;
-import cn.copper.phase2.maintenance.MaintenanceModels.RepairOrderItem;
-import cn.copper.phase2.maintenance.MaintenanceModels.RepairOrderQuery;
+import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderItem;
+import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderQuery;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -30,11 +30,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 这样既能验证契约格式，也能验证参数校验，且完全不连数据库。
  */
 @WebMvcTest(RepairOrderController.class)
-@Import({ApiExceptionHandler.class, MaintenanceExceptionHandler.class, MaintenanceService.class})
+@Import({ApiExceptionHandler.class, MaintenanceExceptionHandler.class, RepairOrderService.class})
 class RepairOrderApiTest {
 
     @Autowired private MockMvc mvc;
-    @MockitoBean private MaintenanceRepository repository;
+    @MockitoBean private RepairOrderRepository repository;
+    /** 本类只覆盖读接口，写路径的幂等组件按空实现注入即可。 */
+    @MockitoBean private IdempotencyService idempotencyService;
 
     @Test
     void listReturnsPagedEnvelopeWithStringIdsAndOffsetTimestamps() throws Exception {
@@ -147,10 +149,11 @@ class RepairOrderApiTest {
     }
 
     @Test
-    void writeEndpointIsNotAvailableYet() throws Exception {
-        mvc.perform(post("/api/v1/repair-orders"))
-                .andExpect(status().isMethodNotAllowed())
-                .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
-        verifyNoInteractions(repository);
+    void detailRouteIsReachableAndReportsMissingOrder() throws Exception {
+        when(repository.findOrder(999L)).thenReturn(null);
+
+        mvc.perform(get("/api/v1/repair-orders/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 }
