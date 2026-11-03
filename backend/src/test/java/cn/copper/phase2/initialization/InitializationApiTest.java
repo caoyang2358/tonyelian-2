@@ -1,6 +1,10 @@
 package cn.copper.phase2.initialization;
 
 import cn.copper.phase2.common.ApiExceptionHandler;
+import cn.copper.phase2.equipment.EquipmentController;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentItem;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentList;
+import cn.copper.phase2.equipment.EquipmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -18,11 +22,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest({HealthController.class, BootstrapController.class})
+@WebMvcTest({HealthController.class, BootstrapController.class, EquipmentController.class})
 @Import(ApiExceptionHandler.class)
 class InitializationApiTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private InitializationService service;
+    @MockitoBean private EquipmentService equipmentService;
 
     @Test
     void livenessDoesNotAccessDatabaseOrService() throws Exception {
@@ -92,7 +97,7 @@ class InitializationApiTest {
 
     @Test
     void equipmentPreservesSharedIdentifiersAndNullablePerson() throws Exception {
-        when(service.equipment()).thenReturn(new EquipmentList(List.of(
+        when(equipmentService.equipment()).thenReturn(new EquipmentList(List.of(
                 new EquipmentItem(41, "SMELT-FUR-01", "1#熔化炉", 7, "车间一", null, false))));
         mvc.perform(get("/api/v1/equipment"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].id").value(41))
@@ -105,6 +110,6 @@ class InitializationApiTest {
     void unsupportedMethodUsesEnvelopeRatherThanAnHtmlError() throws Exception {
         mvc.perform(post("/api/v1/equipment")).andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
-        verifyNoInteractions(service);
+        verifyNoInteractions(equipmentService);
     }
 }

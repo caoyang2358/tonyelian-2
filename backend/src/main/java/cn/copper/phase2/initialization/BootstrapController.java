@@ -21,8 +21,4 @@ public class BootstrapController {
         return ApiResponse.success(service.overview());
     }
 
-    @GetMapping("/equipment")
-    public ApiResponse<EquipmentList> equipment() {
-        return ApiResponse.success(service.equipment());
-    }
 }
