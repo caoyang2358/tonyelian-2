@@ -5,7 +5,7 @@
 - `dev/001_phase1_schema_snapshot.sql`：12张一期MySQL结构表及外键，无DROP语句，仅用于全新空开发库。
 - `dev/002_demo_metadata_seed.sql`：2车间8设备10测点及参数/单位定义，不含现场读数、订单、库存或能耗值。托管启动只导入一次。
 - `reference/`：结构核验和旧表查询的只读示例，尚未对一期现用库执行。
-- **唯一二期迁移入口**：`backend/src/main/resources/db/migration-phase2/`，Flyway历史表为`p2_flyway_schema_history`。本次V1仅创建技术元数据表`p2_project_info`。
+- **唯一二期迁移入口**：[Flyway 迁移目录](../backend/src/main/resources/db/migration-phase2/)，历史表为 `p2_flyway_schema_history`。V1 创建工程元数据，V2—V6 创建业务及支撑表。模块映射见[数据库设计](../docs/数据库逻辑表设计与成员使用指南.md)。
 - `migrations/`：早期预留目录，不作为第二套迁移入口；后续SQL统一放后端Flyway目录。
 
 [逻辑表设计](../docs/数据库逻辑表设计与成员使用指南.md)中的订单/计划/库存等业务表尚未实现，不等于DDL已经生成。后续按任务逐个增量迁移，已执行版本不回改。不要执行一期清库脚本、PostgreSQL迁移或更改一期迁移历史。

@@ -1,0 +1,151 @@
+-- An effective price can be corrected without losing the price used by a prior run.
+CREATE TABLE p2_energy_price (
+    energy_price_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    energy_type VARCHAR(16) NOT NULL,
+    workshop_id BIGINT NULL,
+    scope_key BIGINT GENERATED ALWAYS AS (COALESCE(workshop_id, 0)) STORED,
+    effective_date DATE NOT NULL,
+    unit_code VARCHAR(32) NOT NULL,
+    unit_price_yuan_per_unit DECIMAL(24,10) NOT NULL,
+    supersedes_price_id BIGINT NULL,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    current_marker TINYINT GENERATED ALWAYS AS (CASE WHEN is_current THEN 1 ELSE NULL END) STORED,
+    reason TEXT NULL,
+    operator_name VARCHAR(100) NOT NULL,
+    recorded_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    version BIGINT NOT NULL DEFAULT 0,
+    UNIQUE KEY uk_p2_price_active (energy_type, scope_key, effective_date, current_marker),
+    UNIQUE KEY uk_p2_price_superseded (supersedes_price_id),
+    KEY ix_p2_price_lookup (workshop_id, energy_type, effective_date),
+    FOREIGN KEY (workshop_id) REFERENCES dim_workshop(workshop_id),
+    FOREIGN KEY (supersedes_price_id) REFERENCES p2_energy_price(energy_price_id),
+    CHECK (energy_type IN ('ELECTRICITY', 'WATER', 'GAS')),
+    CHECK (workshop_id IS NULL OR workshop_id > 0),
+    CHECK (unit_price_yuan_per_unit >= 0),
+    CHECK (is_current IN (0,1)),
+    CHECK (version >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A run stores reproducible inputs and scope. Publish completed results atomically.
+CREATE TABLE p2_cost_run (
+    cost_run_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    previous_cost_run_id BIGINT NULL,
+    status VARCHAR(20) NOT NULL,
+    trigger_type VARCHAR(32) NOT NULL,
+    rule_version VARCHAR(64) NOT NULL,
+    affected_scope JSON NOT NULL,
+    input_snapshot JSON NULL,
+    missing_items JSON NULL,
+    reason TEXT NULL,
+    operator_name VARCHAR(100) NOT NULL,
+    requested_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    started_at DATETIME(3) NULL,
+    completed_at DATETIME(3) NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    KEY ix_p2_run_status_time (status, requested_at),
+    FOREIGN KEY (previous_cost_run_id) REFERENCES p2_cost_run(cost_run_id),
+    CHECK (status IN ('PENDING', 'RUNNING', 'INCOMPLETE', 'COMPLETED', 'FAILED')),
+    CHECK (started_at IS NULL OR started_at >= requested_at),
+    CHECK (completed_at IS NULL OR (started_at IS NOT NULL AND completed_at >= started_at)),
+    CHECK (version >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Source snapshots are kept even for a missing meter or an incomplete production day.
+CREATE TABLE p2_energy_allocation (
+    energy_allocation_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    cost_run_id BIGINT NOT NULL,
+    workshop_id BIGINT NOT NULL,
+    actual_date DATE NOT NULL,
+    energy_type VARCHAR(16) NOT NULL,
+    meter_source_key VARCHAR(128) NOT NULL,
+    source_refreshed_at DATETIME(3) NULL,
+    source_quality VARCHAR(32) NOT NULL,
+    source_snapshot JSON NOT NULL,
+    unit_code VARCHAR(32) NOT NULL,
+    daily_consumption DECIMAL(24,8) NULL,
+    energy_price_id BIGINT NULL,
+    effective_unit_price DECIMAL(24,10) NULL,
+    target_type VARCHAR(24) NOT NULL,
+    target_key VARCHAR(128) NOT NULL,
+    order_id BIGINT NULL,
+    output_id BIGINT NULL,
+    finished_allocation_id BIGINT NULL,
+    qualified_quantity_ton DECIMAL(18,3) NULL,
+    denominator_quantity_ton DECIMAL(18,3) NULL,
+    allocation_ratio DECIMAL(20,16) NULL,
+    allocated_consumption DECIMAL(24,8) NULL,
+    amount_yuan DECIMAL(20,2) NULL,
+    missing_items JSON NULL,
+    UNIQUE KEY uk_p2_energy_run_share (cost_run_id, workshop_id, actual_date, energy_type,
+        meter_source_key, target_type, target_key),
+    KEY ix_p2_energy_shop_date (workshop_id, actual_date, energy_type),
+    KEY ix_p2_energy_order_day (order_id, actual_date),
+    FOREIGN KEY (workshop_id) REFERENCES dim_workshop(workshop_id),
+    FOREIGN KEY (cost_run_id) REFERENCES p2_cost_run(cost_run_id),
+    FOREIGN KEY (energy_price_id) REFERENCES p2_energy_price(energy_price_id),
+    FOREIGN KEY (order_id) REFERENCES p2_customer_order(order_id),
+    FOREIGN KEY (output_id) REFERENCES p2_output_record(output_id),
+    FOREIGN KEY (finished_allocation_id) REFERENCES p2_finished_allocation(finished_allocation_id),
+    CHECK (energy_type IN ('ELECTRICITY', 'WATER', 'GAS')),
+    CHECK (target_type IN ('ORDER', 'PUBLIC_FINISHED', 'ROD_STOCK', 'NO_OUTPUT', 'PENDING')),
+    CHECK ((target_type = 'ORDER' AND order_id IS NOT NULL)
+        OR (target_type <> 'ORDER' AND order_id IS NULL)),
+    CHECK (daily_consumption >= 0 AND effective_unit_price >= 0
+        AND qualified_quantity_ton >= 0 AND denominator_quantity_ton >= 0
+        AND allocation_ratio BETWEEN 0 AND 1 AND allocated_consumption >= 0 AND amount_yuan >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- This ledger carries cost only. Original physical quantity events stay in stock_movement.
+CREATE TABLE p2_stock_cost_ledger (
+    stock_cost_ledger_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    cost_run_id BIGINT NOT NULL,
+    material_id BIGINT NOT NULL,
+    order_id BIGINT NULL,
+    movement_id BIGINT NULL,
+    finished_allocation_id BIGINT NULL,
+    delivery_item_id BIGINT NULL,
+    entry_type VARCHAR(24) NOT NULL,
+    source_type VARCHAR(32) NOT NULL,
+    source_id BIGINT NOT NULL,
+    share_key VARCHAR(64) NOT NULL,
+    business_date DATE NOT NULL,
+    quantity_basis_ton DECIMAL(18,3) NOT NULL,
+    unit_cost_yuan_per_ton DECIMAL(32,10) NULL,
+    cost_delta_yuan DECIMAL(20,2) NULL,
+    missing_items JSON NULL,
+    UNIQUE KEY uk_p2_cost_ledger_share (cost_run_id, material_id, source_type, source_id, entry_type, share_key),
+    KEY ix_p2_cost_ledger_material_date (material_id, business_date, stock_cost_ledger_id),
+    KEY ix_p2_cost_ledger_order (order_id, business_date),
+    FOREIGN KEY (cost_run_id) REFERENCES p2_cost_run(cost_run_id),
+    FOREIGN KEY (material_id) REFERENCES p2_material(material_id),
+    FOREIGN KEY (order_id) REFERENCES p2_customer_order(order_id),
+    FOREIGN KEY (movement_id) REFERENCES p2_stock_movement(movement_id),
+    FOREIGN KEY (finished_allocation_id) REFERENCES p2_finished_allocation(finished_allocation_id),
+    FOREIGN KEY (delivery_item_id) REFERENCES p2_delivery_item(delivery_item_id),
+    CHECK (entry_type IN ('OPENING', 'RECEIPT', 'ISSUE', 'ASSIGN', 'RELEASE', 'DELIVERY', 'CORRECTION')),
+    CHECK (quantity_basis_ton >= 0),
+    CHECK (unit_cost_yuan_per_ton >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE p2_order_cost_item (
+    order_cost_item_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    cost_run_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    stock_cost_ledger_id BIGINT NULL,
+    energy_allocation_id BIGINT NULL,
+    item_type VARCHAR(24) NOT NULL,
+    source_key VARCHAR(128) NOT NULL,
+    business_date DATE NOT NULL,
+    amount_yuan DECIMAL(20,2) NULL,
+    missing_items JSON NULL,
+    UNIQUE KEY uk_p2_order_cost_share (cost_run_id, order_id, item_type, source_key),
+    KEY ix_p2_order_cost_run (order_id, cost_run_id),
+    FOREIGN KEY (cost_run_id) REFERENCES p2_cost_run(cost_run_id),
+    FOREIGN KEY (order_id) REFERENCES p2_customer_order(order_id),
+    FOREIGN KEY (stock_cost_ledger_id) REFERENCES p2_stock_cost_ledger(stock_cost_ledger_id),
+    FOREIGN KEY (energy_allocation_id) REFERENCES p2_energy_allocation(energy_allocation_id),
+    CHECK ((item_type IN ('ROD_ISSUE', 'PUBLIC_FINISHED') AND stock_cost_ledger_id IS NOT NULL
+            AND energy_allocation_id IS NULL)
+        OR (item_type = 'WORKSHOP_ENERGY' AND energy_allocation_id IS NOT NULL
+            AND stock_cost_ledger_id IS NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
