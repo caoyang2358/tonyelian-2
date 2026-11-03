@@ -17,7 +17,8 @@ import java.util.Map;
  * 运维管理模块的错误处理：只作用于本模块 Controller，避免影响其他模块尚未实现的校验约定。
  * 400 返回 code=VALIDATION_ERROR 与 data.fieldErrors；404 返回 code=NOT_FOUND。均按《接口通用约定》§4。
  */
-@RestControllerAdvice(assignableTypes = {RepairOrderController.class, InspectionController.class})
+@RestControllerAdvice(assignableTypes = {RepairOrderController.class, InspectionController.class,
+        AlertEventController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class MaintenanceExceptionHandler {
 

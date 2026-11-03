@@ -365,7 +365,7 @@ public class RepairOrderRepository {
             String text = rs.getString("trigger_value_text");
             if (text == null) {
                 BigDecimal value = rs.getBigDecimal("trigger_value");
-                text = value == null ? null : value.toPlainString();
+                text = value == null ? null : value.stripTrailingZeros().toPlainString();
             }
             return new AlertSource(
                     rs.getString("event_id"),
