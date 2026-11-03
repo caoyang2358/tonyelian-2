@@ -4,6 +4,17 @@
 
 当前范围：两个系统7个主入口。默认设备管理调用二期后端真实只读设备接口；其余入口明确标为待开发。当前没有订单、库存、生产或核算业务实现。
 
+## 系统一页面开发入口
+
+| 页面 | 组件入口 |
+| --- | --- |
+| 设备管理 | `src/features/equipment/EquipmentPage.tsx` |
+| 运维管理 | `src/features/maintenance/MaintenancePage.tsx` |
+| 运维知识库 | `src/features/knowledge/KnowledgePage.tsx` |
+| 设备组网 | `src/features/network/NetworkPage.tsx` |
+
+各页面的专用组件和接口调用放到对应模块下。全局导航由 `src/App.tsx` 维护，公共组件放在 `src/components/`，共用请求逻辑放在 `src/lib/`。接口字段及共享接口归属见[接口总览](../docs/接口清单.md)。
+
 ## 启动
 
 环境：Node.js 22.21及以上兼容版本、npm。依赖版本固定在package.json与package-lock.json中。
