@@ -105,6 +105,12 @@ function integer(value: unknown, name: string): number {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
   throw new ApiError(`${name}不是有效的非负整数。`, 'INVALID_RESPONSE');
 }
+/** 剩余天数可以是负数（已超期），所以不能复用只接受非负数的 count/integer。 */
+function wholeNumber(value: unknown, name: string): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
+  throw new ApiError(`${name}不是有效的整数。`, 'INVALID_RESPONSE');
+}
 function boolean(value: unknown, name: string): boolean {
   if (value === true || value === 1) return true;
   if (value === false || value === 0) return false;
@@ -266,6 +272,119 @@ export function mapHealth(value: unknown): Health {
 }
 
 /** S1-E05 删除结果。接口只回 {id, deleted}，deleted 必须为 true 才算成功。 */
+/** 供应商摘要（S1-S01）：列表行只带选择需要的字段。 */
+export interface SupplierSummary {
+  supplierId: string; name: string; contactName: string | null; phone: string | null; equipmentCount: number;
+}
+
+/** 供应商详情（S1-S02）。equipmentIds 为空数组表示当前没有关联设备。 */
+export interface SupplierDetail {
+  supplierId: string; name: string; contactName: string | null; phone: string | null;
+  remark: string | null; equipmentIds: string[]; version: number; updatedAt: string | null;
+}
+
+/** 供应商可写字段；equipmentIds 按整体替换语义提交，空数组即解除全部关联。 */
+export interface SupplierFormValues {
+  name: string; contactName: string | null; phone: string | null; remark: string | null; equipmentIds: string[];
+}
+
+export function mapSupplierPage(value: unknown): PageResult<SupplierSummary> {
+  const data = record(value, '供应商分页');
+  if (!Array.isArray(data.items)) throw new ApiError('供应商列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '供应商');
+      return {
+        supplierId: id(row.supplierId, '供应商ID'), name: str(row.name, '供应商名称'),
+        contactName: optional(row.contactName, '联系人'), phone: optional(row.phone, '电话'),
+        equipmentCount: integer(row.equipmentCount, '关联设备数'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapSupplierDetail(value: unknown): SupplierDetail {
+  const data = record(value, '供应商详情');
+  if (!Array.isArray(data.equipmentIds)) throw new ApiError('供应商详情缺少equipmentIds数组。', 'INVALID_RESPONSE');
+  return {
+    supplierId: id(data.supplierId, '供应商ID'), name: str(data.name, '供应商名称'),
+    contactName: optional(data.contactName, '联系人'), phone: optional(data.phone, '电话'),
+    remark: optional(data.remark, '备注'),
+    equipmentIds: data.equipmentIds.map((item: unknown) => id(item, '设备ID')),
+    version: integer(data.version, '版本'), updatedAt: optional(data.updatedAt, '更新时间'),
+  };
+}
+
+/** 合同期限状态，与服务端约定一致；UNKNOWN 表示结束日期缺失，不是"未到期"。 */
+export type ContractExpiryState = 'ACTIVE' | 'EXPIRING_SOON' | 'EXPIRED' | 'UNKNOWN';
+
+/** 维保合同摘要（S1-C01）。remainingDays 为负表示已超期天数。 */
+export interface ContractSummary {
+  contractId: string; serviceOrganization: string; contractNumber: string | null;
+  startDate: string | null; endDate: string | null;
+  equipmentCount: number; expiryState: ContractExpiryState; remainingDays: number | null;
+}
+
+/** 合同详情（S1-C02）。attachmentIds 由附件接口维护，这里只读。 */
+export interface ContractDetail {
+  contractId: string; serviceOrganization: string; contractNumber: string | null;
+  startDate: string | null; endDate: string | null; remark: string | null;
+  equipmentIds: string[]; attachmentIds: string[]; expiryState: ContractExpiryState;
+  remainingDays: number | null; version: number; updatedAt: string | null;
+}
+
+/** 合同可写字段；equipmentIds 按整体替换提交，空数组即解除全部覆盖关系。 */
+export interface ContractFormValues {
+  serviceOrganization: string; contractNumber: string | null;
+  startDate: string | null; endDate: string | null;
+  remark: string | null; equipmentIds: string[];
+}
+
+function expiryState(value: unknown): ContractExpiryState {
+  const raw = str(value, '期限状态');
+  if (raw === 'ACTIVE' || raw === 'EXPIRING_SOON' || raw === 'EXPIRED' || raw === 'UNKNOWN') return raw;
+  throw new ApiError(`期限状态「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+export function mapContractPage(value: unknown): PageResult<ContractSummary> {
+  const data = record(value, '合同分页');
+  if (!Array.isArray(data.items)) throw new ApiError('合同列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '合同');
+      return {
+        contractId: id(row.contractId, '合同ID'),
+        serviceOrganization: str(row.serviceOrganization, '服务单位'),
+        contractNumber: optional(row.contractNumber, '合同编号'),
+        startDate: optional(row.startDate, '开始日期'), endDate: optional(row.endDate, '结束日期'),
+        equipmentCount: integer(row.equipmentCount, '覆盖设备数'),
+        expiryState: expiryState(row.expiryState),
+        remainingDays: wholeNumber(row.remainingDays, '剩余天数'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapContractDetail(value: unknown): ContractDetail {
+  const data = record(value, '合同详情');
+  if (!Array.isArray(data.equipmentIds)) throw new ApiError('合同详情缺少equipmentIds数组。', 'INVALID_RESPONSE');
+  if (!Array.isArray(data.attachmentIds)) throw new ApiError('合同详情缺少attachmentIds数组。', 'INVALID_RESPONSE');
+  return {
+    contractId: id(data.contractId, '合同ID'),
+    serviceOrganization: str(data.serviceOrganization, '服务单位'),
+    contractNumber: optional(data.contractNumber, '合同编号'),
+    startDate: optional(data.startDate, '开始日期'), endDate: optional(data.endDate, '结束日期'),
+    remark: optional(data.remark, '备注'),
+    equipmentIds: data.equipmentIds.map((item: unknown) => id(item, '设备ID')),
+    attachmentIds: data.attachmentIds.map((item: unknown) => id(item, '附件ID')),
+    expiryState: expiryState(data.expiryState),
+    remainingDays: wholeNumber(data.remainingDays, '剩余天数'),
+    version: integer(data.version, '版本'), updatedAt: optional(data.updatedAt, '更新时间'),
+  };
+}
+
 export interface EquipmentDeleteResult { id: string; deleted: boolean }
 export function mapDeleteResult(value: unknown): EquipmentDeleteResult {
   const data = record(value, '删除结果');
@@ -289,8 +408,10 @@ export async function requestApi<T>(path: string, mapper: (value: unknown) => T,
   const {signal, method = 'GET', body} = options;
   let response: Response;
   const headers: Record<string, string> = {Accept: 'application/json'};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  try { response = await fetcher(path, {method, signal, headers, body: body === undefined ? undefined : JSON.stringify(body)}); }
+  // 上传是 multipart：Content-Type 必须由浏览器带上 boundary，手写反而会让后端解析不出文件。
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
+  try { response = await fetcher(path, {method, signal, headers, body: body === undefined ? undefined : isForm ? body as FormData : JSON.stringify(body)}); }
   catch (error: unknown) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new ApiError('暂时无法连接服务，请确认服务已启动后重试。', 'NETWORK_ERROR');
@@ -326,6 +447,138 @@ function queryString(query: EquipmentQuery): string {
   return text ? `?${text}` : '';
 }
 
+/** 期限类型（S1-T01）：质保、维保、预计寿命。 */
+export type DeadlineReminderType = 'WARRANTY' | 'MAINTENANCE' | 'EXPECTED_LIFE';
+/** 期限计算状态：待补资料、正常、即将到期、已超期。 */
+export type DeadlineExpiryState = 'MISSING_DATA' | 'NORMAL' | 'DUE_SOON' | 'EXPIRED';
+
+/**
+ * 期限行（S1-T01）。一行是一台设备的**一个期限来源**，不是一台设备一行：
+ * 同时有质保与预计寿命、或多份维保合同时会出多行，靠 reminderType 与 contractId 区分。
+ */
+export interface DeadlineItem {
+  equipmentId: string; equipmentCode: string; equipmentName: string;
+  workshopId: string; workshopName: string | null; responsiblePerson: string | null;
+  reminderType: DeadlineReminderType; contractId: string | null; contractNumber: string | null;
+  purchasedOn: string | null; commissionedOn: string | null; expectedLifeYears: number | null;
+  dueDate: string | null; remainingDays: number | null; expiryState: DeadlineExpiryState;
+  missingFields: string[];
+}
+
+export interface DeadlineQuery {
+  equipmentId?: string; workshopId?: string; reminderType?: string;
+  expiryState?: string; page?: number; pageSize?: number;
+}
+
+function deadlineReminderType(value: unknown): DeadlineReminderType {
+  const raw = str(value, '期限类型');
+  if (raw === 'WARRANTY' || raw === 'MAINTENANCE' || raw === 'EXPECTED_LIFE') return raw;
+  throw new ApiError(`期限类型「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function deadlineExpiryState(value: unknown): DeadlineExpiryState {
+  const raw = str(value, '期限状态');
+  if (raw === 'MISSING_DATA' || raw === 'NORMAL' || raw === 'DUE_SOON' || raw === 'EXPIRED') return raw;
+  throw new ApiError(`期限状态「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function stringList(value: unknown, name: string): string[] {
+  if (!Array.isArray(value)) throw new ApiError(`${name}缺少数组。`, 'INVALID_RESPONSE');
+  return value.map(item => str(item, name));
+}
+
+export function mapDeadlinePage(value: unknown): PageResult<DeadlineItem> {
+  const data = record(value, '期限分页');
+  if (!Array.isArray(data.items)) throw new ApiError('期限列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '期限行');
+      return {
+        equipmentId: id(row.equipmentId, '设备ID'),
+        equipmentCode: str(row.equipmentCode, '设备编码'),
+        equipmentName: str(row.equipmentName, '设备名称'),
+        workshopId: id(row.workshopId, '车间ID'),
+        workshopName: optional(row.workshopName, '车间名称'),
+        responsiblePerson: optional(row.responsiblePerson, '负责人'),
+        reminderType: deadlineReminderType(row.reminderType),
+        contractId: row.contractId == null ? null : id(row.contractId, '合同ID'),
+        contractNumber: optional(row.contractNumber, '合同编号'),
+        purchasedOn: optional(row.purchasedOn, '购置日期'),
+        commissionedOn: optional(row.commissionedOn, '投用日期'),
+        expectedLifeYears: count(row.expectedLifeYears, '预计年限'),
+        dueDate: optional(row.dueDate, '到期日期'),
+        remainingDays: wholeNumber(row.remainingDays, '剩余天数'),
+        expiryState: deadlineExpiryState(row.expiryState),
+        missingFields: stringList(row.missingFields, '缺资料字段'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+/** 附件归属对象（S1-F01—F05）：一套接口服务设备、合同、知识条目与维修单。 */
+export type AttachmentOwnerType = 'EQUIPMENT' | 'MAINTENANCE_CONTRACT' | 'KNOWLEDGE_ARTICLE' | 'REPAIR_ORDER';
+/** 附件类别。IMAGE 用于档案配图，MANUAL 用于设备手册，DOCUMENT 用于合同正文，PHOTO 用于报修照片。 */
+export type AttachmentFileKind = 'IMAGE' | 'MANUAL' | 'DOCUMENT' | 'PHOTO';
+
+/**
+ * 附件元信息。contentPath / downloadPath 由服务端给出，前端不自己拼地址——
+ * 拼错了会得到 404 而不是"路径写错"的提示。
+ */
+export interface AttachmentItem {
+  attachmentId: string; ownerType: AttachmentOwnerType; ownerId: string;
+  fileKind: AttachmentFileKind; originalName: string; mediaType: string;
+  size: number; version: number; updatedAt: string | null;
+  contentPath: string; downloadPath: string;
+}
+
+export interface AttachmentQuery {
+  ownerType: AttachmentOwnerType; ownerId: string; fileKind?: AttachmentFileKind | '';
+  page?: number; pageSize?: number;
+}
+
+function attachmentOwnerType(value: unknown): AttachmentOwnerType {
+  const raw = str(value, '附件归属类型');
+  if (raw === 'EQUIPMENT' || raw === 'MAINTENANCE_CONTRACT' || raw === 'KNOWLEDGE_ARTICLE' || raw === 'REPAIR_ORDER') return raw;
+  throw new ApiError(`附件归属类型「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function attachmentFileKind(value: unknown): AttachmentFileKind {
+  const raw = str(value, '附件类别');
+  if (raw === 'IMAGE' || raw === 'MANUAL' || raw === 'DOCUMENT' || raw === 'PHOTO') return raw;
+  throw new ApiError(`附件类别「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function mapAttachment(value: unknown): AttachmentItem {
+  const row = record(value, '附件');
+  return {
+    attachmentId: id(row.attachmentId, '附件ID'),
+    ownerType: attachmentOwnerType(row.ownerType),
+    ownerId: id(row.ownerId, '归属对象ID'),
+    fileKind: attachmentFileKind(row.fileKind),
+    originalName: str(row.originalName, '文件名'),
+    mediaType: str(row.mediaType, '媒体类型'),
+    size: integer(row.size, '文件大小'),
+    version: integer(row.version, '附件版本'),
+    updatedAt: optional(row.updatedAt, '更新时间'),
+    contentPath: str(row.contentPath, '查看地址'),
+    downloadPath: str(row.downloadPath, '下载地址'),
+  };
+}
+
+export function mapAttachmentPage(value: unknown): PageResult<AttachmentItem> {
+  const data = record(value, '附件分页');
+  if (!Array.isArray(data.items)) throw new ApiError('附件列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map(mapAttachment),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapAttachmentDetail(value: unknown): AttachmentItem {
+  return mapAttachment(value);
+}
+
 export const api = {
   equipment: (query: EquipmentQuery = {}, signal?: AbortSignal) => requestApi(`/api/v1/equipment${queryString(query)}`, mapEquipmentPage, {signal}),
   equipmentDetail: (equipmentId: string, signal?: AbortSignal) => requestApi(`/api/v1/equipment/${encodeURIComponent(equipmentId)}`, mapEquipmentDetail, {signal}),
@@ -340,6 +593,87 @@ export const api = {
     requestApi(`/api/v1/equipment/${encodeURIComponent(equipmentId)}`, mapDeleteResult,
       {method: 'DELETE', body: {...meta, confirmed: true}}),
   referenceData: (signal?: AbortSignal) => requestApi('/api/v1/reference-data', mapReferenceData, {signal}),
+  /** S1-S01 供应商分页；设备详情的"供应商"页签按 equipmentId 过滤。 */
+  suppliers: (query: {equipmentId?: string; keyword?: string; page?: number; pageSize?: number} = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.equipmentId) params.set('equipmentId', query.equipmentId);
+    if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/suppliers${text ? `?${text}` : ''}`, mapSupplierPage, {signal});
+  },
+  supplierDetail: (supplierId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/suppliers/${encodeURIComponent(supplierId)}`, mapSupplierDetail, {signal}),
+  createSupplier: (values: SupplierFormValues, meta: {requestId: string; operatorName: string}) =>
+    requestApi('/api/v1/suppliers', mapSupplierDetail, {method: 'POST', body: {...meta, ...values}}),
+  updateSupplier: (supplierId: string, values: SupplierFormValues, meta: {requestId: string; operatorName: string; expectedVersion: number}) =>
+    requestApi(`/api/v1/suppliers/${encodeURIComponent(supplierId)}`, mapSupplierDetail, {method: 'PUT', body: {...meta, ...values}}),
+  /** S1-C01 合同分页；设备详情的"合同"页签按 equipmentId 过滤出覆盖本设备的合同。 */
+  contracts: (query: {equipmentId?: string; serviceOrganization?: string; expiryState?: string; page?: number; pageSize?: number} = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.equipmentId) params.set('equipmentId', query.equipmentId);
+    if (query.serviceOrganization?.trim()) params.set('serviceOrganization', query.serviceOrganization.trim());
+    if (query.expiryState) params.set('expiryState', query.expiryState);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/maintenance-contracts${text ? `?${text}` : ''}`, mapContractPage, {signal});
+  },
+  contractDetail: (contractId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/maintenance-contracts/${encodeURIComponent(contractId)}`, mapContractDetail, {signal}),
+  createContract: (values: ContractFormValues, meta: {requestId: string; operatorName: string}) =>
+    requestApi('/api/v1/maintenance-contracts', mapContractDetail, {method: 'POST', body: {...meta, ...values}}),
+  updateContract: (contractId: string, values: ContractFormValues, meta: {requestId: string; operatorName: string; expectedVersion: number}) =>
+    requestApi(`/api/v1/maintenance-contracts/${encodeURIComponent(contractId)}`, mapContractDetail, {method: 'PUT', body: {...meta, ...values}}),
+  deadlines: (query: DeadlineQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.equipmentId) params.set('equipmentId', query.equipmentId);
+    if (query.workshopId) params.set('workshopId', query.workshopId);
+    if (query.reminderType) params.set('reminderType', query.reminderType);
+    if (query.expiryState) params.set('expiryState', query.expiryState);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/equipment-deadlines${text ? `?${text}` : ''}`, mapDeadlinePage, {signal});
+  },
+  /** S1-F01 附件分页；同一台设备可能同时有配图、手册和合同附件，fileKind 用于分栏。 */
+  attachments: (query: AttachmentQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    params.set('ownerType', query.ownerType);
+    params.set('ownerId', query.ownerId);
+    if (query.fileKind) params.set('fileKind', query.fileKind);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    return requestApi(`/api/v1/attachments?${params.toString()}`, mapAttachmentPage, {signal});
+  },
+  attachmentDetail: (attachmentId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/attachments/${encodeURIComponent(attachmentId)}`, mapAttachmentDetail, {signal}),
+  /** F04 的受控地址。download=true 时后端返回附件下载头，否则按类型内联查看。 */
+  attachmentUrl: (attachmentId: string, download = false) =>
+    `/api/v1/attachments/${encodeURIComponent(attachmentId)}/content${download ? '?download=true' : ''}`,
+  /** S1-F03 上传并关联；业务对象（这里是设备）必须已存在。 */
+  uploadAttachment: (file: File, meta: {requestId: string; operatorName: string; ownerType: AttachmentOwnerType; ownerId: string; fileKind: AttachmentFileKind}) => {
+    const form = new FormData();
+    form.append('requestId', meta.requestId);
+    form.append('operatorName', meta.operatorName);
+    form.append('ownerType', meta.ownerType);
+    form.append('ownerId', meta.ownerId);
+    form.append('fileKind', meta.fileKind);
+    form.append('file', file);
+    return requestApi('/api/v1/attachments', mapAttachmentDetail, {method: 'POST', body: form});
+  },
+  /** S1-F05 替换内容：保留附件 ID 与引用，版本加一，必须说明替换原因。 */
+  replaceAttachmentContent: (attachmentId: string, file: File, meta: {requestId: string; operatorName: string; expectedVersion: number; reason: string}) => {
+    const form = new FormData();
+    form.append('requestId', meta.requestId);
+    form.append('operatorName', meta.operatorName);
+    form.append('expectedVersion', String(meta.expectedVersion));
+    form.append('reason', meta.reason);
+    form.append('file', file);
+    return requestApi(`/api/v1/attachments/${encodeURIComponent(attachmentId)}/content`, mapAttachmentDetail,
+      {method: 'PUT', body: form});
+  },
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),
