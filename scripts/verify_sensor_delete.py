@@ -104,6 +104,10 @@ def equipment_id():
     return str(items[0]["id"])
 
 
+# 本轮造出来的测点编码：改过规则的测点按 P05 约定不允许删除，清理只能按编码回落 SQL。
+CREATED_CODES = []
+
+
 def create_sensor(equipment, code):
     status, payload = call("POST", "/sensors", {
         "requestId": str(uuid.uuid4()), "operatorName": "验收脚本", "reason": "删除接口验收",
@@ -112,7 +116,44 @@ def create_sensor(equipment, code):
     })
     if status != 200:
         raise SystemExit("造测点失败：%s %s" % (status, payload))
+    CREATED_CODES.append(code)
     return payload["data"]
+
+
+def quote_codes(codes):
+    return ", ".join("'%s'" % code for code in codes) or "''"
+
+
+def purge_test_sensors(codes):
+    """按编码直接清表。
+
+    改过规则的测点带 PARAMETER_HISTORY 阻塞，接口不给删；收尾只能绕过接口，
+    顺序与 ui-check-parameter-edit.mjs 保持一致：事件 → 规则版本 → 画像 → 变更日志 → 参数 → 测点。
+    """
+    quoted = quote_codes(codes)
+    parameters = (sql("SELECT parameter_id FROM dim_sensor_parameter"
+                      " WHERE sensor_id IN (SELECT sensor_id FROM dim_sensor"
+                      " WHERE sensor_code IN (%s));" % quoted) or "").split()
+    for parameter_id in parameters:
+        events = (sql("SELECT event_id FROM p2_alert_event WHERE parameter_id = %s;"
+                      % parameter_id) or "").split()
+        if events:
+            sql("DELETE FROM p2_alert_handling_record WHERE event_id IN (%s);"
+                % ", ".join(events))
+            sql("DELETE FROM p2_alert_event WHERE parameter_id = %s;" % parameter_id)
+        sql("UPDATE p2_alert_rule_version SET previous_rule_version_id = NULL"
+            " WHERE parameter_id = %s;" % parameter_id)
+        sql("DELETE FROM p2_alert_rule_version WHERE parameter_id = %s;" % parameter_id)
+        sql("DELETE FROM p2_sensor_parameter_profile WHERE parameter_id = %s;" % parameter_id)
+        sql("DELETE FROM p2_change_log WHERE object_type = 'SENSOR_PARAMETER'"
+            " AND object_id = '%s';" % parameter_id)
+        sql("DELETE FROM dim_sensor_parameter WHERE parameter_id = %s;" % parameter_id)
+    sql("DELETE FROM p2_change_log WHERE object_type = 'SENSOR'"
+        " AND object_id IN (SELECT CAST(sensor_id AS CHAR) FROM dim_sensor"
+        " WHERE sensor_code IN (%s));" % quoted)
+    sql("DELETE FROM p2_sensor_profile WHERE sensor_id IN"
+        " (SELECT sensor_id FROM dim_sensor WHERE sensor_code IN (%s));" % quoted)
+    sql("DELETE FROM dim_sensor WHERE sensor_code IN (%s);" % quoted)
 
 
 def create_parameter(sensor_id, code, with_rule=False):
@@ -281,12 +322,16 @@ def main():
     print("== 7. 清理 ==")
     for sensor_id in created:
         call("DELETE", "/sensors/%s" % sensor_id, delete_body(str(uuid.uuid4()), 0))
-    leftover = sql("SELECT COUNT(*) FROM dim_sensor WHERE sensor_code LIKE 'AUTOTEST-%d%%';" % stamp) \
-        if sql_available() else None
-    if leftover is not None:
-        check("验收测点已清理干净", leftover.strip() == "0", "仍剩 %s 个" % leftover)
+    if sql_available():
+        purge_test_sensors(CREATED_CODES)
+        leftover = sql("SELECT COUNT(*) FROM dim_sensor WHERE sensor_code IN (%s);"
+                       % quote_codes(CREATED_CODES))
+        check("验收测点已清理干净", (leftover or "").strip() == "0", "仍剩 %s 个" % leftover)
+        rules = sql("SELECT COUNT(*) FROM p2_alert_rule_version WHERE parameter_id NOT IN"
+                    " (SELECT parameter_id FROM dim_sensor_parameter);")
+        check("规则版本随测点清理干净", (rules or "").strip() == "0", "仍剩 %s 条" % rules)
     else:
-        print("  提示：请手工清理编码以 AUTOTEST-%d 开头的测点。" % stamp)
+        print("  提示：请手工清理这些测点：%s。" % "、".join(CREATED_CODES))
 
     print()
     print("通过 %d 项，失败 %d 项，跳过 %d 项" % (len(passes), len(failures), len(skipped)))
