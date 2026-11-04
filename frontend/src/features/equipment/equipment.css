@@ -806,3 +806,251 @@
   color: var(--muted, #7c8982);
   padding: 0 8px;
 }
+
+/* ---------------- 测点页签（S1-P01/P02/P06/P09） ---------------- */
+
+/* 测点卡片：整行可点，展开后在下方挂参数列表，避免再开一层弹窗 */
+.eq-sensor-item {
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.eq-sensor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eq-sensor-head:hover { background: #f7faf8 }
+.eq-sensor-head:focus-visible { outline: 2px solid #97c3b1; outline-offset: -2px }
+
+.eq-sensor-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 40%;
+}
+
+.eq-sensor-id strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1c3a31;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-sensor-id small,
+.eq-sensor-meta {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted, #7c8982);
+}
+
+.eq-sensor-meta {
+  flex: 0 0 auto;
+  max-width: 26%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-sensor-fold {
+  flex: none;
+  font-size: 11px;
+  color: var(--brand, #26745b);
+}
+
+.eq-sensor-body {
+  padding: 4px 12px 12px;
+  border-top: 1px dashed var(--line, #e4eae4);
+  background: #fbfcfb;
+}
+
+.eq-sensor-params {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eq-sensor-param {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.eq-sensor-param-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 44%;
+}
+
+.eq-sensor-param-name strong { font-size: 12px; color: #1c3a31 }
+
+.eq-sensor-param-name small {
+  font-size: 10.5px;
+  color: var(--muted, #7c8982);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 读数用等宽数字，方便现场逐位比对 */
+.eq-sensor-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  min-width: 96px;
+}
+
+.eq-sensor-value b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #1c3a31;
+}
+
+.eq-sensor-value small { font-size: 10px; color: var(--muted, #7c8982) }
+
+.eq-sensor-param-actions { flex: none }
+
+.eq-sensor-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line, #e4eae4);
+}
+
+.eq-sensor-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.eq-sensor-range .eq-form-field { flex: 0 0 auto; min-width: 168px }
+.eq-sensor-range .eq-form-hint { flex: 1 1 100%; margin: 0 }
+
+.eq-sensor-records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eq-sensor-record {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 9px;
+  border-bottom: 1px solid #f0f3f0;
+  font-size: 11.5px;
+}
+
+.eq-sensor-record-time {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #3d5347;
+}
+
+.eq-sensor-record-value {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: #1c3a31;
+}
+
+.eq-sensor-record-value small {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--muted, #7c8982);
+}
+
+.eq-sensor-record-meta {
+  flex: 0 0 auto;
+  color: var(--muted, #7c8982);
+}
+
+.eq-sensor-rule {
+  padding: 8px 10px;
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 6px;
+}
+
+.eq-sensor-rule-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eq-sensor-rule-head strong { font-size: 12.5px; color: #1c3a31 }
+.eq-sensor-rule-head small { font-size: 10.5px; color: var(--muted, #7c8982) }
+
+.eq-sensor-rule-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #3d5347;
+}
+
+.eq-sensor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--muted, #7c8982);
+}
+
+/* 测点详情条：说明文字与「修改」入口同排，避免在窄抽屉里各占一行 */
+.eq-sensor-detail-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eq-sensor-detail-bar .eq-form-hint {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+}
+
+.eq-sensor-detail-bar .eq-row-link { flex: none }
+
+/* 启停用勾选项：表单里单独一行，说明文字跟着勾选框一起读 */
+.eq-sensor-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #3d5347;
+}
+
+.eq-sensor-switch input { margin-top: 3px; flex: none }

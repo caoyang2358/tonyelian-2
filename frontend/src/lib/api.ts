@@ -579,6 +579,235 @@ export function mapAttachmentDetail(value: unknown): AttachmentItem {
   return mapAttachment(value);
 }
 
+/**
+ * 测点监测状态（S1-P01/P09）。
+ *
+ * 四态分开是有意的：DISABLED 是配置决定，UNKNOWN 是从没采到，STALE 是采过但停了，
+ * 只有 ONLINE 才代表当前有数。前端不要把它们合并成一个"离线"。
+ */
+export type SensorMonitoringStatus = 'ONLINE' | 'STALE' | 'UNKNOWN' | 'DISABLED';
+/** 测点是否配全：有参数且有采集来源才算 READY。 */
+export type SensorConfigurationState = 'READY' | 'PENDING';
+
+export interface SensorSummary {
+  sensorId: string; sensorCode: string; name: string;
+  equipmentId: string; equipmentCode: string; equipmentName: string;
+  workshopId: string; workshopName: string | null;
+  location: string | null; sensorType: string | null; dataSource: string | null;
+  enabled: boolean; parameterCount: number;
+  monitoringStatus: SensorMonitoringStatus; configurationState: SensorConfigurationState;
+}
+
+export interface SensorParameterSummary {
+  parameterId: string; parameterCode: string; name: string; dataType: string;
+  unitCode: string | null; decimalPlaces: number; samplingIntervalSeconds: number | null;
+  processId: string | null; enabled: boolean;
+  ruleVersionId: string | null; ruleConfigured: boolean;
+}
+
+export interface SensorQuery {
+  equipmentId?: string; keyword?: string; enabled?: boolean;
+  monitoringStatus?: SensorMonitoringStatus | ''; page?: number; pageSize?: number;
+}
+
+export interface SensorHistoryQuery { from: string; to: string; page?: number; pageSize?: number }
+
+export interface SensorDetail extends SensorSummary {
+  purpose: string | null; hasHistory: boolean; version: number;
+  parameters: SensorParameterSummary[];
+}
+
+/**
+ * 测点可写字段（P03/P04）。
+ *
+ * 不含 dataSource：采集来源由现场对接产生，页面不能凭一次表单提交就声称"已接 PLC"。
+ * 新建测点因此一律是 PENDING，直到采集映射真实建立。
+ */
+export interface SensorFormValues {
+  sensorCode: string; name: string; equipmentId: string;
+  sensorType: string | null; location: string | null; purpose: string | null; enabled: boolean;
+}
+
+export interface SensorLatestReading {
+  parameterId: string; sensorId: string; sensorCode: string; parameterCode: string;
+  value: string | null; valueText: string | null; unitCode: string | null;
+  qualityStatus: string | null; limitStatus: string | null;
+  collectTime: string | null; refreshTime: string | null;
+  monitoringStatus: SensorMonitoringStatus; dataSource: string | null;
+  missingFields: string[];
+}
+
+export interface SensorHistoryRecord {
+  recordId: string; value: string | null; valueText: string | null;
+  sourceUnit: string | null; qualityCode: string | null;
+  collectTime: string | null; sourceSystem: string;
+}
+
+export interface SensorRuleSnapshot {
+  normalLower: string | null; normalUpper: string | null;
+  alarmLower: string | null; alarmUpper: string | null;
+  unitCode: string | null; triggerMode: string | null;
+  durationSeconds: number | null; enabled: boolean;
+}
+
+export interface SensorRuleVersion {
+  ruleVersionId: string; ruleVersion: number; previousRuleVersionId: string | null;
+  rule: SensorRuleSnapshot; effectiveAt: string | null;
+  reason: string | null; operatorName: string; affectedEventIds: string[];
+}
+
+function monitoringStatus(value: unknown): SensorMonitoringStatus {
+  const raw = str(value, '监测状态');
+  if (raw === 'ONLINE' || raw === 'STALE' || raw === 'UNKNOWN' || raw === 'DISABLED') return raw;
+  throw new ApiError(`监测状态「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function configurationState(value: unknown): SensorConfigurationState {
+  const raw = str(value, '配置状态');
+  if (raw === 'READY' || raw === 'PENDING') return raw;
+  throw new ApiError(`配置状态「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function mapSensorSummary(value: unknown): SensorSummary {
+  const row = record(value, '测点');
+  return {
+    sensorId: id(row.sensorId, '测点ID'),
+    sensorCode: str(row.sensorCode, '测点编码'),
+    name: str(row.name, '测点名称'),
+    equipmentId: id(row.equipmentId, '设备ID'),
+    equipmentCode: str(row.equipmentCode, '设备编码'),
+    equipmentName: str(row.equipmentName, '设备名称'),
+    workshopId: id(row.workshopId, '车间ID'),
+    workshopName: optional(row.workshopName, '车间名称'),
+    location: optional(row.location, '安装位置'),
+    sensorType: optional(row.sensorType, '测点类型'),
+    dataSource: optional(row.dataSource, '数据来源'),
+    enabled: boolean(row.enabled, '启用状态'),
+    parameterCount: count(row.parameterCount, '参数数量') ?? 0,
+    monitoringStatus: monitoringStatus(row.monitoringStatus),
+    configurationState: configurationState(row.configurationState),
+  };
+}
+
+function mapParameterSummary(value: unknown): SensorParameterSummary {
+  const row = record(value, '参数');
+  return {
+    parameterId: id(row.parameterId, '参数ID'),
+    parameterCode: str(row.parameterCode, '参数编码'),
+    name: str(row.name, '参数名称'),
+    dataType: str(row.dataType, '数据类型'),
+    unitCode: optional(row.unitCode, '单位'),
+    decimalPlaces: integer(row.decimalPlaces, '小数位'),
+    samplingIntervalSeconds: count(row.samplingIntervalSeconds, '采样周期'),
+    processId: row.processId == null ? null : id(row.processId, '工序ID'),
+    enabled: boolean(row.enabled, '启用状态'),
+    ruleVersionId: row.ruleVersionId == null ? null : id(row.ruleVersionId, '规则版本ID'),
+    ruleConfigured: boolean(row.ruleConfigured, '规则是否启用'),
+  };
+}
+
+export function mapSensorPage(value: unknown): PageResult<SensorSummary> {
+  const data = record(value, '测点分页');
+  if (!Array.isArray(data.items)) throw new ApiError('测点列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map(mapSensorSummary),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapSensorDetail(value: unknown): SensorDetail {
+  const row = record(value, '测点详情');
+  const base = mapSensorSummary(row);
+  if (!Array.isArray(row.parameters)) throw new ApiError('测点详情缺少parameters数组。', 'INVALID_RESPONSE');
+  return {
+    ...base,
+    purpose: optional(row.purpose, '用途'),
+    hasHistory: boolean(row.hasHistory, '是否已有历史'),
+    version: integer(row.version, '版本'),
+    parameters: row.parameters.map(mapParameterSummary),
+  };
+}
+
+export function mapParameterPage(value: unknown): PageResult<SensorParameterSummary> {
+  const data = record(value, '参数分页');
+  if (!Array.isArray(data.items)) throw new ApiError('参数列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map(mapParameterSummary),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapLatestReading(value: unknown): SensorLatestReading {
+  const row = record(value, '最新读数');
+  return {
+    parameterId: id(row.parameterId, '参数ID'),
+    sensorId: id(row.sensorId, '测点ID'),
+    sensorCode: str(row.sensorCode, '测点编码'),
+    parameterCode: str(row.parameterCode, '参数编码'),
+    value: optional(row.value, '读数'),
+    valueText: optional(row.valueText, '文本读数'),
+    unitCode: optional(row.unitCode, '单位'),
+    qualityStatus: optional(row.qualityStatus, '质量状态'),
+    limitStatus: optional(row.limitStatus, '限值状态'),
+    collectTime: optional(row.collectTime, '采集时间'),
+    refreshTime: optional(row.refreshTime, '刷新时间'),
+    monitoringStatus: monitoringStatus(row.monitoringStatus),
+    dataSource: optional(row.dataSource, '数据来源'),
+    missingFields: stringList(row.missingFields, '缺值字段'),
+  };
+}
+
+export function mapHistoryPage(value: unknown): PageResult<SensorHistoryRecord> {
+  const data = record(value, '历史读数分页');
+  if (!Array.isArray(data.items)) throw new ApiError('历史读数缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '历史读数');
+      return {
+        recordId: id(row.recordId, '记录ID'),
+        value: optional(row.value, '读数'),
+        valueText: optional(row.valueText, '文本读数'),
+        sourceUnit: optional(row.sourceUnit, '来源单位'),
+        qualityCode: optional(row.qualityCode, '质量码'),
+        collectTime: optional(row.collectTime, '采集时间'),
+        sourceSystem: str(row.sourceSystem, '来源系统'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
+export function mapRuleVersionPage(value: unknown): PageResult<SensorRuleVersion> {
+  const data = record(value, '规则版本分页');
+  if (!Array.isArray(data.items)) throw new ApiError('规则版本缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '规则版本');
+      const rule = record(row.rule, '规则快照');
+      return {
+        ruleVersionId: id(row.ruleVersionId, '规则版本ID'),
+        ruleVersion: integer(row.ruleVersion, '规则版本号'),
+        previousRuleVersionId: row.previousRuleVersionId == null ? null : id(row.previousRuleVersionId, '上一版ID'),
+        rule: {
+          normalLower: optional(rule.normalLower, '正常下限'),
+          normalUpper: optional(rule.normalUpper, '正常上限'),
+          alarmLower: optional(rule.alarmLower, '报警下限'),
+          alarmUpper: optional(rule.alarmUpper, '报警上限'),
+          unitCode: optional(rule.unitCode, '单位'),
+          triggerMode: optional(rule.triggerMode, '触发模式'),
+          durationSeconds: count(rule.durationSeconds, '持续秒数'),
+          enabled: boolean(rule.enabled, '规则启用'),
+        },
+        effectiveAt: optional(row.effectiveAt, '生效时间'),
+        reason: optional(row.reason, '修改原因'),
+        operatorName: str(row.operatorName, '经办人'),
+        affectedEventIds: stringList(row.affectedEventIds, '受影响事件'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+  };
+}
+
 export const api = {
   equipment: (query: EquipmentQuery = {}, signal?: AbortSignal) => requestApi(`/api/v1/equipment${queryString(query)}`, mapEquipmentPage, {signal}),
   equipmentDetail: (equipmentId: string, signal?: AbortSignal) => requestApi(`/api/v1/equipment/${encodeURIComponent(equipmentId)}`, mapEquipmentDetail, {signal}),
@@ -674,6 +903,50 @@ export const api = {
     return requestApi(`/api/v1/attachments/${encodeURIComponent(attachmentId)}/content`, mapAttachmentDetail,
       {method: 'PUT', body: form});
   },
+  /** S1-P01 测点分页；设备详情抽屉的"测点"页签按 equipmentId 过滤。 */
+  sensors: (query: SensorQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.equipmentId) params.set('equipmentId', query.equipmentId);
+    if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
+    if (query.enabled !== undefined) params.set('enabled', String(query.enabled));
+    if (query.monitoringStatus) params.set('monitoringStatus', query.monitoringStatus);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/sensors${text ? `?${text}` : ''}`, mapSensorPage, {signal});
+  },
+  /** S1-P02 测点详情，响应里带参数摘要，可直接渲染参数列表。 */
+  sensorDetail: (sensorId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}`, mapSensorDetail, {signal}),
+  /** S1-P06 参数定义分页；一测点可有多个参数。 */
+  sensorParameters: (sensorId: string, page = 1, pageSize = 50, signal?: AbortSignal) =>
+    requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}/parameters?page=${page}&pageSize=${pageSize}`,
+      mapParameterPage, {signal}),
+  /** S1-P03 新增测点；返回详情，首存版本 1、配置状态 PENDING。 */
+  createSensor: (values: SensorFormValues, meta: {requestId: string; operatorName: string}) =>
+    requestApi('/api/v1/sensors', mapSensorDetail, {method: 'POST', body: {...meta, ...values}}),
+  /** S1-P04 修改测点资料与启停用；有采集记录时服务端会拒绝改编码。 */
+  updateSensor: (sensorId: string, values: SensorFormValues,
+                 meta: {requestId: string; operatorName: string; expectedVersion: number; reason?: string | null}) =>
+    requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}`, mapSensorDetail,
+      {method: 'PUT', body: {...meta, ...values}}),
+  /** S1-P09 最新读数；没有采集记录时返回缺值状态，不是 404。 */
+  sensorLatest: (parameterId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/latest`, mapLatestReading, {signal}),
+  /** S1-P10 原始历史；区间上限由服务端把关，前端只负责给合理的默认值。 */
+  sensorHistory: (parameterId: string, query: SensorHistoryQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    params.set('from', query.from);
+    params.set('to', query.to);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    return requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/history?${params.toString()}`,
+      mapHistoryPage, {signal});
+  },
+  /** S1-P11 规则版本历史；旧版本不可覆盖，附各版接手时结束的事件。 */
+  sensorRuleVersions: (parameterId: string, page = 1, pageSize = 20, signal?: AbortSignal) =>
+    requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/rule-versions?page=${page}&pageSize=${pageSize}`,
+      mapRuleVersionPage, {signal}),
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),

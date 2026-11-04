@@ -4,6 +4,7 @@ import type { ChangeLogItem, EquipmentDetail, ReferenceData } from '../../lib/ap
 import { SupplierTab } from './SupplierTab';
 import { ContractTab } from './ContractTab';
 import { AttachmentTab } from './AttachmentTab';
+import { SensorsTab } from './SensorsTab';
 import './equipment.css';
 
 /** 与新增/编辑弹窗共用同一个记住的操作人，避免两处显示不一致。 */
@@ -194,7 +195,7 @@ export function EquipmentDetailDrawer({equipmentId, options, refreshToken, onClo
   const [detail, setDetail] = useState<EquipmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'profile' | 'suppliers' | 'contracts' | 'attachments' | 'changes'>('profile');
+  const [tab, setTab] = useState<'profile' | 'sensors' | 'suppliers' | 'contracts' | 'attachments' | 'changes'>('profile');
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
   const [requestId, setRequestId] = useState(newRequestId);
@@ -280,6 +281,7 @@ export function EquipmentDetailDrawer({equipmentId, options, refreshToken, onClo
         <button ref={closeRef} type="button" className="eq-drawer-close" onClick={onClose} aria-label="关闭详情">×</button>
         <div className="eq-tabs" role="tablist" aria-label="设备详情分栏">
           <button type="button" className="eq-tab" role="tab" aria-selected={tab === 'profile'} onClick={() => setTab('profile')}>档案信息</button>
+          <button type="button" className="eq-tab" role="tab" aria-selected={tab === 'sensors'} onClick={() => setTab('sensors')}>测点</button>
           <button type="button" className="eq-tab" role="tab" aria-selected={tab === 'suppliers'} onClick={() => setTab('suppliers')}>供应商</button>
           <button type="button" className="eq-tab" role="tab" aria-selected={tab === 'contracts'} onClick={() => setTab('contracts')}>维保合同</button>
           <button type="button" className="eq-tab" role="tab" aria-selected={tab === 'attachments'} onClick={() => setTab('attachments')}>附件</button>
@@ -292,13 +294,15 @@ export function EquipmentDetailDrawer({equipmentId, options, refreshToken, onClo
         {!loading && error && <div className="eq-alert is-error">{error}</div>}
         {!loading && !error && detail && (tab === 'profile'
           ? <ProfileTab detail={detail} options={options} />
-          : tab === 'suppliers'
-            ? <SupplierTab equipmentId={equipmentId} refreshToken={refreshToken} />
-            : tab === 'contracts'
-              ? <ContractTab equipmentId={equipmentId} refreshToken={refreshToken} />
-              : tab === 'attachments'
-                ? <AttachmentTab equipmentId={equipmentId} refreshToken={refreshToken} />
-                : <ChangesTab equipmentId={equipmentId} refreshToken={refreshToken} />)}
+          : tab === 'sensors'
+            ? <SensorsTab equipmentId={equipmentId} refreshToken={refreshToken} />
+            : tab === 'suppliers'
+              ? <SupplierTab equipmentId={equipmentId} refreshToken={refreshToken} />
+              : tab === 'contracts'
+                ? <ContractTab equipmentId={equipmentId} refreshToken={refreshToken} />
+                : tab === 'attachments'
+                  ? <AttachmentTab equipmentId={equipmentId} refreshToken={refreshToken} />
+                  : <ChangesTab equipmentId={equipmentId} refreshToken={refreshToken} />)}
       </div>
 
       {detail && <div className="eq-drawer-foot">

@@ -31,7 +31,7 @@ public class IdempotencyService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     static final String SELECT_SQL = """
-            SELECT payload_hash, response_data FROM p2_request_result WHERE request_id = ?
+            SELECT operation, payload_hash, response_data FROM p2_request_result WHERE request_id = ?
             """;
 
     static final String INSERT_SQL = """
@@ -64,7 +64,7 @@ public class IdempotencyService {
 
         Optional<StoredResult> existing = find(normalizedId);
         if (existing.isPresent()) {
-            return replay(existing.get(), hash, type);
+            return replay(existing.get(), operation, hash, type);
         }
         try {
             return transaction.execute(status -> {
@@ -80,12 +80,19 @@ public class IdempotencyService {
             if (stored.isEmpty()) {
                 throw conflict;
             }
-            return replay(stored.get(), hash, type);
+            return replay(stored.get(), operation, hash, type);
         }
     }
 
-    private <T> T replay(StoredResult stored, byte[] hash, Class<T> type) {
-        if (!Arrays.equals(stored.payloadHash(), hash)) {
+    /**
+     * 重放既有结果。
+     *
+     * <p>同时比对操作与内容：同一个 requestId 打到另一个目标（例如把更新 A 的请求编号
+     * 拿去更新 B）时，内容可能一字不差，但目标不同，直接回放会给出与目标无关的旧结果。
+     * 这种情况按幂等冲突处理，让调用方重新生成编号。</p>
+     */
+    private <T> T replay(StoredResult stored, String operation, byte[] hash, Class<T> type) {
+        if (!stored.operation().equals(operation) || !Arrays.equals(stored.payloadHash(), hash)) {
             throw BusinessException.idempotencyConflict();
         }
         if (stored.responseJson() == null) {
@@ -100,7 +107,8 @@ public class IdempotencyService {
 
     private Optional<StoredResult> find(String requestId) {
         List<StoredResult> rows = jdbc.query(SELECT_SQL,
-                (rs, row) -> new StoredResult(rs.getBytes("payload_hash"), rs.getString("response_data")),
+                (rs, row) -> new StoredResult(rs.getString("operation"),
+                        rs.getBytes("payload_hash"), rs.getString("response_data")),
                 requestId);
         return rows.stream().findFirst();
     }
@@ -132,5 +140,5 @@ public class IdempotencyService {
         }
     }
 
-    record StoredResult(byte[] payloadHash, String responseJson) {}
+    record StoredResult(String operation, byte[] payloadHash, String responseJson) {}
 }

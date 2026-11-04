@@ -43,6 +43,10 @@ spring:
 
 phase2:
   environment: ${APP_ENV:development}
+  monitoring:
+    # 最新值超过该分钟数未刷新即视为数据过期（STALE）。这是展示口径，不是设备状态：
+    # 过期只说明采集停了，不推断测点损坏或机械故障。
+    stale-after-minutes: ${MONITORING_STALE_AFTER_MINUTES:15}
   attachment:
     # 附件落盘的相对/绝对目录。生产部署时用环境变量指到独立数据盘。
     storage-root: ${ATTACHMENT_STORAGE_ROOT:./.local/attachments}
