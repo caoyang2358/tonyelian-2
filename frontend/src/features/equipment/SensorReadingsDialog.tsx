@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
 import type { PageResult, SensorHistoryRecord, SensorRuleVersion } from '../../lib/api';
+import { formatReadingValue } from '../../lib/reading';
 import './equipment.css';
 
 /**
@@ -33,8 +34,8 @@ function defaultRange(): {from: string; to: string} {
   return {from: toInputValue(new Date(now.getTime() - 24 * 3600 * 1000)), to: toInputValue(now)};
 }
 
-export function SensorReadingsDialog({parameterId, title, unitCode, onClose}: {
-  parameterId: string; title: string; unitCode: string | null; onClose: () => void;
+export function SensorReadingsDialog({parameterId, title, unitCode, decimalPlaces, onClose}: {
+  parameterId: string; title: string; unitCode: string | null; decimalPlaces: number; onClose: () => void;
 }) {
   const [mode, setMode] = useState<Mode>('history');
   const [range, setRange] = useState(defaultRange);
@@ -72,7 +73,7 @@ export function SensorReadingsDialog({parameterId, title, unitCode, onClose}: {
     <div className="eq-dialog-wrap" role="dialog" aria-modal="true" aria-label="参数读数与规则">
       <div className="eq-dialog-head">
         <h2>{title}</h2>
-        <p>只读视图：历史来自原始采集记录，规则来自不可覆盖的版本快照</p>
+        <p>只读视图：历史来自原始采集记录，按参数精度显示；规则来自不可覆盖的版本快照</p>
       </div>
 
       <div className="eq-dialog-body">
@@ -106,7 +107,9 @@ export function SensorReadingsDialog({parameterId, title, unitCode, onClose}: {
             {history.items.map(record => <li key={record.recordId} className="eq-sensor-record">
               <span className="eq-sensor-record-time">{formatTime(record.collectTime)}</span>
               <span className="eq-sensor-record-value">
-                {record.valueText && !record.value ? record.valueText : (record.value ?? '—')}
+                {record.valueText && !record.value
+                  ? record.valueText
+                  : (formatReadingValue(record.value, decimalPlaces) ?? '—')}
                 <small>{record.sourceUnit ?? unitCode ?? ''}</small>
               </span>
               <span className="eq-sensor-record-meta">

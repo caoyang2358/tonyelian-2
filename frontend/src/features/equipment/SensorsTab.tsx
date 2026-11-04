@@ -3,6 +3,7 @@ import { ApiError, api } from '../../lib/api';
 import type {
   SensorDetail, SensorLatestReading, SensorMonitoringStatus, SensorParameterEditable, SensorSummary,
 } from '../../lib/api';
+import { formatReadingValue } from '../../lib/reading';
 import { SensorReadingsDialog } from './SensorReadingsDialog';
 import { SensorFormDialog } from './SensorFormDialog';
 import { ParameterFormDialog } from './ParameterFormDialog';
@@ -52,14 +53,17 @@ function newRequestId(): string {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
-/** 读数的显示：数值按参数精度补齐小数位，文本型直接显示文本。 */
+/**
+ * 读数的显示：数值按参数精度补齐小数位，文本型直接显示文本。
+ *
+ * <p>精度统一由 {@link formatReadingValue} 处理，历史读数弹层用的是同一套规则，
+ * 否则同一个值在参数行和历史列表会出现两种写法。</p>
+ */
 function readingText(reading: SensorLatestReading | undefined, decimalPlaces: number): string {
   if (!reading) return '—';
   if (reading.valueText && !reading.value) return reading.valueText;
   if (!reading.value) return '待采集';
-  const numeric = Number(reading.value);
-  if (!Number.isFinite(numeric)) return reading.value;
-  return numeric.toFixed(Math.min(Math.max(decimalPlaces, 0), 6));
+  return formatReadingValue(reading.value, decimalPlaces) ?? reading.value;
 }
 
 export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; refreshToken: number}) {
@@ -72,7 +76,9 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [readings, setReadings] = useState<Record<string, SensorLatestReading>>({});
-  const [reading, setReading] = useState<{sensor: SensorSummary; parameterId: string; parameterName: string} | null>(null);
+  const [reading, setReading] = useState<
+    {sensor: SensorSummary; parameterId: string; parameterName: string; unitCode: string | null; decimalPlaces: number} | null
+  >(null);
   const [form, setForm] = useState<{sensor: SensorDetail | null} | null>(null);
   const [parameterForm, setParameterForm] = useState<
     {sensor: SensorDetail; parameter: SensorParameterEditable | null} | null>(null);
@@ -264,7 +270,11 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                           修改
                         </button>
                         <button type="button" className="eq-row-link"
-                                onClick={() => setReading({sensor, parameterId: parameter.parameterId, parameterName: `${parameter.parameterCode} ${parameter.name}`})}>
+                                onClick={() => setReading({
+                                  sensor, parameterId: parameter.parameterId,
+                                  parameterName: `${parameter.parameterCode} ${parameter.name}`,
+                                  unitCode: parameter.unitCode, decimalPlaces: parameter.decimalPlaces,
+                                })}>
                           历史 / 规则
                         </button>
                       </span>
@@ -288,7 +298,8 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
     {reading && <SensorReadingsDialog
       parameterId={reading.parameterId}
       title={`${reading.sensor.sensorCode} · ${reading.parameterName}`}
-      unitCode={detail?.parameters.find(item => item.parameterId === reading.parameterId)?.unitCode ?? null}
+      unitCode={reading.unitCode}
+      decimalPlaces={reading.decimalPlaces}
       onClose={() => setReading(null)} />}
 
     {form && <SensorFormDialog
