@@ -1,5 +1,6 @@
 package cn.copper.phase2.initialization;
 
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentQuery;
 import cn.copper.phase2.equipment.EquipmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +33,9 @@ class MySqlInitializationIT {
         assertEquals(12, overview.database().phase1TableCount());
         assertTrue(overview.database().phase2TableCount() >= 1);
         assertTrue(overview.counts().productionEquipment() > 0);
-        assertEquals(overview.counts().productionEquipment(), equipmentService.equipment().items().size());
+        assertEquals(overview.counts().productionEquipment(),
+                equipmentService.equipment(new EquipmentQuery(null, null, null, null, null, null, null))
+                        .items().size());
         mvc.perform(get("/api/v1/health/live")).andExpect(status().isOk());
         mvc.perform(get("/api/v1/health/ready")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.database.status").value("UP"));
