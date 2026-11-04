@@ -559,3 +559,250 @@
 .eq-dialog-foot .button,
 .eq-drawer-foot .button { margin-left: 0 }
 
+
+/* 供应商页签：标题与主操作同排，表格内操作按钮紧凑排列 */
+.eq-section-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.eq-section-bar .eq-section-title { margin: 0 }
+
+.eq-supplier-actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+/* 供应商列表：抽屉宽度只有 400 多像素，用 flex 卡片而不是表格，避免横向滚动 */
+.eq-supplier-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eq-supplier-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.eq-supplier-main { flex: 1; min-width: 0 }
+
+.eq-supplier-main strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #1c3a31;
+  word-break: break-word;
+}
+
+.eq-supplier-count {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-supplier-meta {
+  flex: none;
+  max-width: 34%;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #50634f;
+  word-break: break-word;
+}
+
+/* 附件页签：类别下拉与上传按钮同排；长文件名在窄抽屉里换行而不是撑破布局 */
+.eq-att-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.eq-att-kind {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  color: #1c3a31;
+}
+
+.eq-att-kind:focus-visible { outline: 2px solid #97c3b1; outline-offset: 2px }
+
+.eq-att-name { word-break: break-all }
+
+/* 查看/下载是链接，不能继承整行按钮的 100% 宽度与下划线 */
+.eq-supplier-actions a.eq-row-link {
+  width: auto;
+  text-decoration: none;
+  color: var(--brand, #26745b);
+}
+
+.eq-supplier-actions a.eq-row-link:hover { text-decoration: underline }
+
+/* 期限徽标：状态不只靠颜色区分，文字本身已说明"已超期 / 剩余 / 未填" */
+.eq-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #dfe8e0;
+  background: #eef3ee;
+  color: #3d5347;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.eq-badge.is-warn {
+  border-color: #f0dcbb;
+  background: #fdf3e0;
+  color: #8a5b12;
+}
+
+.eq-badge.is-danger {
+  border-color: #f0cfcc;
+  background: #fbeceb;
+  color: #9c3a34;
+}
+
+.eq-badge.is-muted {
+  border-color: #e3e3de;
+  background: #f4f4f2;
+  color: #6d6d66;
+}
+
+/* 列表页头部：次要操作（期限提醒）与主操作（新增）同排 */
+.eq-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+/* 期限提醒：跨设备总览，容器比设备详情抽屉宽一些 */
+.eq-dl-drawer { width: min(760px, 100vw) }
+
+.eq-dl-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.eq-dl-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-dl-filter select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line, #dfe6df);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  color: #1c3a31;
+}
+
+.eq-dl-total {
+  margin-left: auto;
+  padding-bottom: 7px;
+  font-size: 11.5px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-dl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eq-dl-item {
+  border: 1px solid var(--line, #e4eae4);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.eq-dl-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eq-dl-equip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eq-dl-equip strong {
+  font-size: 13px;
+  color: #1c3a31;
+  word-break: break-word;
+}
+
+.eq-dl-due {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.eq-dl-date {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  color: #1c3a31;
+}
+
+/* 期限类型用中性蓝，与状态徽标（绿/黄/红）区分开，避免两种语义混色 */
+.eq-badge.is-type {
+  border-color: #dce7ea;
+  background: #eef5f7;
+  color: #33556b;
+}
+
+.eq-dl-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-dl-missing {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #8a5b12;
+}
+
+.eq-dl-page {
+  font-size: 11.5px;
+  color: var(--muted, #7c8982);
+  padding: 0 8px;
+}

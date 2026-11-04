@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon';
 import type { IconName } from '../../components/Icon';
 import { api } from '../../lib/api';
 import type { Equipment, EquipmentDetail, EquipmentPageResult, EquipmentQuery, Overview, ReferenceData } from '../../lib/api';
+import { DeadlinePanel } from './DeadlinePanel';
 import { EquipmentDetailDrawer } from './EquipmentDetailDrawer';
 import { EquipmentFormDialog } from './EquipmentFormDialog';
 import './equipment.css';
@@ -43,6 +44,7 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [formTarget, setFormTarget] = useState<EquipmentDetail | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
 
   // 表单下拉选项只取一次；失败不阻塞列表，只让下拉退化。
   useEffect(() => {
@@ -118,9 +120,14 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
           <h2 id="equipment-list-title">生产设备档案<span className="panel-count">{result ? `${total} 台` : '等待读取'}</span></h2>
           <p>沿用一期设备编码与车间信息</p>
         </div>
-        <button type="button" className="eq-primary-button" onClick={openCreate}>
-          <span aria-hidden="true">＋</span> 新增设备
-        </button>
+        <div className="eq-head-actions">
+          <button type="button" className="button" onClick={() => setDeadlineOpen(true)}>
+            期限提醒
+          </button>
+          <button type="button" className="eq-primary-button" onClick={openCreate}>
+            <span aria-hidden="true">＋</span> 新增设备
+          </button>
+        </div>
       </div>
 
       {notice && <div className="eq-alert is-warn" role="status" style={{margin: '0 0 12px'}}>
@@ -235,6 +242,8 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
       onClose={() => setOpenId(null)}
       onEdit={openEdit}
       onDeleted={handleDeleted} />}
+
+    {deadlineOpen && <DeadlinePanel onClose={() => setDeadlineOpen(false)} />}
 
     {formOpen && <EquipmentFormDialog
       key={formTarget?.id ?? 'create'}
