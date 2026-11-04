@@ -525,6 +525,26 @@ export function mapDeadlinePage(value: unknown): PageResult<DeadlineItem> {
   };
 }
 
+/**
+ * 期限提醒设置（S1-T02 / T03）。
+ *
+ * <p>全系统共用一份：质保与维保各一个提前天数，改完同时影响期限面板与合同页签的
+ * 「即将到期」判定，所以它不是某台设备、某份合同的属性，页面上要写明影响范围。</p>
+ */
+export interface ReminderSetting {
+  warrantyLeadDays: number; maintenanceLeadDays: number; version: number; updatedAt: string | null;
+}
+
+export function mapReminderSetting(value: unknown): ReminderSetting {
+  const row = record(value, '提醒设置');
+  return {
+    warrantyLeadDays: integer(row.warrantyLeadDays, '质保提前天数'),
+    maintenanceLeadDays: integer(row.maintenanceLeadDays, '维保提前天数'),
+    version: integer(row.version, '设置版本'),
+    updatedAt: optional(row.updatedAt, '更新时间'),
+  };
+}
+
 /** 附件归属对象（S1-F01—F05）：一套接口服务设备、合同、知识条目与维修单。 */
 export type AttachmentOwnerType = 'EQUIPMENT' | 'MAINTENANCE_CONTRACT' | 'KNOWLEDGE_ARTICLE' | 'REPAIR_ORDER';
 /** 附件类别。IMAGE 用于档案配图，MANUAL 用于设备手册，DOCUMENT 用于合同正文，PHOTO 用于报修照片。 */
@@ -1009,6 +1029,14 @@ export const api = {
     const text = params.toString();
     return requestApi(`/api/v1/equipment-deadlines${text ? `?${text}` : ''}`, mapDeadlinePage, {signal});
   },
+  /** S1-T02 提醒设置：全系统共用的一份，期限面板与合同页签都按它判定 DUE_SOON。 */
+  reminderSetting: (signal?: AbortSignal) =>
+    requestApi('/api/v1/reminder-settings', mapReminderSetting, {signal}),
+  /** S1-T03 保存提醒设置；必须带当前版本号，被他人先改过时后端返回 409。 */
+  updateReminderSetting: (values: {warrantyLeadDays: number; maintenanceLeadDays: number},
+                          meta: {requestId: string; operatorName: string; expectedVersion: number}) =>
+    requestApi('/api/v1/reminder-settings', mapReminderSetting,
+      {method: 'PUT', body: {...meta, ...values}}),
   /** S1-F01 附件分页；同一台设备可能同时有配图、手册和合同附件，fileKind 用于分栏。 */
   attachments: (query: AttachmentQuery, signal?: AbortSignal) => {
     const params = new URLSearchParams();
