@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -54,13 +55,14 @@ class SensorParameterWriteServiceTest {
 
     private final SensorRepository repository = mock(SensorRepository.class);
     private final ChangeLogRepository changeLog = mock(ChangeLogRepository.class);
+    private final AlertEventTerminator alertEvents = mock(AlertEventTerminator.class);
 
     @SuppressWarnings("unchecked")
     private SensorParameterWriteService service() {
         IdempotencyService idempotency = mock(IdempotencyService.class);
         when(idempotency.execute(anyString(), anyString(), any(), any(), any()))
                 .thenAnswer(invocation -> ((Supplier<Object>) invocation.getArgument(4)).get());
-        return new SensorParameterWriteService(repository, changeLog, idempotency);
+        return new SensorParameterWriteService(repository, changeLog, idempotency, alertEvents);
     }
 
     private void givenSensor() {
@@ -292,8 +294,8 @@ class SensorParameterWriteServiceTest {
                 : Optional.of(new CurrentRule(RULE_VERSION_ID, 1L, rule)));
         when(repository.unitExists(anyString())).thenReturn(true);
         when(repository.updateParameterVersion(eq(PARAMETER_ID), anyLong())).thenReturn(1);
-        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(), anyString()))
-                .thenReturn(RULE_VERSION_ID + 1);
+        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(),
+                anyString(), any())).thenReturn(RULE_VERSION_ID + 1);
     }
 
     private static JsonNode configBody(long expectedVersion, String name, String unitCode,
@@ -344,27 +346,76 @@ class SensorParameterWriteServiceTest {
 
         ArgumentCaptor<RuleSnapshot> rule = ArgumentCaptor.forClass(RuleSnapshot.class);
         verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(2L), eq(RULE_VERSION_ID),
-                rule.capture(), eq("调整阈值"), eq("设备管理员"));
+                rule.capture(), eq("调整阈值"), eq("设备管理员"), any());
         assertEquals("120", rule.getValue().normalUpper());
         assertEquals(4, result.version());
         assertEquals(String.valueOf(RULE_VERSION_ID), result.previousRuleVersionId());
         assertEquals(String.valueOf(RULE_VERSION_ID + 1), result.ruleVersionId());
         assertEquals(List.of(), result.affectedEventIds());
-        // 事件服务未接入这件事必须写在响应里，不能让人以为事件已经被结束。
-        assertTrue(result.effectNote().contains("尚未接入"), result.effectNote());
+        // 规则变了但没有活动事件：说明里要写"没有需要结束的事件"，
+        // 不能让人以为事件那段漏做了（和"判断依据没变所以没碰事件"是两件事）。
+        assertTrue(result.effectNote().contains("没有需要结束的活动事件"), result.effectNote());
+    }
+
+    @Test
+    void changedRuleEndsActiveEventAndReportsTheEventId() throws Exception {
+        givenParameter(3, CURRENT_RULE);
+        when(alertEvents.terminateOnRuleChange(eq(PARAMETER_ID), eq(RULE_VERSION_ID + 1), any()))
+                .thenReturn(List.of("7"));
+        String changed = """
+                {"normalLower":"0","normalUpper":"120","alarmLower":"-10","alarmUpper":"150",
+                 "triggerMode":"SUSTAINED","durationSeconds":30,"enabled":true}
+                """;
+
+        var result = service().updateConfiguration("501", configBody(3, "压力", "kPa", changed));
+
+        assertEquals(List.of("7"), result.affectedEventIds());
+        assertTrue(result.effectNote().contains("RULE_CHANGED"), result.effectNote());
+        assertTrue(result.effectNote().contains("#7"), result.effectNote());
+        // "不算恢复"这句要留在响应里：现场看到事件结束、recovered_at 却是空，得有个说法。
+        assertTrue(result.effectNote().contains("不算恢复"), result.effectNote());
+    }
+
+    @Test
+    void ruleSnapshotIsWrittenBeforeEventsAreEnded() throws Exception {
+        givenParameter(3, CURRENT_RULE);
+        String changed = """
+                {"normalLower":"0","normalUpper":"120","alarmLower":"-10","alarmUpper":"150",
+                 "triggerMode":"SUSTAINED","durationSeconds":30,"enabled":true}
+                """;
+
+        service().updateConfiguration("501", configBody(3, "压力", "kPa", changed));
+
+        // 事件结束要指向新版本；先结束再插规则版本，就会出现"事件挂在一版还不存在的规则上"。
+        var order = inOrder(repository, alertEvents);
+        order.verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(2L), eq(RULE_VERSION_ID),
+                any(), anyString(), anyString(), any());
+        order.verify(alertEvents).terminateOnRuleChange(eq(PARAMETER_ID), eq(RULE_VERSION_ID + 1), any());
+    }
+
+    @Test
+    void unchangedRuleNeverTouchesEvents() throws Exception {
+        givenParameter(1, CURRENT_RULE);
+
+        var result = service().updateConfiguration("501",
+                configBody(1, "压力（更正名称）", "kPa", VALID_RULE));
+
+        // 只改名称不该结束任何事件：判断依据没变，活动事件还得继续按原规则挂着。
+        verify(alertEvents, never()).terminateOnRuleChange(anyLong(), anyLong(), any());
+        assertEquals(List.of(), result.affectedEventIds());
     }
 
     @Test
     void firstRuleOnASeedParameterStartsTheVersionChain() throws Exception {
         givenParameter(0, null);
-        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(), anyString()))
-                .thenReturn(77L);
+        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(),
+                anyString(), any())).thenReturn(77L);
 
         var result = service().updateConfiguration("501", configBody(0, "压力", "kPa", VALID_RULE));
 
         verify(repository).insertParameterProfile(PARAMETER_ID, 1L);
         verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(1L), eq(null),
-                any(), eq("调整阈值"), eq("设备管理员"));
+                any(), eq("调整阈值"), eq("设备管理员"), any());
         assertNull(result.previousRuleVersionId());
         assertEquals("77", result.ruleVersionId());
     }
@@ -403,7 +454,7 @@ class SensorParameterWriteServiceTest {
 
         ArgumentCaptor<RuleSnapshot> rule = ArgumentCaptor.forClass(RuleSnapshot.class);
         verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(2L), eq(RULE_VERSION_ID),
-                rule.capture(), any(), anyString());
+                rule.capture(), any(), anyString(), any());
         assertEquals("Pa", rule.getValue().unitCode());
     }
 

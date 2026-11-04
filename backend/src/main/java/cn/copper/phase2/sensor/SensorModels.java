@@ -227,10 +227,10 @@ public final class SensorModels {
      *       而不是误以为规则丢了。</li>
      * </ul>
      *
-     * <p>{@code affectedEventIds} 恒为空数组：按契约只有"判断依据变化"才需要结束该参数的
-     * 活动事件（{@code RULE_CHANGED}），而结束事件属于异常服务（S1-3）的事务边界。
-     * 事件服务未接入前不伪造事件号，也不改一期 {@code limit_status} 冒充事件；
-     * {@code effectNote} 会把这层未完成能力直接写进响应。</p>
+     * <p>{@code affectedEventIds} 是这次保存顺手结束掉的活动事件（结束原因 {@code RULE_CHANGED}）。
+     * 按契约只有"判断依据变化"才结束事件，所以判断依据没变时它一定是空数组；变了也可能是空——
+     * 该参数当前没有活动事件时，本来就没有东西需要结束。这两种"空"含义不同，看
+     * {@code effectNote} 能区分开。</p>
      */
     public record ParameterConfigResult(
             String parameterId, String sensorId, String parameterCode,

@@ -8,7 +8,8 @@
   4. 规则版本历史（P11）：新旧快照都可查，最新一版在首位
   5. 幂等：同 requestId 同内容重放不重复推进版本；同 requestId 改内容返回 409
   6. 冲突与校验：版本号过期 409、参数不存在 404、非法 ID 400、缺字段/非法单位/上下界颠倒 400
-  7. 事件侧现状：affectedEventIds 恒为空数组，effectNote 说明事件结束未接入
+  7. 事件结束：判断依据变化时，该参数的活动事件按 RULE_CHANGED 结束并回填事件号；
+     只改展示字段时事件继续挂着
   8. 清理：删除验收测点，删除后配置更新返回 404
 
     python scripts/verify_sensor_config.py
@@ -160,15 +161,37 @@ def config_body(request_id, expected_version, name="配置验收参数", unit="P
     }
 
 
-def parameter_version(sensor_id, parameter_id):
-    """从测点详情里读参数的配置版本。"""
+def parameter_state(sensor_id, parameter_id):
+    """参数在测点详情里的当前快照（配置版本、当前规则版本都在里面）。"""
     status, payload = call("GET", "/sensors/%s" % sensor_id)
     if status != 200:
-        return None
+        return {}
     for item in data_of(payload).get("parameters") or []:
         if str(item.get("parameterId")) == str(parameter_id):
-            return item.get("version")
-    return None
+            return item
+    return {}
+
+
+def parameter_version(sensor_id, parameter_id):
+    """从测点详情里读参数的配置版本。"""
+    return parameter_state(sensor_id, parameter_id).get("version")
+
+
+def seed_event(parameter_id, sensor_id, equipment_id, rule_version_id, tag):
+    """直接落一条活动事件。
+
+    事件的生成属于 S1-3 异常事件服务，本期没有接口可以造；这里写表只为验证 P08 的结束逻辑，
+    行上留 source_reference 标记，随验收数据一起删干净。"""
+    sql("INSERT INTO p2_alert_event "
+        "(equipment_id, sensor_id, parameter_id, rule_version_id, started_at, triggered_at, "
+        " trigger_value, unit_code, source_reference, updated_at) VALUES "
+        "(%s, %s, %s, %s, NOW(3) - INTERVAL 5 MINUTE, NOW(3), 130.000000, 'Pa', "
+        " JSON_OBJECT('seededBy', 'VERIFY-CFG', 'tag', '%s'), NOW(3));"
+        % (equipment_id, sensor_id, parameter_id, rule_version_id, tag))
+    created = sql("SELECT event_id FROM p2_alert_event "
+                  " WHERE parameter_id = %s AND ended_at IS NULL ORDER BY event_id DESC LIMIT 1;"
+                  % parameter_id)
+    return int(created) if created and created.isdigit() else None
 
 
 def main():
@@ -204,10 +227,10 @@ def main():
           and data.get("ruleVersionId"), data.get("ruleVersionId"))
     check("响应带回完整规则", (data.get("rule") or {}).get("normalUpper") == "120",
           data.get("rule"))
-    check("受影响事件为空数组（事件服务未接入）",
+    check("首次配置没有活动事件需要结束",
           data.get("affectedEventIds") == [], data.get("affectedEventIds"))
-    check("生效说明写明事件结束未接入",
-          "尚未接入" in (data.get("effectNote") or ""), data.get("effectNote"))
+    check("生效说明写明本次没有结束任何事件",
+          "没有需要结束的活动事件" in (data.get("effectNote") or ""), data.get("effectNote"))
     first_rule_id = data.get("ruleVersionId")
 
     # ------------------------------------------------------------ 2. 判断依据未变
@@ -354,8 +377,55 @@ def main():
           and data_of(payload).get("parameterCode") == "PRESSURE",
           data_of(payload).get("parameterCode"))
 
-    # ------------------------------------------------------------ 7. 与删除接口的一致性
-    print("== 7. 改过规则的参数会阻止测点删除（与 P05 的约定一致） ==")
+    # ------------------------------------------------------------ 7. 事件结束
+    print("== 7. 判断依据变化时结束活动事件（RULE_CHANGED） ==")
+    before = parameter_state(sensor["sensorId"], parameter_id)
+    old_rule_id = before.get("ruleVersionId")
+    if not sql_available():
+        print("  (找不到 MySQL 客户端，跳过事件造数与库内断言)")
+    else:
+        # 事件生成属于 S1-3，这里直接落一条活动事件，只为了验 P08 的结束逻辑。
+        first_event = seed_event(parameter_id, sensor["sensorId"], equipment, old_rule_id, "FIRST")
+        check("造出一条挂在旧规则上的活动事件", first_event is not None, first_event)
+
+        status, payload = call("PUT", "/sensor-parameters/%s/configuration" % parameter_id,
+                               config_body(str(uuid.uuid4()), before.get("version"),
+                                           rule_value=rule(normal_upper="141")))
+        data = data_of(payload)
+        new_rule_id = data.get("ruleVersionId")
+        check("响应回填被结束的事件号",
+              data.get("affectedEventIds") == [str(first_event)], data.get("affectedEventIds"))
+        check("生效说明写明按 RULE_CHANGED 结束且不算恢复",
+              "RULE_CHANGED" in (data.get("effectNote") or "")
+              and "不算恢复" in (data.get("effectNote") or ""), data.get("effectNote"))
+        # 期望值 1/1/1/2：已结束、原因 RULE_CHANGED、recovered_at 为空、版本从 1 推到 2。
+        row = sql("SELECT ended_at IS NOT NULL, end_reason, recovered_at IS NULL, version "
+                  "FROM p2_alert_event WHERE event_id = %s;" % first_event)
+        check("库里事件已结束、原因为 RULE_CHANGED、未记为恢复、版本已推进",
+              row == "1\tRULE_CHANGED\t1\t2", row)
+
+        status, payload = call("GET", "/sensor-parameters/%s/rule-versions?page=1&pageSize=20"
+                               % parameter_id)
+        items = data_of(payload).get("items") or []
+        check("规则版本历史里看得到这一版结束过的事件",
+              bool(items) and str(first_event) in (items[0].get("affectedEventIds") or []),
+              (items[0] or {}).get("affectedEventIds"))
+
+        # 只改展示字段：活动事件必须继续挂着，不能被顺手结束。
+        second_event = seed_event(parameter_id, sensor["sensorId"], equipment, new_rule_id, "SECOND")
+        status, payload = call("PUT", "/sensor-parameters/%s/configuration" % parameter_id,
+                               config_body(str(uuid.uuid4()), data.get("version"),
+                                           name="配置验收参数（再改名）",
+                                           rule_value=rule(normal_upper="141")))
+        unchanged = data_of(payload)
+        check("只改名称时不结束活动事件",
+              unchanged.get("affectedEventIds") == [], unchanged.get("affectedEventIds"))
+        check("活动事件仍然挂着",
+              sql("SELECT COUNT(*) FROM p2_alert_event WHERE event_id = %s AND ended_at IS NULL;"
+                  % second_event) == "1", second_event)
+
+    # ------------------------------------------------------------ 8. 与删除接口的一致性
+    print("== 8. 改过规则的参数会阻止测点删除（与 P05 的约定一致） ==")
     status, payload = call("GET", "/sensors/%s" % sensor["sensorId"])
     version = data_of(payload).get("version")
     status, payload = call("DELETE", "/sensors/%s" % sensor["sensorId"], {
@@ -369,11 +439,13 @@ def main():
     check("阻塞项说明为什么不能删",
           bool((blockers[0] or {}).get("message")) if blockers else False, blockers)
 
-    # ------------------------------------------------------------ 8. 清理
-    print("== 8. 清理 ==")
+    # ------------------------------------------------------------ 9. 清理
+    print("== 9. 清理 ==")
     if not sql_available():
         print("  (找不到 MySQL 客户端，跳过清理；请手工删除 AUTOTEST-CFG-%d)" % stamp)
     else:
+        # 事件有 (parameter_id, rule_version_id) 外键指向规则版本，必须先删事件再删版本。
+        sql("DELETE FROM p2_alert_event WHERE parameter_id = %s;" % parameter_id)
         # 规则版本有自引用外键 (parameter_id, previous_rule_version_id)，必须先解开再删。
         sql("UPDATE p2_alert_rule_version SET previous_rule_version_id = NULL "
             " WHERE parameter_id = %s;" % parameter_id)

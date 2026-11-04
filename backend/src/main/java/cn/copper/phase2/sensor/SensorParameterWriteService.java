@@ -18,6 +18,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,12 +94,14 @@ public class SensorParameterWriteService {
     private final SensorRepository repository;
     private final ChangeLogRepository changeLog;
     private final IdempotencyService idempotency;
+    private final AlertEventTerminator alertEvents;
 
     public SensorParameterWriteService(SensorRepository repository, ChangeLogRepository changeLog,
-                                       IdempotencyService idempotency) {
+                                       IdempotencyService idempotency, AlertEventTerminator alertEvents) {
         this.repository = repository;
         this.changeLog = changeLog;
         this.idempotency = idempotency;
+        this.alertEvents = alertEvents;
     }
 
     /** 新增参数；同一 requestId 重试只产生一条参数与一版规则。 */
@@ -181,11 +184,10 @@ public class SensorParameterWriteService {
      * <p>一次保存做四件事，全部在同一事务里：改参数的可维护字段、推进配置版本、
      * 判断"有效判断依据"是否变化、变化则追加一版不可覆盖的规则快照。</p>
      *
-     * <p>事件侧明确未完成：契约要求判断依据变化时把该参数受影响的活动事件以
-     * {@code RULE_CHANGED} 结束，但结束事件属于异常服务（S1-3）的事务边界。
-     * 这里既不去 {@code p2_alert_event} 上直接改状态（会绕过事件服务的状态机），
-     * 也不用一期 {@code limit_status} 冒充事件。响应里 {@code affectedEventIds} 恒为空，
-     * {@code effectNote} 如实说明这层能力未接入。</p>
+     * <p>事件侧：判断依据变化时，该参数受影响的活动事件由 {@link AlertEventTerminator}
+     * 在同一事务里以 {@code RULE_CHANGED} 结束，事件号回填到 {@code affectedEventIds}。
+     * 结束动作走接口而不是直接写 SQL，因为事件真正归 S1-3 异常事件服务；等它提供接口后
+     * 只换实现，这里的主流程不动。</p>
      */
     public ParameterConfigResult updateConfiguration(String parameterId, JsonNode body) {
         long id = SensorService.requiredId(parameterId, "parameterId", "参数");
@@ -219,11 +221,17 @@ public class SensorParameterWriteService {
         String previousRuleVersionId = previous.map(entry -> String.valueOf(entry.ruleVersionId()))
                 .orElse(null);
         String ruleVersionId = previousRuleVersionId;
+        List<String> affectedEventIds = List.of();
         if (ruleChanged) {
             long nextRuleVersion = previous.map(entry -> entry.ruleVersion() + 1).orElse(1L);
-            ruleVersionId = String.valueOf(repository.insertRuleVersion(parameterId, nextRuleVersion,
+            // 两者共用同一个时刻：P11 的版本历史按 effective_at 回连"这一版生效时结束了哪些事件"。
+            LocalDateTime effectiveAt = LocalDateTime.now(SensorRepository.ZONE);
+            long newRuleVersionId = repository.insertRuleVersion(parameterId, nextRuleVersion,
                     previous.map(CurrentRule::ruleVersionId).orElse(null), rule,
-                    request.reason(), request.operatorName()));
+                    request.reason(), request.operatorName(), effectiveAt);
+            ruleVersionId = String.valueOf(newRuleVersionId);
+            // 快照落库之后再结束事件：事件结束要指向新版本，顺序反了就会出现"事件挂在一版还不存在的规则上"。
+            affectedEventIds = alertEvents.terminateOnRuleChange(parameterId, newRuleVersionId, effectiveAt);
         }
 
         changeLog.insert(new ChangeLogWrite(OBJECT_TYPE, String.valueOf(parameterId), "UPDATE",
@@ -239,8 +247,8 @@ public class SensorParameterWriteService {
                 request.samplingIntervalSeconds(),
                 request.processId() == null ? null : String.valueOf(request.processId()),
                 request.enabled(), rule, current.version() + 1,
-                previousRuleVersionId, ruleVersionId, List.of(),
-                effectNote(ruleChanged, ruleVersionId, rule.enabled(), request.enabled()));
+                previousRuleVersionId, ruleVersionId, affectedEventIds,
+                effectNote(ruleChanged, ruleVersionId, affectedEventIds, rule.enabled(), request.enabled()));
     }
 
     /**
@@ -273,12 +281,20 @@ public class SensorParameterWriteService {
 
     /** 生效说明：把本次到底动了什么写清楚，避免调用方从三个版本号里猜。 */
     private static String effectNote(boolean ruleChanged, String ruleVersionId,
+                                     List<String> affectedEventIds,
                                      boolean ruleEnabled, boolean parameterEnabled) {
         StringBuilder note = new StringBuilder();
         if (ruleChanged) {
             note.append("判断依据已变化，已生成新的规则版本 ").append(ruleVersionId)
-                    .append("，旧版本保留可查；")
-                    .append("受影响活动事件按 RULE_CHANGED 结束的能力尚未接入事件服务，本次未结束任何事件。");
+                    .append("，旧版本保留可查；");
+            if (affectedEventIds.isEmpty()) {
+                note.append("本次没有需要结束的活动事件。");
+            } else {
+                note.append("该参数 ").append(affectedEventIds.size())
+                        .append(" 条活动事件已按 RULE_CHANGED 结束（事件 #")
+                        .append(String.join("、#", affectedEventIds))
+                        .append("），不算恢复；下一条有效数据按新规则判断。");
+            }
         } else {
             note.append("判断依据未变化，未生成新规则版本，仅推进参数配置版本。");
         }

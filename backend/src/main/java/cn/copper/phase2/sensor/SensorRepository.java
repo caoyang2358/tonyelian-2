@@ -41,7 +41,7 @@ import java.util.Optional;
  */
 @Repository
 public class SensorRepository {
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     /** 列表与详情共用同一份取数口径，避免两个接口对同一测点给出不同状态。 */
     static final String BASE_SQL = """
@@ -372,8 +372,9 @@ public class SensorRepository {
                        rv.effective_at, rv.reason, rv.operator_name,
                        (SELECT GROUP_CONCAT(e.event_id ORDER BY e.event_id)
                           FROM p2_alert_event e
-                         WHERE e.rule_version_id = rv.rule_version_id
-                           AND e.end_reason = 'RULE_CHANGED') AS affected_event_ids
+                         WHERE e.parameter_id = rv.parameter_id
+                           AND e.end_reason = 'RULE_CHANGED'
+                           AND e.ended_at = rv.effective_at) AS affected_event_ids
                   FROM p2_alert_rule_version rv
                  WHERE rv.parameter_id = ?
                  ORDER BY rv.rule_version DESC
@@ -672,8 +673,22 @@ public class SensorRepository {
      */
     public long insertRuleVersion(long parameterId, long ruleVersion, Long previousRuleVersionId,
                                   RuleSnapshot rule, String reason, String operatorName) {
+        return insertRuleVersion(parameterId, ruleVersion, previousRuleVersionId, rule, reason,
+                operatorName, LocalDateTime.now(ZONE));
+    }
+
+    /**
+     * 同上，但生效时间由调用方给定。
+     *
+     * <p>配置更新要在同一事务里结束受影响的活动事件，{@code p2_alert_event.ended_at} 与
+     * 这里的 {@code effective_at} 必须是同一个时刻，历史版本才答得出"这一版生效时结束了哪些事件"。
+     * 两个 {@code now()} 差几毫秒，按时间回连就对不上了。</p>
+     */
+    public long insertRuleVersion(long parameterId, long ruleVersion, Long previousRuleVersionId,
+                                  RuleSnapshot rule, String reason, String operatorName,
+                                  LocalDateTime effectiveAt) {
         KeyHolder keys = new GeneratedKeyHolder();
-        LocalDateTime now = LocalDateTime.now(ZONE);
+        LocalDateTime now = effectiveAt;
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO p2_alert_rule_version
