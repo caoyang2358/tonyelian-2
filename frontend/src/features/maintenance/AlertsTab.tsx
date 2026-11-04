@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, maintenanceApi, newRequestId } from '../../lib/maintenanceApi';
-import type { AlertEventDetail, AlertEventItem, HandlingRecordItem } from '../../lib/maintenanceApi';
+import type { AlertEventDetail, AlertEventItem, HandlingRecordItem, RuleSnapshot } from '../../lib/maintenanceApi';
 import { endReasonLabels, eventStateLabels, formatTime, handlingStateLabels, label, orderStatusLabels, triggerModeLabels } from './labels';
+import { EquipmentSelect, Pager, useOperatorName } from './shared';
+import type { RepairHandoff } from './shared';
 
 type Feedback = {kind: 'ok' | 'error'; text: string} | null;
 
@@ -17,10 +19,27 @@ function Tag({value, map}: {value: string; map: Record<string, string>}) {
   return <span className={`ops-tag ${stateTagClass(value)}`}>{label(map, value)}</span>;
 }
 
-export function AlertsTab() {
+/** 把结构化规则快照翻成业务能读的句子，避免直接抛 [0, 80] 这种数学区间。 */
+function ruleText(snapshot: RuleSnapshot): string {
+  const unit = snapshot.unitCode ?? '';
+  const parts: string[] = [];
+  const {normalLower, normalUpper, alarmLower, alarmUpper} = snapshot;
+  if (normalLower !== null && normalUpper !== null) parts.push(`正常范围 ${normalLower}~${normalUpper}${unit}`);
+  else if (normalUpper !== null) parts.push(`上限 ${normalUpper}${unit} 内属正常`);
+  else if (normalLower !== null) parts.push(`下限 ${normalLower}${unit} 以上属正常`);
+  if (alarmUpper !== null) parts.push(`超过 ${alarmUpper}${unit} 报警`);
+  if (alarmLower !== null) parts.push(`低于 ${alarmLower}${unit} 报警`);
+  if (snapshot.triggerMode) parts.push(`${label(triggerModeLabels, snapshot.triggerMode)}生效`);
+  if (snapshot.durationSeconds) parts.push(`需持续 ${snapshot.durationSeconds} 秒`);
+  return parts.length ? `${parts.join('，')}。` : '规则快照无阈值字段。';
+}
+
+export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: RepairHandoff) => void}) {
   const [eventState, setEventState] = useState('');
   const [handlingState, setHandlingState] = useState('');
   const [equipmentId, setEquipmentId] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [items, setItems] = useState<AlertEventItem[] | null>(null);
   const [total, setTotal] = useState(0);
   const [listError, setListError] = useState<string | null>(null);
@@ -30,23 +49,29 @@ export function AlertsTab() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [operator, setOperator] = useState('张三');
+  const [operator, setOperator] = useOperatorName();
   const [action, setAction] = useState('ACKNOWLEDGED');
   const [reason, setReason] = useState('');
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [history, setHistory] = useState<HandlingRecordItem[] | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
 
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(async (targetPage = page, targetSize = pageSize) => {
     setListLoading(true);
     try {
       const data = await maintenanceApi.alertEvents({
         eventState: eventState || undefined,
         handlingState: handlingState || undefined,
-        equipmentId: equipmentId.trim() || undefined,
-      });
+        equipmentId: equipmentId || undefined,
+      }, targetPage, targetSize);
+      // 页码越界（例如筛掉后当前页空了）时回到最后一页，避免空白列表
+      if (data.items.length === 0 && targetPage > 1 && data.total > 0) {
+        const lastPage = Math.max(1, Math.ceil(data.total / targetSize));
+        if (lastPage !== targetPage) { setPage(lastPage); return; }
+      }
       setItems(data.items);
       setTotal(data.total);
       setListError(null);
@@ -55,7 +80,7 @@ export function AlertsTab() {
     } finally {
       setListLoading(false);
     }
-  }, [eventState, handlingState, equipmentId]);
+  }, [eventState, handlingState, equipmentId, page, pageSize]);
 
   useEffect(() => { void loadList(); }, [loadList]);
 
@@ -76,8 +101,9 @@ export function AlertsTab() {
 
   const loadHistory = useCallback(async (eventId: string) => {
     try {
-      const data = await maintenanceApi.handlingRecords(eventId);
+      const data = await maintenanceApi.handlingRecords(eventId, 1, 50);
       setHistory(data.items);
+      setHistoryTotal(data.total);
       setHistoryFor(eventId);
     } catch (error) {
       setFeedback({kind: 'error', text: error instanceof MaintenanceApiError ? error.message : '读取失败，请重试。'});
@@ -86,12 +112,13 @@ export function AlertsTab() {
 
   const submitHandling = useCallback(async () => {
     if (!detail) return;
+    if (!operator.trim()) { setFeedback({kind: 'error', text: '请填写经办人（项目暂无登录用户，需手工署名）。'}); return; }
     if (!reason.trim()) { setFeedback({kind: 'error', text: '请填写处理原因（接口要求必填）。'}); return; }
     setSubmitting(true);
     try {
       const result = await maintenanceApi.addHandlingRecord(detail.eventId, {
         requestId: newRequestId(),
-        operatorName: operator.trim() || '未署名',
+        operatorName: operator.trim(),
         expectedVersion: detail.version,
         action,
         reason: reason.trim(),
@@ -112,23 +139,25 @@ export function AlertsTab() {
     }
   }, [detail, reason, operator, action, loadList, openDetail, loadHistory]);
 
+  const resetFilters = () => { setEventState(''); setHandlingState(''); setEquipmentId(''); setPage(1); };
+
   return <>
     <section className="panel" aria-label="异常事件列表">
       <div className="panel-heading"><div><h2>异常事件提醒<span className="panel-count">{items ? `${total} 条` : '等待读取'}</span></h2><p>持续异常过程只产生一条事件；状态由恢复与结束事实推导</p></div><span className="read-only-label"><Icon name="check" size={14} />S1-A01</span></div>
       <div className="filters">
         <label className="select-field"><span>事件状态</span>
-          <select value={eventState} onChange={event => setEventState(event.target.value)}>
+          <select value={eventState} onChange={event => {setEventState(event.target.value); setPage(1);}}>
             <option value="">全部状态</option>
             {Object.entries(eventStateLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
           </select></label>
         <label className="select-field"><span>处理状态</span>
-          <select value={handlingState} onChange={event => setHandlingState(event.target.value)}>
+          <select value={handlingState} onChange={event => {setHandlingState(event.target.value); setPage(1);}}>
             <option value="">全部状态</option>
             {Object.entries(handlingStateLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
           </select></label>
-        <label className="search-field"><span className="visually-hidden">按设备编号筛选</span><Icon name="search" size={18} />
-          <input type="search" placeholder="按设备编号筛选，如 1" value={equipmentId} onChange={event => setEquipmentId(event.target.value)} /></label>
-        <button className="reset-filter" type="button" onClick={() => {setEventState(''); setHandlingState(''); setEquipmentId('');}}>清除筛选</button>
+        <EquipmentSelect label="设备" value={equipmentId} onChange={next => {setEquipmentId(next); setPage(1);}} allowEmpty emptyLabel="全部设备" />
+        <button className="reset-filter" type="button" onClick={resetFilters}>清除筛选</button>
+        <button className="button" type="button" onClick={() => void loadList(page, pageSize)} disabled={listLoading}>{listLoading ? '刷新中…' : '刷新'}</button>
       </div>
       {listError ? <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>暂时无法读取异常事件</h3><p>{listError}</p></div><button className="button" type="button" onClick={() => void loadList()} disabled={listLoading}>重试读取</button></div>
         : listLoading && !items ? <div className="loading-state" role="status"><span className="spinner" /><span>正在读取异常事件…</span></div>
@@ -145,6 +174,8 @@ export function AlertsTab() {
             <td>{item.repairOrderIds.length ? item.repairOrderIds.join('、') : <span className="missing-value">无</span>}</td>
           </tr>)}</tbody>
         </table></div>}
+      {items && items.length > 0 && <Pager page={page} pageSize={pageSize} total={total} unit="条"
+        onPage={next => setPage(next)} onPageSize={size => {setPageSize(size); setPage(1);}} />}
       <div className="table-footer"><span role="status">点击行查看详情并发起人工处理</span><span><Icon name="clock" size={14} />{items ? `共 ${total} 条` : '等待读取'}</span></div>
     </section>
 
@@ -162,13 +193,23 @@ export function AlertsTab() {
               <div><dt>开始 / 触发</dt><dd>{formatTime(detail.startedAt)} / {formatTime(detail.triggeredAt)}</dd></div>
               <div><dt>恢复 / 结束</dt><dd>{formatTime(detail.recoveredAt)} / {formatTime(detail.endedAt)}</dd></div>
               <div><dt>结束原因</dt><dd>{label(endReasonLabels, detail.endReason)}</dd></div>
-              {detail.ruleSnapshot && <div><dt>命中规则（版本 {detail.ruleSnapshot.ruleVersion}）</dt><dd>正常 [{detail.ruleSnapshot.normalLower ?? '—'}, {detail.ruleSnapshot.normalUpper ?? '—'}]，报警 [{detail.ruleSnapshot.alarmLower ?? '—'}, {detail.ruleSnapshot.alarmUpper ?? '—'}] {label(triggerModeLabels, detail.ruleSnapshot.triggerMode)}{detail.ruleSnapshot.durationSeconds ? `（持续 ${detail.ruleSnapshot.durationSeconds} 秒）` : ''}</dd></div>}
+              {detail.ruleSnapshot && <div><dt>命中规则（版本 {detail.ruleSnapshot.ruleVersion}）</dt><dd>{ruleText(detail.ruleSnapshot)}</dd></div>}
               {detail.ruleSnapshot?.reason && <div><dt>规则依据</dt><dd>{detail.ruleSnapshot.reason}</dd></div>}
               <div><dt>关联工单</dt><dd>{detail.repairOrders.length
                 ? detail.repairOrders.map(order => `${order.orderNo}（${label(orderStatusLabels, order.status)}）`).join('、')
                 : <span className="missing-value">尚未报修</span>}</dd></div>
             </dl>
-            <details className="ops-json"><summary>读数来源引用（sourceReference）</summary><pre>{JSON.stringify(detail.sourceReference, null, 2)}</pre></details>
+            <div className="ops-form-actions">
+              {onRepairRequest && <button className="button button-primary" type="button"
+                onClick={() => onRepairRequest({
+                  sourceType: 'ALERT_EVENT', sourceId: detail.eventId, equipmentId: detail.equipmentId,
+                  summary: `事件 #${detail.eventId}｜${detail.equipmentName}｜${detail.triggerValue ?? '—'}${detail.unitCode ?? ''}｜${formatTime(detail.triggeredAt)}`,
+                })}>
+                以此事件创建报修草稿
+              </button>}
+              <button className="button" type="button" onClick={() => void loadHistory(detail.eventId)}>查看处理历史</button>
+            </div>
+            <details className="ops-json"><summary>读数来源引用（sourceReference，原始结构）</summary><pre>{JSON.stringify(detail.sourceReference, null, 2)}</pre></details>
           </div>
           : <div className="empty-state"><div className="empty-icon"><Icon name="operations" size={30} /></div><h3>尚未选择事件</h3><p>在上方列表点击任意一行查看触发证据。</p></div>}
       </section>
@@ -184,17 +225,16 @@ export function AlertsTab() {
                 <option value="DEFER_REPAIR">暂不报修</option>
               </select></label>
             <label className="select-field"><span>经办人</span>
-              <input value={operator} onChange={event => setOperator(event.target.value)} size={8} /></label>
+              <input value={operator} onChange={event => setOperator(event.target.value)} size={8} placeholder="请填写姓名" /></label>
           </div>
           <label className="ops-text-field"><span>处理原因（必填）</span>
             <textarea rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="例如：已通知当班班组现场确认" /></label>
           <div className="ops-form-actions">
             <button className="button button-primary" type="button" onClick={() => void submitHandling()} disabled={submitting}>{submitting ? '提交中…' : '提交处理记录'}</button>
-            <button className="button" type="button" onClick={() => void loadHistory(detail.eventId)}>查看处理历史</button>
           </div>
           {feedback && <p className={feedback.kind === 'ok' ? 'ops-feedback-ok' : 'ops-feedback-error'} role={feedback.kind === 'ok' ? 'status' : 'alert'}>{feedback.text}</p>}
           {historyFor === detail.eventId && history && <div className="ops-history">
-            <h3>处理历史（{history.length} 条）</h3>
+            <h3>处理历史（{history.length} 条{historyTotal > history.length ? `，仅显示前 ${history.length} 条` : ''}）</h3>
             {history.length === 0 ? <p className="missing-value">该事件还没有人工处理记录。</p> : <table><thead><tr><th>动作</th><th>原因</th><th>经办人</th><th>时间</th></tr></thead>
               <tbody>{history.map(record => <tr key={record.handlingRecordId}><td><Tag value={record.action} map={handlingStateLabels} /></td><td>{record.reason}</td><td>{record.operatorName}</td><td>{formatTime(record.recordedAt)}</td></tr>)}</tbody></table>}
           </div>}

@@ -129,3 +129,13 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 
 .network-workshop { margin-top: 1.35rem; padding: 1rem; border: 1px solid #d4e0d4; border-radius: 10px; }
 .network-workshop-title { margin: 0; font-size: 1.05rem; color: #284b37; }
+
+/* 运维管理：分页器（三个列表共用） */
+.ops-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 23px 0;border-top:1px solid #eef1e9;margin-top:4px}
+.ops-pager-range{font-size:10px;color:#8d9a86;font-variant-numeric:tabular-nums}
+.ops-pager-controls{display:flex;align-items:center;gap:8px}
+.ops-pager-controls .button{padding:5px 11px;font-size:10px;min-height:28px}
+.ops-pager-controls .button:disabled{opacity:.45;cursor:not-allowed}
+.ops-pager-num{font-size:10px;color:#5c6b57;min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+.ops-pager-size{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#8d9a86}
+.ops-pager-size select{font-size:10px;height:28px;border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#687e5c;padding:0 6px}

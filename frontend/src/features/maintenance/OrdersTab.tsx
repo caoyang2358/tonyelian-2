@@ -6,6 +6,8 @@ import {
   acceptanceResultLabels, actionTypeLabels, availableActionLabels, formatTime,
   label, localInputValue, orderStatusLabels, reviewResultLabels, sourceTypeLabels,
 } from './labels';
+import { EquipmentSelect, Pager, useOperatorName } from './shared';
+import type { RepairHandoff } from './shared';
 
 type Feedback = {kind: 'ok' | 'error'; text: string} | null;
 
@@ -16,8 +18,10 @@ function statusTagClass(status: string): string {
   return 'ops-tag-gray';
 }
 
-export function OrdersTab() {
+export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff | null; onHandoffApplied?: () => void}) {
   const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [items, setItems] = useState<RepairOrderItem[] | null>(null);
   const [total, setTotal] = useState(0);
   const [listError, setListError] = useState<string | null>(null);
@@ -26,7 +30,7 @@ export function OrdersTab() {
   const [createType, setCreateType] = useState('ALERT_EVENT');
   const [createSourceId, setCreateSourceId] = useState('');
   const [createEquipmentId, setCreateEquipmentId] = useState('');
-  const [createOperator, setCreateOperator] = useState('张三');
+  const [createOperator, setCreateOperator] = useOperatorName();
   const [createFeedback, setCreateFeedback] = useState<Feedback>(null);
   const [creating, setCreating] = useState(false);
 
@@ -34,10 +38,10 @@ export function OrdersTab() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [version, setVersion] = useState(0);
-  const [operator, setOperator] = useState('张三');
+  const [operator, setOperator] = useOperatorName();
   const [saveDescription, setSaveDescription] = useState('');
   const [saveSupplement, setSaveSupplement] = useState('');
-  const [saveReporter, setSaveReporter] = useState('张三');
+  const [saveReporter, setSaveReporter] = useState('');
   const [reviewResult, setReviewResult] = useState('APPROVE');
   const [reviewReason, setReviewReason] = useState('同意维修');
   const [repairDescription, setRepairDescription] = useState('更换热电偶并重新校准');
@@ -46,10 +50,24 @@ export function OrdersTab() {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [acting, setActing] = useState(false);
 
-  const loadList = useCallback(async () => {
+  // 从“异常事件 / 巡检”页签点“创建报修草稿”时带入来源，用户无需手抄编号
+  useEffect(() => {
+    if (!handoff) return;
+    setCreateType(handoff.sourceType);
+    setCreateSourceId(handoff.sourceId);
+    setCreateEquipmentId(handoff.equipmentId);
+    setCreateFeedback({kind: 'ok', text: `已带入来源：${handoff.summary}。确认后点「创建草稿」即可。`});
+    onHandoffApplied?.();
+  }, [handoff, onHandoffApplied]);
+
+  const loadList = useCallback(async (targetPage = page, targetSize = pageSize) => {
     setListLoading(true);
     try {
-      const data = await repairOrderApi.list({status: status || undefined});
+      const data = await repairOrderApi.list({status: status || undefined}, targetPage, targetSize);
+      if (data.items.length === 0 && targetPage > 1 && data.total > 0) {
+        const lastPage = Math.max(1, Math.ceil(data.total / targetSize));
+        if (lastPage !== targetPage) { setPage(lastPage); return; }
+      }
       setItems(data.items);
       setTotal(data.total);
       setListError(null);
@@ -58,7 +76,7 @@ export function OrdersTab() {
     } finally {
       setListLoading(false);
     }
-  }, [status]);
+  }, [status, page, pageSize]);
 
   useEffect(() => { void loadList(); }, [loadList]);
 
@@ -70,7 +88,7 @@ export function OrdersTab() {
       setVersion(data.version);
       setSaveDescription(data.description ?? '');
       setSaveSupplement(data.supplement ?? '');
-      setSaveReporter(data.reporterName ?? '张三');
+      setSaveReporter(data.reporterName ?? '');
       setFeedback(null);
     } catch (error) {
       setFeedback({kind: 'error', text: error instanceof MaintenanceApiError ? error.message : '读取详情失败，请重试。'});
@@ -86,14 +104,15 @@ export function OrdersTab() {
 
   const runAction = useCallback(async (kind: 'save' | 'submit' | 'review' | 'repair' | 'accept') => {
     if (!detail) return;
+    const who = operator.trim();
+    if (!who) { setFeedback({kind: 'error', text: '请填写经办人（项目暂无登录用户，需手工署名）。'}); return; }
     setActing(true);
     try {
-      const who = operator.trim() || '未署名';
       if (kind === 'save') {
         if (!saveDescription.trim()) { setFeedback({kind: 'error', text: '故障描述为必填。'}); return; }
         const data = await repairOrderApi.save(detail.repairOrderId, {
           operatorName: who, expectedVersion: version, reason: '补充报修资料',
-          description: saveDescription.trim(), supplement: saveSupplement.trim(), reporterName: saveReporter.trim() || '未署名',
+          description: saveDescription.trim(), supplement: saveSupplement.trim(), reporterName: saveReporter.trim() || who,
         });
         await refreshAfterAction(detail.repairOrderId, `资料已保存，新版本 ${data.repairOrder.version}，状态「${label(orderStatusLabels, data.repairOrder.status)}」。`);
       } else if (kind === 'submit') {
@@ -135,18 +154,19 @@ export function OrdersTab() {
   const submitCreate = useCallback(async () => {
     const sourceId = createSourceId.trim();
     const equipmentId = createEquipmentId.trim();
+    if (!createOperator.trim()) { setCreateFeedback({kind: 'error', text: '请填写经办人。'}); return; }
     if ((createType === 'ALERT_EVENT' || createType === 'INSPECTION') && !sourceId) {
-      setCreateFeedback({kind: 'error', text: '该来源类型必须填写来源编号。'});
+      setCreateFeedback({kind: 'error', text: '请填写来源编号，或到「异常事件提醒 / 巡检记录」页签点“创建报修草稿”自动带入。'});
       return;
     }
     if (createType === 'MANUAL' && !equipmentId) {
-      setCreateFeedback({kind: 'error', text: '人工上报必须填写设备编号。'});
+      setCreateFeedback({kind: 'error', text: '人工上报必须选择设备。'});
       return;
     }
     setCreating(true);
     try {
       const data = await repairOrderApi.create({
-        sourceType: createType, operatorName: createOperator.trim() || '未署名',
+        sourceType: createType, operatorName: createOperator.trim(),
         sourceId: sourceId || undefined, equipmentId: createType === 'MANUAL' ? equipmentId : undefined,
       });
       setCreateFeedback({kind: 'ok', text: `已创建草稿 ${data.orderNo}（版本 ${data.version}），可在下方操作区继续完善并提交。`});
@@ -171,12 +191,11 @@ export function OrdersTab() {
             {Object.entries(sourceTypeLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
           </select></label>
         {createType === 'MANUAL'
-          ? <label className="select-field"><span>设备编号（必填）</span>
-              <input value={createEquipmentId} onChange={event => setCreateEquipmentId(event.target.value)} size={6} /></label>
+          ? <EquipmentSelect label="设备" value={createEquipmentId} onChange={setCreateEquipmentId} />
           : <label className="select-field"><span>{sourceTypeLabels[createType]}编号（必填）</span>
-              <input value={createSourceId} onChange={event => setCreateSourceId(event.target.value)} size={6} placeholder={createType === 'ALERT_EVENT' ? '如 1' : '如 1'} /></label>}
+              <input value={createSourceId} onChange={event => setCreateSourceId(event.target.value.replace(/[^0-9]/g, ''))} size={6} placeholder="可在来源页签一键带入" inputMode="numeric" /></label>}
         <label className="select-field"><span>经办人</span>
-          <input value={createOperator} onChange={event => setCreateOperator(event.target.value)} size={8} /></label>
+          <input value={createOperator} onChange={event => setCreateOperator(event.target.value)} size={8} placeholder="请填写姓名" /></label>
         <button className="button button-primary" type="button" onClick={() => void submitCreate()} disabled={creating}>{creating ? '建单中…' : '创建草稿'}</button>
       </div>
       {createFeedback && <p className={createFeedback.kind === 'ok' ? 'ops-feedback-ok' : 'ops-feedback-error'}>{createFeedback.text}</p>}
@@ -186,11 +205,12 @@ export function OrdersTab() {
       <div className="panel-heading"><div><h2>维修工单<span className="panel-count">{items ? `${total} 张` : '等待读取'}</span></h2><p>草稿 → 提交 → 审核 → 维修 → 验收的完整状态机</p></div><span className="read-only-label"><Icon name="check" size={14} />S1-R02</span></div>
       <div className="filters">
         <label className="select-field"><span>工单状态</span>
-          <select value={status} onChange={event => setStatus(event.target.value)}>
+          <select value={status} onChange={event => {setStatus(event.target.value); setPage(1);}}>
             <option value="">全部状态</option>
             {Object.entries(orderStatusLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
           </select></label>
-        <button className="reset-filter" type="button" onClick={() => setStatus('')}>清除筛选</button>
+        <button className="reset-filter" type="button" onClick={() => {setStatus(''); setPage(1);}}>清除筛选</button>
+        <button className="button" type="button" onClick={() => void loadList(page, pageSize)} disabled={listLoading}>{listLoading ? '刷新中…' : '刷新'}</button>
       </div>
       {listError ? <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>暂时无法读取工单</h3><p>{listError}</p></div><button className="button" type="button" onClick={() => void loadList()} disabled={listLoading}>重试读取</button></div>
         : listLoading && !items ? <div className="loading-state" role="status"><span className="spinner" /><span>正在读取维修工单…</span></div>
@@ -207,6 +227,8 @@ export function OrdersTab() {
             <td>{formatTime(item.completedAt)}</td>
           </tr>)}</tbody>
         </table></div>}
+      {items && items.length > 0 && <Pager page={page} pageSize={pageSize} total={total} unit="张"
+        onPage={next => setPage(next)} onPageSize={size => {setPageSize(size); setPage(1);}} />}
       <div className="table-footer"><span role="status">点击行加载详情与流转操作</span><span><Icon name="clock" size={14} />{items ? `共 ${total} 张` : '等待读取'}</span></div>
     </section>
 
@@ -228,7 +250,7 @@ export function OrdersTab() {
             ? detail.availableActions.map(action => <span key={action} className="ops-tag ops-tag-blue">{label(availableActionLabels, action)}</span>)
             : <span className="missing-value">无（终态）</span>}
         </div>
-        <details className="ops-json" open><summary>来源快照（sourceSnapshot）</summary><pre>{JSON.stringify(detail.sourceSnapshot, null, 2)}</pre></details>
+        <details className="ops-json" open><summary>来源快照（sourceSnapshot，原始结构）</summary><pre>{JSON.stringify(detail.sourceSnapshot, null, 2)}</pre></details>
         {detail.actions.length > 0 && <div className="ops-history">
           <h3>动作历史（{detail.actions.length} 条）</h3>
           <table><thead><tr><th>动作</th><th>结果</th><th>状态流转</th><th>经办人</th><th>原因</th><th>内容</th><th>时间</th></tr></thead>
@@ -252,7 +274,7 @@ export function OrdersTab() {
           <label className="select-field"><span>当前版本</span>
             <input value={version} onChange={event => setVersion(Number(event.target.value) || 0)} size={4} /></label>
           <label className="select-field"><span>经办人</span>
-            <input value={operator} onChange={event => setOperator(event.target.value)} size={8} /></label>
+            <input value={operator} onChange={event => setOperator(event.target.value)} size={8} placeholder="请填写姓名" /></label>
         </div>
         <div className="ops-form-row">
           <label className="ops-text-field ops-grow"><span>故障描述（保存资料用）</span>
@@ -260,7 +282,7 @@ export function OrdersTab() {
           <label className="ops-text-field ops-grow"><span>补充资料</span>
             <input value={saveSupplement} onChange={event => setSaveSupplement(event.target.value)} /></label>
           <label className="select-field"><span>报修人</span>
-            <input value={saveReporter} onChange={event => setSaveReporter(event.target.value)} size={8} /></label>
+            <input value={saveReporter} onChange={event => setSaveReporter(event.target.value)} size={8} placeholder="默认同经办人" /></label>
           <button className="button" type="button" onClick={() => void runAction('save')} disabled={acting || !can('SAVE')}>保存资料</button>
         </div>
         <div className="ops-form-row">

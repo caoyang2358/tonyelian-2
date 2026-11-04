@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, overviewApi } from '../../lib/maintenanceApi';
 import type { MaintenanceOverview } from '../../lib/maintenanceApi';
 import { label, localInputValue } from './labels';
+import { EquipmentSelect, useWorkshopOptions } from './shared';
 
 const caliberLabels: Record<string, string> = {
   inspectionCount: '巡检数', alertEventCount: '异常事件数', pendingRepairCount: '待办工单',
@@ -15,6 +16,7 @@ export function OverviewTab() {
   const [to, setTo] = useState(() => localInputValue());
   const [workshopId, setWorkshopId] = useState('');
   const [equipmentId, setEquipmentId] = useState('');
+  const workshops = useWorkshopOptions();
   const [data, setData] = useState<MaintenanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,11 +49,15 @@ export function OverviewTab() {
           <input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
         <label className="select-field"><span>结束时间</span>
           <input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
-        <label className="select-field"><span>车间编号</span>
-          <input value={workshopId} onChange={event => setWorkshopId(event.target.value)} size={4} placeholder="选填" /></label>
-        <label className="select-field"><span>设备编号</span>
-          <input value={equipmentId} onChange={event => setEquipmentId(event.target.value)} size={4} placeholder="选填" /></label>
+        <label className="select-field"><span>车间</span>
+          <select value={workshopId} onChange={event => setWorkshopId(event.target.value)}>
+            <option value="">全部车间</option>
+            {workshops.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
+          </select></label>
+        <EquipmentSelect label="设备" value={equipmentId} onChange={setEquipmentId} allowEmpty emptyLabel="全部设备" />
         <button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>{loading ? '统计中…' : '统计'}</button>
+        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60)); setTo(localInputValue());}}>最近 24 小时</button>
+        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60 * 7)); setTo(localInputValue());}}>最近 7 天</button>
       </div>
       {error && <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法完成统计</h3><p>{error}</p></div></div>}
       {data && <>
