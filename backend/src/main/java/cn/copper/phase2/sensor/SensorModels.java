@@ -108,12 +108,17 @@ public final class SensorModels {
      *
      * <p>{@code ruleVersionId} 指向最新一版规则快照，{@code ruleConfigured} 表示这一版是否启用。
      * 两者分开是因为"配过但停用"和"从未配过"在页面上是两种状态。</p>
+     *
+     * <p>{@code rule} 与 {@code version} 是配置更新（P08）需要的两个值：没有 {@code version}
+     * 就无法做乐观锁，没有 {@code rule} 就只能再查一次规则版本列表。契约里没有"单参数详情"
+     * 接口，参数页面能拿到全量配置的唯一来源就是这里，因此摘要带全。</p>
      */
     public record ParameterSummary(
             String parameterId, String parameterCode, String name, String dataType,
             String unitCode, int decimalPlaces, Integer samplingIntervalSeconds,
             String processId, boolean enabled,
-            String ruleVersionId, boolean ruleConfigured) {
+            String ruleVersionId, boolean ruleConfigured,
+            RuleSnapshot rule, long version) {
     }
 
     /**
@@ -192,6 +197,48 @@ public final class SensorModels {
             String parameterId, String sensorId, String parameterCode, String name, String dataType,
             String unitCode, int decimalPlaces, Integer samplingIntervalSeconds, String processId,
             boolean enabled, RuleSnapshot rule, String ruleVersionId, long version) {
+    }
+
+    /**
+     * 参数配置更新请求（S1-P08）。
+     *
+     * <p>不含 {@code parameterCode} 与 {@code dataType}：前者是采集映射的连接键
+     * （{@code sensorCode + parameterCode} 对应真实采集），后者决定读数怎么解析，
+     * 都不属于"配置"。契约给出的可维护字段是名称、单位、精度、采样周期、工序、启用和规则。</p>
+     *
+     * <p>{@code expectedVersion} 必填：并发两人改同一个参数时，后提交者必须收到 409，
+     * 而不是把前一个人的配置悄悄覆盖掉。</p>
+     */
+    public record ParameterConfigRequest(
+            String requestId, String operatorName, long expectedVersion, String reason,
+            String name, String unitCode, Integer decimalPlaces, Integer samplingIntervalSeconds,
+            Long processId, boolean enabled, RuleSnapshot rule) {
+    }
+
+    /**
+     * 参数配置更新结果（S1-P08）。
+     *
+     * <p>三个版本标识各有含义，不能合并：</p>
+     * <ul>
+     *   <li>{@code version}：参数配置版本，任何一次配置保存都会推进。</li>
+     *   <li>{@code previousRuleVersionId}：本次保存前的规则版本，{@code null} 表示原来没有规则。</li>
+     *   <li>{@code ruleVersionId}：当前生效的规则版本。判断依据没变时与
+     *       {@code previousRuleVersionId} 相同——页面据此知道"配置存了、规则没动"，
+     *       而不是误以为规则丢了。</li>
+     * </ul>
+     *
+     * <p>{@code affectedEventIds} 恒为空数组：按契约只有"判断依据变化"才需要结束该参数的
+     * 活动事件（{@code RULE_CHANGED}），而结束事件属于异常服务（S1-3）的事务边界。
+     * 事件服务未接入前不伪造事件号，也不改一期 {@code limit_status} 冒充事件；
+     * {@code effectNote} 会把这层未完成能力直接写进响应。</p>
+     */
+    public record ParameterConfigResult(
+            String parameterId, String sensorId, String parameterCode,
+            String name, String dataType, String unitCode, int decimalPlaces,
+            Integer samplingIntervalSeconds, String processId, boolean enabled,
+            RuleSnapshot rule, long version,
+            String previousRuleVersionId, String ruleVersionId,
+            List<String> affectedEventIds, String effectNote) {
     }
 
     /**

@@ -18,6 +18,7 @@ const parameter = {
   parameterId: '6', parameterCode: 'speed', name: '牵引速度', dataType: 'DECIMAL',
   unitCode: 'M_PER_MIN', decimalPlaces: 1, samplingIntervalSeconds: null,
   processId: null, enabled: true, ruleVersionId: null, ruleConfigured: false,
+  rule: null, version: 0,
 };
 
 test('测点分页解析出字符串ID与四态监测状态', () => {
@@ -362,4 +363,114 @@ test('删除请求走 DELETE，并自带二次确认', async () => {
 test('服务未确认删除时报错，不当作成功', () => {
   assert.throws(() => mapSensorDeleteResult({sensorId: '12', deleted: false}),
     (error: unknown) => error instanceof ApiError);
+});
+
+// ---------------------------------------------------------------- P08 参数配置更新
+
+const configuredParameter = {
+  ...parameter, ruleVersionId: '9001', ruleConfigured: true, version: 2,
+  rule: {
+    normalLower: '0.5', normalUpper: '1.5', alarmLower: '0.1', alarmUpper: '2',
+    unitCode: 'M_PER_MIN', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+  },
+};
+
+test('参数摘要带规则全文与配置版本，足以直接打开修改弹层', () => {
+  const page = mapParameterPage({items: [configuredParameter], page: 1, pageSize: 50, total: 1});
+  const row = page.items[0];
+
+  assert.equal(row.version, 2);
+  assert.equal(row.rule?.normalUpper, '1.5');
+  assert.equal(row.rule?.triggerMode, 'SUSTAINED');
+});
+
+test('未配规则的参数摘要 rule 为 null，不伪造一版空规则', () => {
+  const page = mapParameterPage({items: [parameter], page: 1, pageSize: 50, total: 1});
+
+  assert.equal(page.items[0].rule, null);
+  assert.equal(page.items[0].version, 0);
+});
+
+test('配置更新走参数配置地址，带期望版本、规则与请求编号', async () => {
+  const calls: {url: string; method?: string; body: unknown}[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input), method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify({
+      code: 'OK', message: '成功', timestamp: '2026-11-04T16:10:00+08:00',
+      data: {
+        parameterId: '501', sensorId: '12', parameterCode: 'PRESSURE', name: '出口压力',
+        dataType: 'DECIMAL', unitCode: 'Pa', decimalPlaces: 2, samplingIntervalSeconds: 60,
+        processId: null, enabled: true,
+        rule: {
+          normalLower: '0', normalUpper: '120', alarmLower: '-10', alarmUpper: '150',
+          unitCode: 'Pa', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+        },
+        version: 3, previousRuleVersionId: '9001', ruleVersionId: '9002',
+        affectedEventIds: [], effectNote: '判断依据已变化，已生成新的规则版本 9002。',
+      },
+    }));
+  }) as typeof fetch;
+
+  try {
+    const result = await api.updateSensorParameter('501', {
+      name: '出口压力', unitCode: 'Pa', decimalPlaces: 2, samplingIntervalSeconds: 60,
+      processId: null, enabled: true,
+      rule: {
+        normalLower: '0', normalUpper: '120', alarmLower: '-10', alarmUpper: '150',
+        unitCode: 'Pa', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+      },
+    }, {requestId: 'req-p08', operatorName: '设备管理员', expectedVersion: 2});
+
+    assert.equal(calls[0].url, '/api/v1/sensor-parameters/501/configuration');
+    assert.equal(calls[0].method, 'PUT');
+    const body = calls[0].body as Record<string, unknown>;
+    assert.equal(body.expectedVersion, 2);
+    assert.equal(body.requestId, 'req-p08');
+    // 配置更新不接受编码与数据类型：带上去了反而会让人以为改成功了。
+    assert.equal('parameterCode' in body, false);
+    assert.equal('dataType' in body, false);
+    assert.equal(result.data.version, 3);
+    assert.equal(result.data.previousRuleVersionId, '9001');
+    assert.equal(result.data.ruleVersionId, '9002');
+    assert.deepEqual(result.data.affectedEventIds, []);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('判断依据未变时规则版本保持不变，页面据此区分“存了配置”与“换了规则”', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    code: 'OK', message: '成功', timestamp: '2026-11-04T16:12:00+08:00',
+    data: {
+      parameterId: '501', sensorId: '12', parameterCode: 'PRESSURE', name: '出口压力（更正）',
+      dataType: 'DECIMAL', unitCode: 'Pa', decimalPlaces: 2, samplingIntervalSeconds: 60,
+      processId: null, enabled: true,
+      rule: {
+        normalLower: '0', normalUpper: '100', alarmLower: '-10', alarmUpper: '150',
+        unitCode: 'Pa', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+      },
+      version: 3, previousRuleVersionId: '9001', ruleVersionId: '9001',
+      affectedEventIds: [], effectNote: '判断依据未变化，未生成新规则版本。',
+    },
+  }))) as typeof fetch;
+
+  try {
+    const result = await api.updateSensorParameter('501', {
+      name: '出口压力（更正）', unitCode: 'Pa', decimalPlaces: 2, samplingIntervalSeconds: 60,
+      processId: null, enabled: true,
+      rule: {
+        normalLower: '0', normalUpper: '100', alarmLower: '-10', alarmUpper: '150',
+        unitCode: 'Pa', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+      },
+    }, {requestId: 'req-p08b', operatorName: '设备管理员', expectedVersion: 2});
+
+    assert.equal(result.data.previousRuleVersionId, result.data.ruleVersionId);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

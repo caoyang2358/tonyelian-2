@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
-import type { ProcessOption, SensorRuleSnapshot, UnitOption } from '../../lib/api';
+import type { ProcessOption, SensorParameterEditable, SensorRuleSnapshot, UnitOption } from '../../lib/api';
 import './equipment.css';
 
 /**
- * 新增参数的表单弹层（S1-P07）。
+ * 参数表单弹层：新增（S1-P07）与配置更新（S1-P08）共用一套字段。
  *
- * <p>三处克制：</p>
+ * <p>几处克制：</p>
  * <ul>
  *   <li>不提供"采集来源"：参数有没有真的接到采集，取决于采集映射建立，不是表单填出来的。</li>
- *   <li>规则默认不配。没勾"同时配置告警规则"就传 {@code rule: null}，
+ *   <li>新增时规则默认不配。没勾"同时配置告警规则"就传 {@code rule: null}，
  *       参数处于"未配规则"状态；这与"配了但停用"是两种页面状态，不能混为一谈。</li>
- *   <li>工序只在有可选项时才让人选：一期工序维表为空时显示"暂无可选工序"，
- *       不让用户盲填一个数字 ID 等后端报 400。</li>
+ *   <li>修改时规则必填：规则快照只能追加、不能覆盖，允许在配置更新里把规则置空，
+ *       页面读回时仍会取到最后一版——会显示一份实际已不生效的规则。
+ *       不想要规则就把"规则生效"取消掉，语义与数据都说得通。</li>
+ *   <li>修改时编码与数据类型只读：前者是采集映射的连接键，后者决定读数怎么解析，
+ *       改了会让历史读数失去解释。</li>
  * </ul>
  */
 
@@ -44,15 +47,45 @@ const DATA_TYPES = [
   {code: 'STRING', label: '文本 STRING'},
 ];
 
+const EMPTY_RULE: RuleDraft = {
+  normalLower: '', normalUpper: '', alarmLower: '', alarmUpper: '',
+  triggerMode: 'SUSTAINED', durationSeconds: '30', enabled: true,
+};
+
 const EMPTY: Draft = {
   parameterCode: '', name: '', dataType: 'DECIMAL', unitCode: '',
   decimalPlaces: '2', samplingIntervalSeconds: '', processId: '', enabled: true,
   withRule: false,
-  rule: {
-    normalLower: '', normalUpper: '', alarmLower: '', alarmUpper: '',
-    triggerMode: 'SUSTAINED', durationSeconds: '30', enabled: true,
-  },
+  rule: {...EMPTY_RULE},
 };
+
+const TYPE_LABELS = new Map(DATA_TYPES.map(item => [item.code, item.label]));
+
+function fromParameter(parameter: SensorParameterEditable): Draft {
+  const rule = parameter.rule;
+  return {
+    parameterCode: parameter.parameterCode,
+    name: parameter.name,
+    dataType: parameter.dataType,
+    unitCode: parameter.unitCode ?? '',
+    decimalPlaces: String(parameter.decimalPlaces),
+    samplingIntervalSeconds: parameter.samplingIntervalSeconds == null
+      ? '' : String(parameter.samplingIntervalSeconds),
+    processId: parameter.processId ?? '',
+    enabled: parameter.enabled,
+    // 配置更新必须带规则，所以这里恒为 true；是不是"刚建立的第一版"由后端判断。
+    withRule: true,
+    rule: rule == null ? {...EMPTY_RULE, enabled: false} : {
+      normalLower: rule.normalLower ?? '',
+      normalUpper: rule.normalUpper ?? '',
+      alarmLower: rule.alarmLower ?? '',
+      alarmUpper: rule.alarmUpper ?? '',
+      triggerMode: rule.triggerMode === 'IMMEDIATE' ? 'IMMEDIATE' : 'SUSTAINED',
+      durationSeconds: rule.durationSeconds == null ? '' : String(rule.durationSeconds),
+      enabled: rule.enabled,
+    },
+  };
+}
 
 function newRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -70,13 +103,17 @@ function orNull(value: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
+export function ParameterFormDialog({sensorId, sensorCode, parameter, onClose, onSaved}: {
   sensorId: string;
   sensorCode: string;
+  /** 传了就是修改（S1-P08），不传就是新增（S1-P07）。 */
+  parameter?: SensorParameterEditable | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** result 是服务端给的生效说明：改没改规则、有没有结束事件，都由它说，不靠前端猜。 */
+  onSaved: (result?: {effectNote: string; ruleVersionId: string | null}) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(EMPTY);
+  const editing = parameter != null;
+  const [draft, setDraft] = useState<Draft>(() => (parameter ? fromParameter(parameter) : EMPTY));
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [processes, setProcesses] = useState<ProcessOption[]>([]);
   const [refError, setRefError] = useState(false);
@@ -100,6 +137,7 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
       normalUpper: orNull(rule.normalUpper),
       alarmLower: orNull(rule.alarmLower),
       alarmUpper: orNull(rule.alarmUpper),
+      // 规则单位跟着参数单位走：一个参数出现两个量纲，阈值就没法解释了。
       unitCode: orNull(draft.unitCode),
       triggerMode: rule.triggerMode,
       durationSeconds: rule.triggerMode === 'IMMEDIATE' || duration === '' ? null : Number(duration),
@@ -108,10 +146,12 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
   }
 
   function validate(): string | null {
-    const code = draft.parameterCode.trim();
-    if (!code) return '请填写参数编码。';
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(code)) {
-      return '参数编码只能包含字母、数字、点、横线与下划线，且以字母或数字开头。';
+    if (!editing) {
+      const code = draft.parameterCode.trim();
+      if (!code) return '请填写参数编码。';
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(code)) {
+        return '参数编码只能包含字母、数字、点、横线与下划线，且以字母或数字开头。';
+      }
     }
     if (!draft.name.trim()) return '请填写参数名称。';
     if (draft.decimalPlaces.trim() !== '') {
@@ -145,15 +185,32 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
     setSaving(true);
     setError(null);
     try {
+      const decimalPlaces = draft.decimalPlaces.trim() === '' ? null : Number(draft.decimalPlaces);
+      const samplingIntervalSeconds = draft.samplingIntervalSeconds.trim() === ''
+        ? null : Number(draft.samplingIntervalSeconds);
+      const unitCode = orNull(draft.unitCode);
+      const processId = draft.processId === '' ? null : draft.processId;
+
+      if (editing && parameter) {
+        const rule = buildRule();
+        // 走到这里 withRule 恒为 true（编辑态没有关闭入口），这行是防御而非可达分支。
+        if (!rule) { setError('配置更新必须包含规则。'); return; }
+        const result = await api.updateSensorParameter(parameter.parameterId, {
+          name: draft.name.trim(), unitCode, decimalPlaces, samplingIntervalSeconds,
+          processId, enabled: draft.enabled, rule,
+        }, {
+          requestId: newRequestId(), operatorName: rememberedOperator(),
+          expectedVersion: parameter.version,
+        });
+        onSaved({effectNote: result.data.effectNote, ruleVersionId: result.data.ruleVersionId});
+        return;
+      }
+
       await api.createSensorParameter(sensorId, {
         parameterCode: draft.parameterCode.trim(),
         name: draft.name.trim(),
         dataType: draft.dataType,
-        unitCode: orNull(draft.unitCode),
-        decimalPlaces: draft.decimalPlaces.trim() === '' ? null : Number(draft.decimalPlaces),
-        samplingIntervalSeconds: draft.samplingIntervalSeconds.trim() === ''
-          ? null : Number(draft.samplingIntervalSeconds),
-        processId: draft.processId === '' ? null : draft.processId,
+        unitCode, decimalPlaces, samplingIntervalSeconds, processId,
         enabled: draft.enabled,
         rule: buildRule(),
       }, {requestId: newRequestId(), operatorName: rememberedOperator()});
@@ -177,32 +234,43 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
 
   return <div className="eq-overlay" role="presentation"
               onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-    <div className="eq-dialog-wrap" role="dialog" aria-modal="true" aria-label="新增参数">
+    <div className="eq-dialog-wrap" role="dialog" aria-modal="true"
+         aria-label={editing ? '修改参数' : '新增参数'}>
       <div className="eq-dialog-head">
-        <h2>新增参数</h2>
-        <p>测点 {sensorCode} · 保存后参数可直接被采集映射引用</p>
+        <h2>{editing ? '修改参数' : '新增参数'}</h2>
+        <p>{editing
+          ? `测点 ${sensorCode} · 参数 ${parameter.parameterCode} · 当前配置版本 v${parameter.version}`
+          : `测点 ${sensorCode} · 保存后参数可直接被采集映射引用`}</p>
       </div>
 
       <div className="eq-dialog-body">
         <div className="eq-form-row">
           <label className="eq-form-field">
-            <span>参数编码<em>*</em></span>
-            <input value={draft.parameterCode} maxLength={64} autoFocus
+            <span>参数编码{editing ? '' : <em>*</em>}</span>
+            <input value={draft.parameterCode} maxLength={64} autoFocus={!editing}
+                   readOnly={editing} disabled={editing}
                    onChange={event => update({parameterCode: event.target.value})}
                    placeholder="如 pressure" />
           </label>
           <label className="eq-form-field">
             <span>参数名称<em>*</em></span>
-            <input value={draft.name} maxLength={100}
+            <input value={draft.name} maxLength={100} autoFocus={editing}
                    onChange={event => update({name: event.target.value})}
                    placeholder="如 出口压力" />
           </label>
         </div>
+        {editing && <p className="eq-form-hint">
+          编码是采集映射的连接键（sensorCode + parameterCode），创建后不可修改；要换编码请停用后另建参数。
+        </p>}
 
         <div className="eq-form-row">
           <label className="eq-form-field">
-            <span>数据类型<em>*</em></span>
-            <select value={draft.dataType} onChange={event => update({dataType: event.target.value})}>
+            <span>数据类型{editing ? '' : <em>*</em>}</span>
+            <select value={draft.dataType} disabled={editing}
+                    onChange={event => update({dataType: event.target.value})}>
+              {editing && !TYPE_LABELS.has(draft.dataType)
+                ? <option value={draft.dataType}>{draft.dataType}</option>
+                : null}
               {DATA_TYPES.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
             </select>
           </label>
@@ -249,11 +317,16 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
           <span>启用（停用只影响后续判断，不删任何历史读数）</span>
         </label>
 
-        <label className="eq-sensor-switch">
-          <input type="checkbox" checked={draft.withRule}
-                 onChange={event => update({withRule: event.target.checked})} />
-          <span>同时配置告警规则（不勾则参数保存为「未配规则」）</span>
-        </label>
+        {editing
+          ? <p className="eq-form-hint">
+              保存配置会带上当前这一版规则。改阈值、触发方式或规则启停会追加一版新规则；
+              只改名称、精度这类字段则只推进配置版本。
+            </p>
+          : <label className="eq-sensor-switch">
+              <input type="checkbox" checked={draft.withRule}
+                     onChange={event => update({withRule: event.target.checked})} />
+              <span>同时配置告警规则（不勾则参数保存为「未配规则」）</span>
+            </label>}
 
         {draft.withRule && <div className="eq-rule-block">
           <div className="eq-form-row">
@@ -316,7 +389,7 @@ export function ParameterFormDialog({sensorId, sensorCode, onClose, onSaved}: {
         <button type="button" className="button" disabled={saving} onClick={onClose}>取消</button>
         <button type="button" className="button is-primary" disabled={saving}
                 onClick={() => void submit()}>
-          {saving ? '保存中…' : '新增参数'}
+          {saving ? '保存中…' : (editing ? '保存配置' : '新增参数')}
         </button>
       </div>
     </div>

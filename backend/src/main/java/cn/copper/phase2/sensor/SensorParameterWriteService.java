@@ -5,9 +5,13 @@ import cn.copper.phase2.common.ChangeLogModels.ChangeLogWrite;
 import cn.copper.phase2.common.ChangeLogRepository;
 import cn.copper.phase2.common.IdempotencyService;
 import cn.copper.phase2.common.ErrorCode;
+import cn.copper.phase2.sensor.SensorModels.ParameterConfigRequest;
+import cn.copper.phase2.sensor.SensorModels.ParameterConfigResult;
 import cn.copper.phase2.sensor.SensorModels.ParameterDetail;
 import cn.copper.phase2.sensor.SensorModels.ParameterWriteRequest;
 import cn.copper.phase2.sensor.SensorModels.RuleSnapshot;
+import cn.copper.phase2.sensor.SensorRepository.CurrentRule;
+import cn.copper.phase2.sensor.SensorRepository.ParameterRow;
 import cn.copper.phase2.sensor.SensorRepository.SensorRow;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.dao.DuplicateKeyException;
@@ -17,6 +21,8 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -73,6 +79,17 @@ public class SensorParameterWriteService {
             "normalLower", "normalUpper", "alarmLower", "alarmUpper",
             "triggerMode", "durationSeconds", "enabled");
 
+    /**
+     * 配置更新（P08）的必填字段。
+     *
+     * <p>比新增多一个 {@code expectedVersion}、少一个 {@code parameterCode}：
+     * 编码是采集映射的连接键，配置更新不允许改，所以这里根本不收这个字段——
+     * 收了却忽略，比不收更容易让人误以为改成功了。</p>
+     */
+    private static final List<String> CONFIG_REQUIRED = List.of(
+            "requestId", "operatorName", "expectedVersion", "name", "unitCode",
+            "decimalPlaces", "samplingIntervalSeconds", "processId", "enabled", "rule");
+
     private final SensorRepository repository;
     private final ChangeLogRepository changeLog;
     private final IdempotencyService idempotency;
@@ -126,12 +143,15 @@ public class SensorParameterWriteService {
 
     /** 规则没单独给单位时，沿用参数定义上的单位，避免同一参数出现两个量纲。 */
     private static RuleSnapshot inheritUnit(ParameterWriteRequest request) {
-        RuleSnapshot rule = request.rule();
-        if (rule.unitCode() != null || request.unitCode() == null) {
+        return inheritUnit(request.rule(), request.unitCode());
+    }
+
+    private static RuleSnapshot inheritUnit(RuleSnapshot rule, String parameterUnit) {
+        if (rule == null || rule.unitCode() != null || parameterUnit == null) {
             return rule;
         }
         return new RuleSnapshot(rule.normalLower(), rule.normalUpper(),
-                rule.alarmLower(), rule.alarmUpper(), request.unitCode(),
+                rule.alarmLower(), rule.alarmUpper(), parameterUnit,
                 rule.triggerMode(), rule.durationSeconds(), rule.enabled());
     }
 
@@ -153,7 +173,248 @@ public class SensorParameterWriteService {
                 Map.of("fields", fields));
     }
 
+    // ---------------------------------------------------------------- 配置更新（P08）
+
+    /**
+     * S1-P08 更新参数配置。
+     *
+     * <p>一次保存做四件事，全部在同一事务里：改参数的可维护字段、推进配置版本、
+     * 判断"有效判断依据"是否变化、变化则追加一版不可覆盖的规则快照。</p>
+     *
+     * <p>事件侧明确未完成：契约要求判断依据变化时把该参数受影响的活动事件以
+     * {@code RULE_CHANGED} 结束，但结束事件属于异常服务（S1-3）的事务边界。
+     * 这里既不去 {@code p2_alert_event} 上直接改状态（会绕过事件服务的状态机），
+     * 也不用一期 {@code limit_status} 冒充事件。响应里 {@code affectedEventIds} 恒为空，
+     * {@code effectNote} 如实说明这层能力未接入。</p>
+     */
+    public ParameterConfigResult updateConfiguration(String parameterId, JsonNode body) {
+        long id = SensorService.requiredId(parameterId, "parameterId", "参数");
+        ParameterConfigRequest request = parseConfig(body);
+        return idempotency.execute(request.requestId(), "SENSOR_PARAMETER_CONFIG:" + id, request,
+                ParameterConfigResult.class, () -> doUpdateConfiguration(id, request));
+    }
+
+    private ParameterConfigResult doUpdateConfiguration(long parameterId, ParameterConfigRequest request) {
+        ParameterRow current = repository.lockParameter(parameterId)
+                .orElseThrow(() -> BusinessException.notFound("参数 " + parameterId + " 不存在。"));
+        if (current.version() != request.expectedVersion()) {
+            throw BusinessException.versionConflict(request.expectedVersion(), current.version());
+        }
+        assertReferences(request.unitCode(), request.processId());
+
+        // 规则单位先按"继承参数单位"的同一套口径定稿，再拿定稿结果去比对；
+        // 否则只改参数单位时，会比出一版"单位变了但规则没变"的假差异。
+        RuleSnapshot rule = inheritUnit(request.rule(), request.unitCode());
+        Optional<CurrentRule> previous = repository.currentRule(parameterId);
+        boolean ruleChanged = !sameRule(previous.map(CurrentRule::rule).orElse(null), rule);
+
+        repository.updateParameterConfig(parameterId, request);
+        // 一期种子参数没有配置档案行（版本 0）：首次保存补一行，从 1 起算，与新建口径一致。
+        if (current.version() == 0) {
+            repository.insertParameterProfile(parameterId, 1L);
+        } else if (repository.updateParameterVersion(parameterId, request.expectedVersion()) == 0) {
+            throw BusinessException.versionConflict(request.expectedVersion(), current.version());
+        }
+
+        String previousRuleVersionId = previous.map(entry -> String.valueOf(entry.ruleVersionId()))
+                .orElse(null);
+        String ruleVersionId = previousRuleVersionId;
+        if (ruleChanged) {
+            long nextRuleVersion = previous.map(entry -> entry.ruleVersion() + 1).orElse(1L);
+            ruleVersionId = String.valueOf(repository.insertRuleVersion(parameterId, nextRuleVersion,
+                    previous.map(CurrentRule::ruleVersionId).orElse(null), rule,
+                    request.reason(), request.operatorName()));
+        }
+
+        changeLog.insert(new ChangeLogWrite(OBJECT_TYPE, String.valueOf(parameterId), "UPDATE",
+                beforeSnapshot(current, previous.orElse(null)),
+                afterSnapshot(current, request, rule, ruleVersionId),
+                request.reason(), request.operatorName(),
+                toVersion(current.version()), toVersion(current.version() + 1), request.requestId()));
+
+        return new ParameterConfigResult(
+                String.valueOf(parameterId), String.valueOf(current.sensorId()), current.parameterCode(),
+                request.name(), current.dataType(), request.unitCode(),
+                request.decimalPlaces() == null ? 2 : request.decimalPlaces(),
+                request.samplingIntervalSeconds(),
+                request.processId() == null ? null : String.valueOf(request.processId()),
+                request.enabled(), rule, current.version() + 1,
+                previousRuleVersionId, ruleVersionId, List.of(),
+                effectNote(ruleChanged, ruleVersionId, rule.enabled(), request.enabled()));
+    }
+
+    /**
+     * 有效判断依据是否相同。
+     *
+     * <p>边界用 {@link BigDecimal} 比数值而不是比字符串：{@code "0.5"} 与 {@code "0.500000"}
+     * 是同一个阈值，按字符串比会每次保存都产出一版毫无变化的规则。
+     * 单位、触发模式、持续秒数与规则启停一并纳入：它们都会改变"这条读数算不算异常"的结论。</p>
+     */
+    private static boolean sameRule(RuleSnapshot left, RuleSnapshot right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return sameBound(left.normalLower(), right.normalLower())
+                && sameBound(left.normalUpper(), right.normalUpper())
+                && sameBound(left.alarmLower(), right.alarmLower())
+                && sameBound(left.alarmUpper(), right.alarmUpper())
+                && Objects.equals(left.unitCode(), right.unitCode())
+                && Objects.equals(left.triggerMode(), right.triggerMode())
+                && Objects.equals(left.durationSeconds(), right.durationSeconds())
+                && left.enabled() == right.enabled();
+    }
+
+    private static boolean sameBound(String left, String right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return new BigDecimal(left).compareTo(new BigDecimal(right)) == 0;
+    }
+
+    /** 生效说明：把本次到底动了什么写清楚，避免调用方从三个版本号里猜。 */
+    private static String effectNote(boolean ruleChanged, String ruleVersionId,
+                                     boolean ruleEnabled, boolean parameterEnabled) {
+        StringBuilder note = new StringBuilder();
+        if (ruleChanged) {
+            note.append("判断依据已变化，已生成新的规则版本 ").append(ruleVersionId)
+                    .append("，旧版本保留可查；")
+                    .append("受影响活动事件按 RULE_CHANGED 结束的能力尚未接入事件服务，本次未结束任何事件。");
+        } else {
+            note.append("判断依据未变化，未生成新规则版本，仅推进参数配置版本。");
+        }
+        if (!parameterEnabled) {
+            note.append("参数已停用：不再产生读数判断，历史读数与规则版本均保留。");
+        } else if (!ruleEnabled) {
+            note.append("规则已停用：阈值保留，但不再触发异常。");
+        }
+        return note.toString();
+    }
+
+    private static Map<String, Object> beforeSnapshot(ParameterRow current, CurrentRule rule) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("parameterCode", current.parameterCode());
+        snapshot.put("name", current.name());
+        snapshot.put("dataType", current.dataType());
+        snapshot.put("unitCode", current.unitCode());
+        snapshot.put("decimalPlaces", current.decimalPlaces());
+        snapshot.put("samplingIntervalSeconds", current.samplingIntervalSeconds());
+        snapshot.put("processId", current.processId() == null ? null : String.valueOf(current.processId()));
+        snapshot.put("enabled", current.enabled());
+        snapshot.put("ruleVersionId", rule == null ? null : String.valueOf(rule.ruleVersionId()));
+        snapshot.put("rule", rule == null ? null : rule.rule());
+        return snapshot;
+    }
+
+    private static Map<String, Object> afterSnapshot(ParameterRow current, ParameterConfigRequest request,
+                                                    RuleSnapshot rule, String ruleVersionId) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("parameterCode", current.parameterCode());
+        snapshot.put("name", request.name());
+        snapshot.put("dataType", current.dataType());
+        snapshot.put("unitCode", request.unitCode());
+        snapshot.put("decimalPlaces", request.decimalPlaces() == null ? 2 : request.decimalPlaces());
+        snapshot.put("samplingIntervalSeconds", request.samplingIntervalSeconds());
+        snapshot.put("processId", request.processId() == null ? null : String.valueOf(request.processId()));
+        snapshot.put("enabled", request.enabled());
+        snapshot.put("ruleVersionId", ruleVersionId);
+        snapshot.put("rule", rule);
+        return snapshot;
+    }
+
+    private void assertReferences(String unitCode, Long processId) {
+        if (unitCode != null && !repository.unitExists(unitCode)) {
+            throw BusinessException.invalid("unitCode", "单位 " + unitCode + " 不存在。");
+        }
+        if (processId != null && !repository.processExists(processId)) {
+            throw BusinessException.invalid("processId", "工序 " + processId + " 不存在。");
+        }
+    }
+
+    private static Integer toVersion(long version) {
+        return version > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) version;
+    }
+
     // ---------------------------------------------------------------- 解析
+
+    private static ParameterConfigRequest parseConfig(JsonNode body) {
+        if (body == null || !body.isObject()) {
+            throw BusinessException.invalid("body", "请求体必须是 JSON 对象。");
+        }
+        Map<String, Object> missing = new LinkedHashMap<>();
+        for (String field : CONFIG_REQUIRED) {
+            if (!body.has(field)) {
+                missing.put(field, "该字段必须出现；可空字段请显式传 null。");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw BusinessException.invalid(missing);
+        }
+
+        Map<String, Object> errors = new LinkedHashMap<>();
+        String requestId = text(body.get("requestId"));
+        String operatorName = text(body.get("operatorName"));
+        String reason = text(body.get("reason"));
+        String name = text(body.get("name"));
+        String unitCode = text(body.get("unitCode"));
+        Long decimalPlaces = number(body.get("decimalPlaces"));
+        Long samplingInterval = number(body.get("samplingIntervalSeconds"));
+        Long processId = number(body.get("processId"));
+        Long expectedVersion = number(body.get("expectedVersion"));
+        Boolean enabled = bool(body.get("enabled"));
+
+        if (requestId == null) {
+            errors.put("requestId", "请求编号为必填项。");
+        }
+        if (operatorName == null) {
+            errors.put("operatorName", "操作人为必填项。");
+        }
+        if (reason != null && reason.length() > REASON_MAX) {
+            errors.put("reason", "说明不得超过 " + REASON_MAX + " 个字符。");
+        }
+        if (expectedVersion == null || expectedVersion < 0) {
+            errors.put("expectedVersion",
+                    "配置版本必须是非负整数，取自上一次读取到的 version（种子参数为 0）。");
+        }
+        if (name == null) {
+            errors.put("name", "参数名称不得为空。");
+        } else if (name.length() > NAME_MAX) {
+            errors.put("name", "参数名称不得超过 " + NAME_MAX + " 个字符。");
+        }
+        if (unitCode != null && unitCode.length() > UNIT_MAX) {
+            errors.put("unitCode", "单位编码不得超过 " + UNIT_MAX + " 个字符。");
+        }
+        if (decimalPlaces != null && (decimalPlaces < 0 || decimalPlaces > DECIMAL_PLACES_MAX)) {
+            errors.put("decimalPlaces",
+                    "小数位必须是 0 到 " + DECIMAL_PLACES_MAX + " 之间的整数。");
+        }
+        if (samplingInterval != null && samplingInterval <= 0) {
+            errors.put("samplingIntervalSeconds", "采样周期必须是正整数，或显式传 null 表示不设周期。");
+        }
+        if (processId != null && processId <= 0) {
+            errors.put("processId", "工序 ID 必须是正整数，或显式传 null 表示不归属工序。");
+        }
+        if (enabled == null) {
+            errors.put("enabled", "必须明确给出启用状态。");
+        }
+
+        // 配置更新必须给出规则。允许传 null 就等于允许"把规则删掉"，可规则快照只能追加、
+        // 不能覆盖，读回时仍会取到最后一版——页面会显示一份实际已不生效的规则。
+        // 不想要规则时把 rule.enabled 设为 false，语义与数据都说得通。
+        JsonNode ruleNode = body.get("rule");
+        if (ruleNode == null || ruleNode.isNull()) {
+            errors.put("rule", "配置更新必须给出规则；不再需要规则时请把 rule.enabled 设为 false。");
+        }
+        RuleSnapshot rule = parseRule(ruleNode, unitCode, errors);
+
+        if (!errors.isEmpty()) {
+            throw BusinessException.invalid(errors);
+        }
+        return new ParameterConfigRequest(requestId, operatorName, expectedVersion, reason,
+                name, unitCode,
+                decimalPlaces == null ? null : decimalPlaces.intValue(),
+                samplingInterval == null ? null : samplingInterval.intValue(),
+                processId, enabled, rule);
+    }
 
     private static ParameterWriteRequest parse(JsonNode body) {
         if (body == null || !body.isObject()) {

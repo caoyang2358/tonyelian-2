@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
-import type { SensorDetail, SensorLatestReading, SensorMonitoringStatus, SensorSummary } from '../../lib/api';
+import type {
+  SensorDetail, SensorLatestReading, SensorMonitoringStatus, SensorParameterEditable, SensorSummary,
+} from '../../lib/api';
 import { SensorReadingsDialog } from './SensorReadingsDialog';
 import { SensorFormDialog } from './SensorFormDialog';
 import { ParameterFormDialog } from './ParameterFormDialog';
@@ -72,7 +74,9 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
   const [readings, setReadings] = useState<Record<string, SensorLatestReading>>({});
   const [reading, setReading] = useState<{sensor: SensorSummary; parameterId: string; parameterName: string} | null>(null);
   const [form, setForm] = useState<{sensor: SensorDetail | null} | null>(null);
-  const [parameterForm, setParameterForm] = useState<SensorDetail | null>(null);
+  const [parameterForm, setParameterForm] = useState<
+    {sensor: SensorDetail; parameter: SensorParameterEditable | null} | null>(null);
+  const [parameterNotice, setParameterNotice] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SensorDetail | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteRequestId, setDeleteRequestId] = useState(newRequestId);
@@ -223,7 +227,8 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                   {' · '}
                   {detail.hasHistory ? '已有原始采集记录' : '暂无原始采集记录'}
                 </p>
-                <button type="button" className="eq-row-link" onClick={() => setParameterForm(detail)}>
+                <button type="button" className="eq-row-link"
+                        onClick={() => setParameterForm({sensor: detail, parameter: null})}>
                   新增参数
                 </button>
                 <button type="button" className="eq-row-link" onClick={() => setForm({sensor: detail})}>
@@ -255,6 +260,10 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                       </span>
                       <span className="eq-sensor-param-actions">
                         <button type="button" className="eq-row-link"
+                                onClick={() => setParameterForm({sensor: detail, parameter})}>
+                          修改
+                        </button>
+                        <button type="button" className="eq-row-link"
                                 onClick={() => setReading({sensor, parameterId: parameter.parameterId, parameterName: `${parameter.parameterCode} ${parameter.name}`})}>
                           历史 / 规则
                         </button>
@@ -267,9 +276,13 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
         </li>)}
       </ul>)}
 
+    {parameterNotice && <p className="eq-form-hint">上次保存：{parameterNotice}</p>}
+
     <p className="eq-form-hint">
-      测点身份沿用一期主数据，读数取最新值快照。展开测点可新增参数并同时写入首版规则；
-      删除只用于纠正误建——有采集记录、预警事件或统计数据的测点会被拒绝，那时请改为停用。
+      测点身份沿用一期主数据，读数取最新值快照。展开测点可新增参数并写入首版规则；
+      参数行上的「修改」用于调整名称、单位、精度、采样周期与规则——判断依据变了会追加一版新规则，
+      只改展示字段则只推进配置版本。删除只用于纠正误建，有采集记录或统计数据的测点会被拒绝，
+      那时请改为停用。
     </p>
 
     {reading && <SensorReadingsDialog
@@ -285,12 +298,15 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
       onSaved={() => { setForm(null); setExpanded(null); setDetail(null); setReloadKey(key => key + 1); }} />}
 
     {parameterForm && <ParameterFormDialog
-      sensorId={parameterForm.sensorId}
-      sensorCode={parameterForm.sensorCode}
+      sensorId={parameterForm.sensor.sensorId}
+      sensorCode={parameterForm.sensor.sensorCode}
+      parameter={parameterForm.parameter}
       onClose={() => setParameterForm(null)}
-      onSaved={() => {
-        const sensorId = parameterForm.sensorId;
+      onSaved={result => {
+        const sensorId = parameterForm.sensor.sensorId;
         setParameterForm(null);
+        // 改没改规则、有没有结束事件，由服务端的生效说明来讲，前端不复述自己的猜测。
+        setParameterNotice(result?.effectNote ?? null);
         setReloadKey(key => key + 1);
         void loadSensorDetail(sensorId);
       }} />}

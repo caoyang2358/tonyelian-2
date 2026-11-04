@@ -118,7 +118,18 @@ check('无采集记录时读数为待采集', paramRows.every(p => p.value === '
 const fold = await evaluate(`document.querySelector('.eq-sensor-head[aria-expanded="true"] .eq-sensor-fold')?.textContent?.trim() ?? ''`);
 check('展开后折叠标识变为收起', fold === '收起', fold);
 
-await evaluate(`[...document.querySelectorAll('.eq-sensor-param')][0]?.querySelector('.eq-row-link')?.click()`);
+// 参数行上有两个入口（修改 / 历史·规则），按文案点，别依赖先后顺序。
+const paramLinks = await evaluate(`(() => {
+  const first = document.querySelectorAll('.eq-sensor-param')[0];
+  return first ? [...first.querySelectorAll('.eq-row-link')].map(b => b.textContent.trim()) : [];
+})()`);
+check('参数行同时提供修改与历史入口',
+  paramLinks.includes('修改') && paramLinks.includes('历史 / 规则'), JSON.stringify(paramLinks));
+
+await evaluate(`[...document.querySelectorAll('.eq-sensor-param')][0]
+  ?.querySelectorAll('.eq-row-link').forEach(b => {
+    if (b.textContent.trim() === '历史 / 规则') b.click();
+  })`);
 await sleep(1800);
 const dialog = await evaluate(`document.querySelector('.eq-dialog-wrap')?.innerText ?? ''`);
 check('点击历史/规则弹出只读视图', dialog.includes('只读视图'), dialog.slice(0, 120));

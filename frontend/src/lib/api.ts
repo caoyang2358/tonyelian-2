@@ -612,6 +612,8 @@ export interface SensorParameterSummary {
   unitCode: string | null; decimalPlaces: number; samplingIntervalSeconds: number | null;
   processId: string | null; enabled: boolean;
   ruleVersionId: string | null; ruleConfigured: boolean;
+  /** 当前生效规则全文与配置版本：参数页签据此直接打开修改弹层，不必再查一次。 */
+  rule: SensorRuleSnapshot | null; version: number;
 }
 
 export interface SensorQuery {
@@ -634,6 +636,19 @@ export interface SensorDetail extends SensorSummary {
  * 比摘要多两项：规则全文与配置版本。摘要只知道"有没有规则"，详情才够回填表单。
  * rule 为 null 表示从未配规则，与"配了但停用"（rule.enabled=false）不是一回事。
  */
+/**
+ * 打开参数修改弹层所需的最小字段集。
+ *
+ * 参数摘要（P06）与参数详情（P07 返回）都能满足它：契约里没有"单参数详情"接口，
+ * 参数页签拿到的就是摘要，摘要因此带全了规则全文与配置版本。
+ */
+export interface SensorParameterEditable {
+  parameterId: string; parameterCode: string; name: string; dataType: string;
+  unitCode: string | null; decimalPlaces: number; samplingIntervalSeconds: number | null;
+  processId: string | null; enabled: boolean;
+  rule: SensorRuleSnapshot | null; version: number;
+}
+
 export interface SensorParameterDetail {
   parameterId: string; sensorId: string; parameterCode: string; name: string; dataType: string;
   unitCode: string | null; decimalPlaces: number; samplingIntervalSeconds: number | null;
@@ -652,6 +667,36 @@ export interface SensorParameterFormValues {
   unitCode: string | null; decimalPlaces: number | null;
   samplingIntervalSeconds: number | null; processId: string | null;
   enabled: boolean; rule: SensorRuleSnapshot | null; reason?: string | null;
+}
+
+/**
+ * 参数配置更新（S1-P08）的可写字段。
+ *
+ * 不含 parameterCode 与 dataType：前者是采集映射的连接键，后者决定读数怎么解析，
+ * 都不属于"配置"。也不允许 rule 为 null——规则快照只能追加，允许传 null 会让页面
+ * 读回一份实际已不生效的旧规则；不想要规则时把 rule.enabled 设为 false。
+ */
+export interface SensorParameterConfigValues {
+  name: string; unitCode: string | null; decimalPlaces: number | null;
+  samplingIntervalSeconds: number | null; processId: string | null;
+  enabled: boolean; rule: SensorRuleSnapshot; reason?: string | null;
+}
+
+/**
+ * 参数配置更新结果。
+ *
+ * ruleVersionId 是当前生效的规则版本：判断依据没变时与 previousRuleVersionId 相同，
+ * 页面据此区分"配置存了、规则没动"和"规则换了新版"。
+ * affectedEventIds 目前恒为空——结束受影响活动事件属于异常服务的事务，尚未接入。
+ */
+export interface SensorParameterConfigResult {
+  parameterId: string; sensorId: string; parameterCode: string;
+  name: string; dataType: string; unitCode: string | null;
+  decimalPlaces: number; samplingIntervalSeconds: number | null;
+  processId: string | null; enabled: boolean;
+  rule: SensorRuleSnapshot; version: number;
+  previousRuleVersionId: string | null; ruleVersionId: string | null;
+  affectedEventIds: string[]; effectNote: string;
 }
 
 /**
@@ -740,6 +785,8 @@ function mapParameterSummary(value: unknown): SensorParameterSummary {
     enabled: boolean(row.enabled, '启用状态'),
     ruleVersionId: row.ruleVersionId == null ? null : id(row.ruleVersionId, '规则版本ID'),
     ruleConfigured: boolean(row.ruleConfigured, '规则是否启用'),
+    rule: row.rule == null ? null : mapRuleSnapshot(row.rule),
+    version: integer(row.version, '配置版本'),
   };
 }
 
@@ -814,6 +861,32 @@ export function mapParameterDetail(value: unknown): SensorParameterDetail {
     rule: row.rule == null ? null : mapRuleSnapshot(row.rule),
     ruleVersionId: row.ruleVersionId == null ? null : id(row.ruleVersionId, '规则版本ID'),
     version: integer(row.version, '版本'),
+  };
+}
+
+export function mapParameterConfigResult(value: unknown): SensorParameterConfigResult {
+  const row = record(value, '参数配置结果');
+  if (!Array.isArray(row.affectedEventIds)) {
+    throw new ApiError('参数配置结果缺少affectedEventIds数组。', 'INVALID_RESPONSE');
+  }
+  return {
+    parameterId: id(row.parameterId, '参数ID'),
+    sensorId: id(row.sensorId, '测点ID'),
+    parameterCode: str(row.parameterCode, '参数编码'),
+    name: str(row.name, '参数名称'),
+    dataType: str(row.dataType, '数据类型'),
+    unitCode: optional(row.unitCode, '单位'),
+    decimalPlaces: integer(row.decimalPlaces, '小数位'),
+    samplingIntervalSeconds: count(row.samplingIntervalSeconds, '采样周期'),
+    processId: row.processId == null ? null : id(row.processId, '工序ID'),
+    enabled: boolean(row.enabled, '启用状态'),
+    rule: mapRuleSnapshot(row.rule),
+    version: integer(row.version, '配置版本'),
+    previousRuleVersionId: row.previousRuleVersionId == null
+      ? null : id(row.previousRuleVersionId, '上一版规则ID'),
+    ruleVersionId: row.ruleVersionId == null ? null : id(row.ruleVersionId, '规则版本ID'),
+    affectedEventIds: row.affectedEventIds.map((item, index) => id(item, `受影响事件${index + 1}`)),
+    effectNote: str(row.effectNote, '生效说明'),
   };
 }
 
@@ -997,6 +1070,11 @@ export const api = {
                           meta: {requestId: string; operatorName: string}) =>
     requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}/parameters`, mapParameterDetail,
       {method: 'POST', body: {...meta, ...values}}),
+  /** S1-P08 保存参数配置；判断依据变化才追加规则版本，没变化只推进配置版本。 */
+  updateSensorParameter: (parameterId: string, values: SensorParameterConfigValues,
+                          meta: {requestId: string; operatorName: string; expectedVersion: number}) =>
+    requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/configuration`,
+      mapParameterConfigResult, {method: 'PUT', body: {...meta, ...values}}),
   /** S1-P03 新增测点；返回详情，首存版本 1、配置状态 PENDING。 */
   createSensor: (values: SensorFormValues, meta: {requestId: string; operatorName: string}) =>
     requestApi('/api/v1/sensors', mapSensorDetail, {method: 'POST', body: {...meta, ...values}}),

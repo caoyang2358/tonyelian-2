@@ -4,27 +4,47 @@ import cn.copper.phase2.common.ApiResponse;
 import cn.copper.phase2.common.PageResult;
 import cn.copper.phase2.sensor.SensorModels.HistoryRecord;
 import cn.copper.phase2.sensor.SensorModels.LatestReading;
+import cn.copper.phase2.sensor.SensorModels.ParameterConfigResult;
 import cn.copper.phase2.sensor.SensorModels.RuleVersionView;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 参数读数与规则快照 S1-P09/P10/P11。
+ * 参数读数、规则快照与配置更新 S1-P08/P09/P10/P11。
  *
- * <p>三条都是只读，且都明确"不改采集事实"：最新值读 {@code ads_parameter_monitor}，
+ * <p>读的三条都明确"不改采集事实"：最新值读 {@code ads_parameter_monitor}，
  * 历史读 {@code ods_sensor_data}，规则读 {@code p2_alert_rule_version}。
- * 这里不会写入、改值，也不会重建第二份采集记录。</p>
+ * 写的一条只改参数配置与规则版本，不改参数编码、数据类型，也不写任何一条读数。</p>
  */
 @RestController
 @RequestMapping("/api/v1/sensor-parameters")
 public class SensorParameterController {
     private final SensorService service;
+    private final SensorParameterWriteService writeService;
 
-    public SensorParameterController(SensorService service) {
+    public SensorParameterController(SensorService service,
+                                     SensorParameterWriteService writeService) {
         this.service = service;
+        this.writeService = writeService;
+    }
+
+    /**
+     * S1-P08：一次保存参数配置与规则。
+     *
+     * <p>判断依据变化才追加规则版本，没变化只推进配置版本。受影响活动事件的结束
+     * （{@code RULE_CHANGED}）属于异常服务事务，当前未接入，响应里如实返回空数组。</p>
+     */
+    @PutMapping("/{parameterId}/configuration")
+    public ApiResponse<ParameterConfigResult> updateConfiguration(
+            @PathVariable String parameterId,
+            @RequestBody JsonNode body) {
+        return ApiResponse.success(writeService.updateConfiguration(parameterId, body));
     }
 
     /** S1-P09：最新读数与采集状态；未采到数据时返回缺值状态而不是 404。 */

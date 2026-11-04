@@ -7,12 +7,15 @@ import cn.copper.phase2.common.ErrorCode;
 import cn.copper.phase2.common.IdempotencyService;
 import cn.copper.phase2.sensor.SensorModels.ParameterDetail;
 import cn.copper.phase2.sensor.SensorModels.RuleSnapshot;
+import cn.copper.phase2.sensor.SensorRepository.CurrentRule;
+import cn.copper.phase2.sensor.SensorRepository.ParameterRow;
 import cn.copper.phase2.sensor.SensorRepository.SensorRow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -272,5 +275,145 @@ class SensorParameterWriteServiceTest {
         Object fields = error.details().get("fields");
         assertTrue(fields instanceof Map, "校验错误应带 fields 明细");
         return (Map<String, Object>) fields;
+    }
+
+    // ---------------------------------------------------------------- P08 配置更新
+
+    /** 当前生效的规则，与 VALID_RULE 定稿后一致（单位继承参数单位 kPa）。 */
+    private static final RuleSnapshot CURRENT_RULE = new RuleSnapshot(
+            "0", "100", "-10", "150", "kPa", "SUSTAINED", 30, true);
+
+    private void givenParameter(long version, RuleSnapshot rule) {
+        when(repository.lockParameter(PARAMETER_ID)).thenReturn(Optional.of(new ParameterRow(
+                PARAMETER_ID, SENSOR_ID, "TEMP-011", "PRESSURE", "压力", "DECIMAL",
+                "kPa", 2, 60, null, true, version)));
+        when(repository.currentRule(PARAMETER_ID)).thenReturn(rule == null
+                ? Optional.empty()
+                : Optional.of(new CurrentRule(RULE_VERSION_ID, 1L, rule)));
+        when(repository.unitExists(anyString())).thenReturn(true);
+        when(repository.updateParameterVersion(eq(PARAMETER_ID), anyLong())).thenReturn(1);
+        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(), anyString()))
+                .thenReturn(RULE_VERSION_ID + 1);
+    }
+
+    private static JsonNode configBody(long expectedVersion, String name, String unitCode,
+                                       String rule) throws Exception {
+        return JSON.readTree("""
+                {"requestId":"aa110000-0000-4000-8000-0000000000d1","operatorName":"设备管理员",
+                 "expectedVersion":%d,"reason":"调整阈值","name":"%s","unitCode":"%s",
+                 "decimalPlaces":2,"samplingIntervalSeconds":60,"processId":null,
+                 "enabled":true,"rule":%s}
+                """.formatted(expectedVersion, name, unitCode, rule));
+    }
+
+    @Test
+    void configUpdateWithUnchangedRuleOnlyAdvancesConfigurationVersion() throws Exception {
+        givenParameter(1, CURRENT_RULE);
+
+        var result = service().updateConfiguration("501",
+                configBody(1, "压力（更正名称）", "kPa", VALID_RULE));
+
+        // 判断依据没变：不许产出"看起来改过"的新规则版本，但配置版本要推进。
+        verify(repository, never()).insertRuleVersion(anyLong(), anyLong(), any(), any(), any(), anyString());
+        assertEquals(2, result.version());
+        assertEquals(String.valueOf(RULE_VERSION_ID), result.previousRuleVersionId());
+        assertEquals(String.valueOf(RULE_VERSION_ID), result.ruleVersionId());
+        assertTrue(result.effectNote().contains("未变化"), result.effectNote());
+    }
+
+    @Test
+    void trailingZerosInStoredBoundsAreNotTreatedAsAChange() throws Exception {
+        // 库里是 DECIMAL(20,6)，读回常带尾随零；按字符串比会每次保存都多出版本。
+        givenParameter(1, new RuleSnapshot("0.000000", "100.000000", "-10.000000", "150.000000",
+                "kPa", "SUSTAINED", 30, true));
+
+        service().updateConfiguration("501", configBody(1, "压力", "kPa", VALID_RULE));
+
+        verify(repository, never()).insertRuleVersion(anyLong(), anyLong(), any(), any(), any(), anyString());
+    }
+
+    @Test
+    void changedThresholdAppendsNewRuleVersionPointingAtThePreviousOne() throws Exception {
+        givenParameter(3, CURRENT_RULE);
+        String changed = """
+                {"normalLower":"0","normalUpper":"120","alarmLower":"-10","alarmUpper":"150",
+                 "triggerMode":"SUSTAINED","durationSeconds":30,"enabled":true}
+                """;
+
+        var result = service().updateConfiguration("501", configBody(3, "压力", "kPa", changed));
+
+        ArgumentCaptor<RuleSnapshot> rule = ArgumentCaptor.forClass(RuleSnapshot.class);
+        verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(2L), eq(RULE_VERSION_ID),
+                rule.capture(), eq("调整阈值"), eq("设备管理员"));
+        assertEquals("120", rule.getValue().normalUpper());
+        assertEquals(4, result.version());
+        assertEquals(String.valueOf(RULE_VERSION_ID), result.previousRuleVersionId());
+        assertEquals(String.valueOf(RULE_VERSION_ID + 1), result.ruleVersionId());
+        assertEquals(List.of(), result.affectedEventIds());
+        // 事件服务未接入这件事必须写在响应里，不能让人以为事件已经被结束。
+        assertTrue(result.effectNote().contains("尚未接入"), result.effectNote());
+    }
+
+    @Test
+    void firstRuleOnASeedParameterStartsTheVersionChain() throws Exception {
+        givenParameter(0, null);
+        when(repository.insertRuleVersion(eq(PARAMETER_ID), anyLong(), any(), any(), any(), anyString()))
+                .thenReturn(77L);
+
+        var result = service().updateConfiguration("501", configBody(0, "压力", "kPa", VALID_RULE));
+
+        verify(repository).insertParameterProfile(PARAMETER_ID, 1L);
+        verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(1L), eq(null),
+                any(), eq("调整阈值"), eq("设备管理员"));
+        assertNull(result.previousRuleVersionId());
+        assertEquals("77", result.ruleVersionId());
+    }
+
+    @Test
+    void staleExpectedVersionIsRejectedBeforeAnyWrite() throws Exception {
+        givenParameter(3, CURRENT_RULE);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service().updateConfiguration("501", configBody(2, "压力", "kPa", VALID_RULE)));
+
+        assertEquals(ErrorCode.VERSION_CONFLICT, error.errorCode());
+        assertEquals(3L, error.details().get("currentVersion"));
+        verify(repository, never()).updateParameterConfig(anyLong(), any());
+        verify(repository, never()).updateParameterVersion(anyLong(), anyLong());
+    }
+
+    @Test
+    void ruleCannotBeDroppedThroughConfigurationUpdate() throws Exception {
+        givenParameter(1, CURRENT_RULE);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service().updateConfiguration("501", configBody(1, "压力", "kPa", "null")));
+
+        // 规则快照只能追加、不能覆盖，接受 null 会让页面显示一份实际已不生效的规则。
+        assertTrue(fields(error).containsKey("rule"));
+        verify(repository, never()).updateParameterConfig(anyLong(), any());
+    }
+
+    @Test
+    void changingParameterUnitChangesTheInheritedRuleUnitAndStartsANewVersion() throws Exception {
+        givenParameter(1, CURRENT_RULE);
+
+        // 参数单位 kPa → Pa，规则没单独给单位，于是规则单位随之变为 Pa：量纲变了就是判断依据变了。
+        service().updateConfiguration("501", configBody(1, "压力", "Pa", VALID_RULE));
+
+        ArgumentCaptor<RuleSnapshot> rule = ArgumentCaptor.forClass(RuleSnapshot.class);
+        verify(repository).insertRuleVersion(eq(PARAMETER_ID), eq(2L), eq(RULE_VERSION_ID),
+                rule.capture(), any(), anyString());
+        assertEquals("Pa", rule.getValue().unitCode());
+    }
+
+    @Test
+    void unknownParameterIsNotFound() throws Exception {
+        when(repository.lockParameter(PARAMETER_ID)).thenReturn(Optional.empty());
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service().updateConfiguration("501", configBody(1, "压力", "kPa", VALID_RULE)));
+
+        assertEquals(ErrorCode.NOT_FOUND, error.errorCode());
     }
 }

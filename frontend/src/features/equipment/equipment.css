@@ -931,7 +931,13 @@
 
 .eq-sensor-value small { font-size: 10px; color: var(--muted, #7c8982) }
 
-.eq-sensor-param-actions { flex: none }
+.eq-sensor-param-actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 10px;
+}
 
 .eq-sensor-tabs {
   display: flex;
@@ -1031,16 +1037,26 @@
 .eq-sensor-detail-bar {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  /* 抽屉较窄时让按钮组换到下一行：宁可占两行，也不让最右边的「删除」被裁掉 */
+  flex-wrap: wrap;
+  gap: 6px 12px;
 }
 
 .eq-sensor-detail-bar .eq-form-hint {
-  flex: 1 1 auto;
+  flex: 1 1 240px;
   margin: 0;
   min-width: 0;
 }
 
-.eq-sensor-detail-bar .eq-row-link { flex: none }
+/* 行内按钮：.eq-row-link 默认整行可点（width:100%），在这里必须缩回自身宽度，
+   否则详情条会被按钮撑满、说明文字被压成一列单字 */
+.eq-sensor-detail-bar .eq-row-link,
+.eq-sensor-param-actions .eq-row-link {
+  flex: none;
+  width: auto;
+  display: inline-flex;
+  white-space: nowrap;
+}
 
 /* 启停用勾选项：表单里单独一行，说明文字跟着勾选框一起读 */
 .eq-sensor-switch {

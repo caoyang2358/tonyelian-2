@@ -2,6 +2,7 @@ package cn.copper.phase2.sensor;
 
 import cn.copper.phase2.sensor.SensorModels.HistoryRecord;
 import cn.copper.phase2.sensor.SensorModels.LatestReading;
+import cn.copper.phase2.sensor.SensorModels.ParameterConfigRequest;
 import cn.copper.phase2.sensor.SensorModels.ParameterDetail;
 import cn.copper.phase2.sensor.SensorModels.ParameterSummary;
 import cn.copper.phase2.sensor.SensorModels.ParameterWriteRequest;
@@ -10,6 +11,7 @@ import cn.copper.phase2.sensor.SensorModels.RuleVersionView;
 import cn.copper.phase2.sensor.SensorModels.SensorDetail;
 import cn.copper.phase2.sensor.SensorModels.SensorSummary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -67,8 +69,12 @@ public class SensorRepository {
             SELECT dp.parameter_id, dp.parameter_code, dp.parameter_name, dp.data_type,
                    dp.unit_code, dp.decimal_places, dp.sampling_frequency_seconds,
                    dp.process_id, dp.enabled,
-                   rv.rule_version_id, rv.enabled AS rule_enabled
+                   rv.rule_version_id, rv.enabled AS rule_enabled,
+                   rv.normal_lower, rv.normal_upper, rv.alarm_lower, rv.alarm_upper,
+                   rv.unit_code AS rule_unit_code, rv.trigger_mode, rv.duration_seconds,
+                   COALESCE(pp.version, 0) AS parameter_version
               FROM dim_sensor_parameter dp
+              LEFT JOIN p2_sensor_parameter_profile pp ON pp.parameter_id = dp.parameter_id
               LEFT JOIN (SELECT parameter_id, MAX(rule_version_id) AS rule_version_id
                            FROM p2_alert_rule_version
                           GROUP BY parameter_id) rm ON rm.parameter_id = dp.parameter_id
@@ -231,6 +237,15 @@ public class SensorRepository {
 
     static final RowMapper<ParameterSummary> PARAMETER_MAPPER = (rs, rowNum) -> {
         Object ruleVersionId = rs.getObject("rule_version_id");
+        RuleSnapshot rule = ruleVersionId == null ? null : new RuleSnapshot(
+                boundText(rs.getBigDecimal("normal_lower")),
+                boundText(rs.getBigDecimal("normal_upper")),
+                boundText(rs.getBigDecimal("alarm_lower")),
+                boundText(rs.getBigDecimal("alarm_upper")),
+                rs.getString("rule_unit_code"),
+                rs.getString("trigger_mode"),
+                rs.getObject("duration_seconds") == null ? null : rs.getInt("duration_seconds"),
+                rs.getBoolean("rule_enabled"));
         return new ParameterSummary(
                 String.valueOf(rs.getLong("parameter_id")),
                 rs.getString("parameter_code"),
@@ -243,7 +258,9 @@ public class SensorRepository {
                 rs.getObject("process_id") == null ? null : String.valueOf(rs.getLong("process_id")),
                 rs.getBoolean("enabled"),
                 ruleVersionId == null ? null : String.valueOf(((Number) ruleVersionId).longValue()),
-                ruleVersionId != null && rs.getBoolean("rule_enabled"));
+                ruleVersionId != null && rs.getBoolean("rule_enabled"),
+                rule,
+                rs.getLong("parameter_version"));
     };
 
     // ---------------------------------------------------------------- 读数
@@ -640,6 +657,21 @@ public class SensorRepository {
     /** 参数首版规则快照；{@code previous} 为空表示这是该参数的第一版。 */
     public long insertRuleVersion(long parameterId, RuleSnapshot rule, String reason,
                                   String operatorName) {
+        return insertRuleVersion(parameterId, 1L, null, rule, reason, operatorName);
+    }
+
+    /**
+     * 追加一版规则快照。
+     *
+     * <p>{@code ruleVersion} 是业务意义上的"第几版"，由调用方在行锁保护下算出来；
+     * 唯一键 {@code (parameter_id, rule_version)} 兜住并发重复。{@code previousRuleVersionId}
+     * 指向上一条的 {@code rule_version_id}，构成一条不可覆盖的版本链。</p>
+     *
+     * <p>这里只做 INSERT，没有任何 UPDATE 入口：旧版本一旦落库就是历史事件当时依据的依据，
+     * 允许改就会让"事件为什么在那时会触发"变成无法回答的问题。</p>
+     */
+    public long insertRuleVersion(long parameterId, long ruleVersion, Long previousRuleVersionId,
+                                  RuleSnapshot rule, String reason, String operatorName) {
         KeyHolder keys = new GeneratedKeyHolder();
         LocalDateTime now = LocalDateTime.now(ZONE);
         jdbc.update(connection -> {
@@ -648,24 +680,30 @@ public class SensorRepository {
                         (parameter_id, rule_version, previous_rule_version_id,
                          normal_lower, normal_upper, alarm_lower, alarm_upper, unit_code,
                          trigger_mode, duration_seconds, enabled, effective_at, reason, operator_name)
-                    VALUES (?, 1, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             statement.setLong(1, parameterId);
-            setDecimal(statement, 2, rule.normalLower());
-            setDecimal(statement, 3, rule.normalUpper());
-            setDecimal(statement, 4, rule.alarmLower());
-            setDecimal(statement, 5, rule.alarmUpper());
-            statement.setString(6, rule.unitCode());
-            statement.setString(7, rule.triggerMode());
-            if (rule.durationSeconds() == null) {
-                statement.setNull(8, java.sql.Types.INTEGER);
+            statement.setLong(2, ruleVersion);
+            if (previousRuleVersionId == null) {
+                statement.setNull(3, java.sql.Types.BIGINT);
             } else {
-                statement.setInt(8, rule.durationSeconds());
+                statement.setLong(3, previousRuleVersionId);
             }
-            statement.setBoolean(9, rule.enabled());
-            statement.setObject(10, now);
-            statement.setString(11, reason);
-            statement.setString(12, operatorName);
+            setDecimal(statement, 4, rule.normalLower());
+            setDecimal(statement, 5, rule.normalUpper());
+            setDecimal(statement, 6, rule.alarmLower());
+            setDecimal(statement, 7, rule.alarmUpper());
+            statement.setString(8, rule.unitCode());
+            statement.setString(9, rule.triggerMode());
+            if (rule.durationSeconds() == null) {
+                statement.setNull(10, java.sql.Types.INTEGER);
+            } else {
+                statement.setInt(10, rule.durationSeconds());
+            }
+            statement.setBoolean(11, rule.enabled());
+            statement.setObject(12, now);
+            statement.setString(13, reason);
+            statement.setString(14, operatorName);
             return statement;
         }, keys);
         Number key = keys.getKey();
@@ -675,7 +713,120 @@ public class SensorRepository {
         return key.longValue();
     }
 
-    /** 参数详情：定义、配置版本与当前规则快照三处合一，供 P07 返回新建结果。 */
+    // ---------------------------------------------------------------- 参数配置更新（P08）
+
+    /** 参数配置更新前锁定的当前状态。{@code version} 是配置版本，种子参数无档案行为 0。 */
+    public record ParameterRow(long parameterId, long sensorId, String sensorCode,
+                               String parameterCode, String name, String dataType,
+                               String unitCode, int decimalPlaces, Integer samplingIntervalSeconds,
+                               Long processId, boolean enabled, long version) {
+    }
+
+    /**
+     * 锁定参数行。
+     *
+     * <p>锁在 {@code dim_sensor_parameter} 上而不是参数档案上：档案行对种子参数并不存在，
+     * 锁一个不存在的行等于没锁。锁住参数本体，同一个参数的并发保存才真的会排队。</p>
+     */
+    public Optional<ParameterRow> lockParameter(long parameterId) {
+        List<ParameterRow> rows = jdbc.query("""
+                SELECT dp.parameter_id, dp.sensor_id, s.sensor_code, dp.parameter_code,
+                       dp.parameter_name, dp.data_type, dp.unit_code, dp.decimal_places,
+                       dp.sampling_frequency_seconds, dp.process_id, dp.enabled,
+                       COALESCE(pp.version, 0) AS parameter_version
+                  FROM dim_sensor_parameter dp
+                  JOIN dim_sensor s ON s.sensor_id = dp.sensor_id
+                  LEFT JOIN p2_sensor_parameter_profile pp ON pp.parameter_id = dp.parameter_id
+                 WHERE dp.parameter_id = ?
+                 FOR UPDATE
+                """, (rs, rowNum) -> new ParameterRow(
+                rs.getLong("parameter_id"),
+                rs.getLong("sensor_id"),
+                rs.getString("sensor_code"),
+                rs.getString("parameter_code"),
+                rs.getString("parameter_name"),
+                rs.getString("data_type"),
+                rs.getString("unit_code"),
+                rs.getInt("decimal_places"),
+                rs.getObject("sampling_frequency_seconds") == null
+                        ? null : rs.getInt("sampling_frequency_seconds"),
+                rs.getObject("process_id") == null ? null : rs.getLong("process_id"),
+                rs.getBoolean("enabled"),
+                rs.getLong("parameter_version")),
+                parameterId);
+        return rows.stream().findFirst();
+    }
+
+    /** 当前生效的规则版本：规则链的最后一环。 */
+    public record CurrentRule(long ruleVersionId, long ruleVersion, RuleSnapshot rule) {
+    }
+
+    public Optional<CurrentRule> currentRule(long parameterId) {
+        List<CurrentRule> rows = jdbc.query("""
+                SELECT rule_version_id, rule_version, normal_lower, normal_upper,
+                       alarm_lower, alarm_upper, unit_code, trigger_mode, duration_seconds, enabled
+                  FROM p2_alert_rule_version
+                 WHERE parameter_id = ?
+                 ORDER BY rule_version DESC
+                 LIMIT 1
+                """, (rs, rowNum) -> new CurrentRule(
+                rs.getLong("rule_version_id"),
+                rs.getLong("rule_version"),
+                new RuleSnapshot(
+                        boundText(rs.getBigDecimal("normal_lower")),
+                        boundText(rs.getBigDecimal("normal_upper")),
+                        boundText(rs.getBigDecimal("alarm_lower")),
+                        boundText(rs.getBigDecimal("alarm_upper")),
+                        rs.getString("unit_code"),
+                        rs.getString("trigger_mode"),
+                        rs.getObject("duration_seconds") == null ? null : rs.getInt("duration_seconds"),
+                        rs.getBoolean("enabled"))),
+                parameterId);
+        return rows.stream().findFirst();
+    }
+
+    /**
+     * 保存参数可维护配置。
+     *
+     * <p>刻意不更新 {@code parameter_code} 与 {@code data_type}：前者是采集映射的连接键，
+     * 后者决定读数怎么解析，两者都不是"配置"，改了会让历史读数失去解释。</p>
+     */
+    public void updateParameterConfig(long parameterId, ParameterConfigRequest request) {
+        int decimalPlaces = request.decimalPlaces() == null ? 2 : request.decimalPlaces();
+        jdbc.update("""
+                UPDATE dim_sensor_parameter
+                   SET parameter_name = ?, unit_code = ?, decimal_places = ?,
+                       sampling_frequency_seconds = ?, process_id = ?, enabled = ?
+                 WHERE parameter_id = ?
+                """, (PreparedStatementSetter) statement -> {
+            statement.setString(1, request.name());
+            statement.setString(2, request.unitCode());
+            statement.setInt(3, decimalPlaces);
+            if (request.samplingIntervalSeconds() == null) {
+                statement.setNull(4, java.sql.Types.INTEGER);
+            } else {
+                statement.setInt(4, request.samplingIntervalSeconds());
+            }
+            if (request.processId() == null) {
+                statement.setNull(5, java.sql.Types.BIGINT);
+            } else {
+                statement.setLong(5, request.processId());
+            }
+            statement.setBoolean(6, request.enabled());
+            statement.setLong(7, parameterId);
+        });
+    }
+
+    /** 推进配置版本；返回 0 表示版本已被别人推进，由调用方转 409。 */
+    public int updateParameterVersion(long parameterId, long expectedVersion) {
+        return jdbc.update("""
+                UPDATE p2_sensor_parameter_profile
+                   SET version = version + 1, updated_at = ?
+                 WHERE parameter_id = ? AND version = ?
+                """, LocalDateTime.now(ZONE), parameterId, expectedVersion);
+    }
+
+    /** 参数详情：定义、配置版本与当前规则快照三处合一，供 P07/P08 返回结果。 */
     public Optional<ParameterDetail> parameterDetail(long parameterId) {
         List<ParameterDetail> rows = jdbc.query("""
                 SELECT dp.parameter_id, dp.sensor_id, dp.parameter_code, dp.parameter_name,
