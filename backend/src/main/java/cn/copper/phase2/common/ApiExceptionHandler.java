@@ -15,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.sql.SQLException;
@@ -69,6 +70,15 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(ErrorCode.VALIDATION_ERROR.status())
                 .body(ApiResponse.<Object>error(ErrorCode.VALIDATION_ERROR.name(),
                         "请求体格式不符合约定，请检查字段类型与日期格式。", Map.of()));
+    }
+
+    /**
+     * multipart 在进入控制器之前就会被容器解析，超限时抛的是这里的异常，
+     * 不处理会落到通用 500，页面只能看到"请求暂时无法完成"而不知道是文件太大。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Object>> uploadTooLarge(MaxUploadSizeExceededException error) {
+        return validationFailure(Map.of("file", "上传文件超过服务允许的大小，请压缩或拆分后重试。"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

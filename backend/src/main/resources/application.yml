@@ -34,9 +34,20 @@ spring:
     time-zone: Asia/Shanghai
     serialization:
       write-dates-as-timestamps: false
+  servlet:
+    multipart:
+      # 比业务上限（20 MiB）略宽：超限由附件模块给出可读的字段错误，
+      # 容器层只负责挡住明显异常的大包，避免它先抛出无上下文的异常。
+      max-file-size: 22MB
+      max-request-size: 26MB
 
 phase2:
   environment: ${APP_ENV:development}
+  attachment:
+    # 附件落盘的相对/绝对目录。生产部署时用环境变量指到独立数据盘。
+    storage-root: ${ATTACHMENT_STORAGE_ROOT:./.local/attachments}
+    # 单文件大小上限（字节），默认 20 MiB，属于实现配置而非业务规则。
+    max-file-size: ${ATTACHMENT_MAX_FILE_SIZE:20971520}
 
 logging:
   level:
