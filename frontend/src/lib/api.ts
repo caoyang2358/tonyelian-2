@@ -707,7 +707,8 @@ export interface SensorParameterConfigValues {
  *
  * ruleVersionId 是当前生效的规则版本：判断依据没变时与 previousRuleVersionId 相同，
  * 页面据此区分"配置存了、规则没动"和"规则换了新版"。
- * affectedEventIds 目前恒为空——结束受影响活动事件属于异常服务的事务，尚未接入。
+ * affectedEventIds 是这次保存顺手结束掉的活动事件（原因 RULE_CHANGED）。判断依据变化时
+ * 后端在同一事务里结束该参数的活动事件并回填事件号；判断依据没变、或变了但没有活动事件，都是空数组。
  */
 export interface SensorParameterConfigResult {
   parameterId: string; sensorId: string; parameterCode: string;
