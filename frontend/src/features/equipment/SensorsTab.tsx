@@ -39,6 +39,17 @@ function formatTime(value: string | null): string {
   return date.toLocaleString('zh-CN', {hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
 
+/** 与新增/编辑弹窗共用同一个记住的操作人，避免两处显示不一致。 */
+function rememberedOperator(): string {
+  try { return window.localStorage.getItem('eq-operator-name')?.trim() || '设备管理员'; }
+  catch { return '设备管理员'; }
+}
+
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 /** 读数的显示：数值按参数精度补齐小数位，文本型直接显示文本。 */
 function readingText(reading: SensorLatestReading | undefined, decimalPlaces: number): string {
   if (!reading) return '—';
@@ -62,6 +73,12 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
   const [reading, setReading] = useState<{sensor: SensorSummary; parameterId: string; parameterName: string} | null>(null);
   const [form, setForm] = useState<{sensor: SensorDetail | null} | null>(null);
   const [parameterForm, setParameterForm] = useState<SensorDetail | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SensorDetail | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteRequestId, setDeleteRequestId] = useState(newRequestId);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteFields, setDeleteFields] = useState<Record<string, string>>({});
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -117,6 +134,53 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
 
   const busy = loading && rows === null;
 
+  const openDelete = (sensor: SensorDetail) => {
+    setDeleteTarget(sensor);
+    setDeleteReason('');
+    setDeleteRequestId(newRequestId());
+    setDeleteError(null);
+    setDeleteFields({});
+  };
+
+  const changeDeleteReason = (value: string) => {
+    setDeleteReason(value);
+    // 内容变了就换请求编号，避免被幂等表判成"同号不同内容"。
+    setDeleteRequestId(newRequestId());
+    setDeleteFields(previous => ({...previous, reason: ''}));
+  };
+
+  const submitDelete = () => {
+    if (!deleteTarget) return;
+    const trimmed = deleteReason.trim();
+    if (!trimmed) { setDeleteFields({reason: '删除原因不得为空。'}); return; }
+    setDeleteBusy(true); setDeleteError(null); setDeleteFields({});
+    api.deleteSensor(deleteTarget.sensorId, {
+      requestId: deleteRequestId, operatorName: rememberedOperator(),
+      expectedVersion: deleteTarget.version, reason: trimmed,
+    })
+      .then(() => {
+        setDeleteBusy(false);
+        setDeleteTarget(null);
+        // 行已经不存在了，展开状态与详情缓存都要一起清掉。
+        setExpanded(null);
+        setDetail(null);
+        setReloadKey(key => key + 1);
+      })
+      .catch((cause: unknown) => {
+        setDeleteBusy(false);
+        if (!(cause instanceof ApiError)) { setDeleteError('删除失败，请稍后重试。'); return; }
+        if (cause.code === 'VERSION_CONFLICT') {
+          setDeleteError('这个测点在你操作期间被他人修改过，请收起后重新展开再试。');
+        } else if (cause.code === 'RELATED_DATA_EXISTS') {
+          setDeleteError(cause.message);
+        } else if (Object.keys(cause.fields).length > 0) {
+          setDeleteFields(cause.fields);
+        } else {
+          setDeleteError(cause.message);
+        }
+      });
+  };
+
   return <>
     <div className="eq-section-bar">
       <h3 className="eq-section-title">测点</h3>
@@ -165,6 +229,13 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                 <button type="button" className="eq-row-link" onClick={() => setForm({sensor: detail})}>
                   修改
                 </button>
+                <button type="button" className="eq-row-link" onClick={() => openDelete(detail)}
+                        disabled={!detail.deletion.allowed}
+                        title={detail.deletion.allowed
+                          ? '删除误建的测点，会一并清理参数与组网节点'
+                          : detail.deletion.blockers.map(item => item.message).join('；')}>
+                  删除
+                </button>
               </div>
               {detail.parameters.length === 0
                 ? <p className="eq-param-empty">这个测点还没有参数定义。</p>
@@ -198,7 +269,7 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
 
     <p className="eq-form-hint">
       测点身份沿用一期主数据，读数取最新值快照。展开测点可新增参数并同时写入首版规则；
-      参数规则修改与测点删除尚未开放，停用是当前唯一安全的退出方式。
+      删除只用于纠正误建——有采集记录、预警事件或统计数据的测点会被拒绝，那时请改为停用。
     </p>
 
     {reading && <SensorReadingsDialog
@@ -223,5 +294,34 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
         setReloadKey(key => key + 1);
         void loadSensorDetail(sensorId);
       }} />}
+
+    {deleteTarget && <div className="eq-confirm" role="presentation"
+      onClick={event => { if (event.target === event.currentTarget && !deleteBusy) setDeleteTarget(null); }}>
+      <div className="eq-confirm-card" role="dialog" aria-modal="true" aria-labelledby="eq-sensor-delete-title">
+        <h3 id="eq-sensor-delete-title">确认删除这个测点？</h3>
+        <p className="eq-confirm-text">
+          <strong>{deleteTarget.sensorCode} · {deleteTarget.name}</strong><br />
+          测点本身、{deleteTarget.parameterCount} 个参数及其组网节点会一并删除，变更记录保留。
+          已有采集记录的编码不会再被复用，此操作不可撤销。
+        </p>
+        <label className="eq-form-field">
+          <span>删除原因<em>*</em></span>
+          <input value={deleteReason} disabled={deleteBusy} maxLength={1000}
+            aria-invalid={Boolean(deleteFields.reason)}
+            placeholder="例如：误建，与 TEMP-FURNACE-01 重复"
+            onChange={event => changeDeleteReason(event.target.value)} />
+          {deleteFields.reason
+            ? <small className="eq-form-error">{deleteFields.reason}</small>
+            : <small className="eq-form-hint">删除原因会写入变更记录，供日后追溯。</small>}
+        </label>
+        {deleteError && <div className="eq-alert is-error">{deleteError}</div>}
+        <div className="eq-confirm-actions">
+          <button type="button" className="button" onClick={() => setDeleteTarget(null)} disabled={deleteBusy}>取消</button>
+          <button type="button" className="button is-danger" onClick={() => void submitDelete()} disabled={deleteBusy}>
+            {deleteBusy ? '删除中…' : '确认删除'}
+          </button>
+        </div>
+      </div>
+    </div>}
   </>;
 }

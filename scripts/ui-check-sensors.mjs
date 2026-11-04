@@ -77,8 +77,8 @@ check('页签渲染出测点区域与数量', bar.includes('测点') && /共\s*\
 
 const bodyText = await evaluate(`document.querySelector('.eq-drawer-body')?.innerText ?? ''`);
 check('没有读取失败提示', !bodyText.includes('读取失败') && !bodyText.includes('失败，请'), bodyText.slice(0, 160));
-check('说明写明停用是唯一退出方式',
-  bodyText.includes('停用') && bodyText.includes('尚未开放'), bodyText.slice(-140));
+check('说明写明删除只用于纠正误建，其余情况请停用',
+  bodyText.includes('删除只用于纠正误建') && bodyText.includes('停用'), bodyText.slice(-140));
 
 const sensorCount = await evaluate(`document.querySelectorAll('.eq-sensor-item').length`);
 check('测点列表非空', sensorCount > 0, `sensorCount=${sensorCount}`);

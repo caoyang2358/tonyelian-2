@@ -196,7 +196,9 @@ public class SensorRepository {
                             rs.getString("monitoring_status"),
                             configurationState(parameterCount, dataSource),
                             rs.getObject("profile_version") == null ? 0L : rs.getLong("profile_version"),
-                            List.of());
+                            // 参数摘要与删除可行性都要另查，这里留空，由 SensorService.detail 补齐。
+                            // 对外接口不会读到 null：详情只有这一个出口。
+                            List.of(), null);
                 },
                 args.toArray());
         return rows.stream().findFirst();
@@ -732,6 +734,126 @@ public class SensorRepository {
         Long count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dim_process WHERE process_id = ?", Long.class, processId);
         return count != null && count > 0;
+    }
+
+    // ---------------------------------------------------------------- 删除（P05）
+
+    /**
+     * 该测点下全部参数编码，按显示顺序。
+     *
+     * <p>删除前拍进留痕快照：参数行随后会被级联清掉，这份清单是事后唯一能回答
+     * "当初删掉的测点带着哪些参数"的依据。</p>
+     */
+    public List<String> parameterCodes(long sensorId) {
+        return jdbc.query("""
+                SELECT parameter_code FROM dim_sensor_parameter
+                 WHERE sensor_id = ? ORDER BY display_order, parameter_id
+                """, (rs, rowNum) -> rs.getString("parameter_code"), sensorId);
+    }
+
+    /**
+     * 原始采集记录条数。
+     *
+     * <p>按 {@code sensor_code} 查而非 {@code sensor_id}：原始表没有外键，只存编码，
+     * 数据库层不会拦住删除，孤儿数据只能靠这里发现。</p>
+     */
+    public long countCollection(String sensorCode) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM ods_sensor_data WHERE sensor_code = ? AND is_deleted = 0",
+                Long.class, sensorCode);
+        return count == null ? 0L : count;
+    }
+
+    /** 挂在测点本身或其任一参数上的预警事件；parameter_id 无外键，须与 sensor_id 一起查。 */
+    public long countAlertEvents(long sensorId) {
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM p2_alert_event
+                 WHERE sensor_id = ?
+                    OR parameter_id IN (SELECT parameter_id FROM dim_sensor_parameter WHERE sensor_id = ?)
+                """, Long.class, sensorId, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    /** 监测统计记录数。 */
+    public long countMonitor(long sensorId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM ads_parameter_monitor WHERE sensor_id = ?", Long.class, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    /** 能耗统计记录数：小时表与日表合并计数，两者都属于"别人的统计产物"。 */
+    public long countEnergy(long sensorId) {
+        Long count = jdbc.queryForObject("""
+                SELECT (SELECT COUNT(*) FROM dws_energy_hour WHERE sensor_id = ?)
+                     + (SELECT COUNT(*) FROM dws_energy_day  WHERE sensor_id = ?)
+                """, Long.class, sensorId, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    /** 以该测点为父节点的子测点：能源树的上级节点，删掉会让下级失去归属。 */
+    public long countChildSensors(long sensorId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dim_sensor WHERE parent_energy_sensor_id = ?",
+                Long.class, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * 规则被改过的参数个数。
+     *
+     * <p>新建参数时写的第一版规则是"初始配置"，可以随参数一起清理；
+     * 超过一版说明现场调过阈值，那些版本是预警事件的判据，不能跟着测点消失。</p>
+     */
+    public long countParametersWithRuleHistory(long sensorId) {
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM (
+                    SELECT rv.parameter_id
+                      FROM p2_alert_rule_version rv
+                      JOIN dim_sensor_parameter dp ON dp.parameter_id = rv.parameter_id
+                     WHERE dp.sensor_id = ?
+                     GROUP BY rv.parameter_id
+                    HAVING COUNT(*) > 1) history
+                """, Long.class, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    public long countNetworkNodes(long sensorId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM p2_network_node WHERE sensor_id = ?", Long.class, sensorId);
+        return count == null ? 0L : count;
+    }
+
+    /** 组网布局节点随测点删除：组网接口是整份布局保存，没有单独的节点删除入口。 */
+    public int deleteNetworkNodes(long sensorId) {
+        return jdbc.update("DELETE FROM p2_network_node WHERE sensor_id = ?", sensorId);
+    }
+
+    public int deleteRuleVersions(long sensorId) {
+        return jdbc.update("""
+                DELETE FROM p2_alert_rule_version
+                 WHERE parameter_id IN (SELECT parameter_id FROM dim_sensor_parameter WHERE sensor_id = ?)
+                """, sensorId);
+    }
+
+    public int deleteParameterProfiles(long sensorId) {
+        return jdbc.update("""
+                DELETE FROM p2_sensor_parameter_profile
+                 WHERE parameter_id IN (SELECT parameter_id FROM dim_sensor_parameter WHERE sensor_id = ?)
+                """, sensorId);
+    }
+
+    public int deleteParameters(long sensorId) {
+        return jdbc.update("DELETE FROM dim_sensor_parameter WHERE sensor_id = ?", sensorId);
+    }
+
+    /** 删除本测点自有扩展档案；留痕不在此处清理。 */
+    public int deleteProfile(long sensorId) {
+        return jdbc.update("DELETE FROM p2_sensor_profile WHERE sensor_id = ?", sensorId);
+    }
+
+    /** 物理删除一期共享身份行。有关联时外键会拦截，调用方必须先完成关联检查。 */
+    public int deleteSensor(long sensorId) {
+        return jdbc.update("DELETE FROM dim_sensor WHERE sensor_id = ?", sensorId);
     }
 
     private static void setDecimal(PreparedStatement statement, int index, String value)

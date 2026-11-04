@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ApiError, api, mapHistoryPage, mapLatestReading, mapParameterDetail, mapParameterPage,
-  mapRuleVersionPage, mapSensorDetail, mapSensorPage,
+  mapRuleVersionPage, mapSensorDeleteResult, mapSensorDetail, mapSensorPage,
 } from '../src/lib/api.ts';
 
 const sensor = {
@@ -288,4 +288,78 @@ test('新增参数走测点下的参数地址，规则可为 null', async () => 
   } finally {
     globalThis.fetch = original;
   }
+});
+
+// ---------------------------------------------------------------- P05 删除测点
+
+test('详情解析出删除可行性，有关联时给出阻塞项', () => {
+  const detail = mapSensorDetail({
+    ...sensor, parameters: [], purpose: null, hasHistory: true, version: 3,
+    deletion: {
+      allowed: false,
+      blockers: [
+        {type: 'COLLECTION_DATA', count: 1200, message: '该测点已有 1200 条原始采集记录。'},
+      ],
+    },
+  });
+
+  assert.equal(detail.deletion.allowed, false);
+  assert.equal(detail.deletion.blockers[0].type, 'COLLECTION_DATA');
+  assert.equal(detail.deletion.blockers[0].count, 1200);
+});
+
+test('可删除时 blockers 为空数组而不是 undefined', () => {
+  const detail = mapSensorDetail({
+    ...sensor, parameters: [], purpose: null, hasHistory: false, version: 1,
+    deletion: {allowed: true, blockers: []},
+  });
+
+  assert.equal(detail.deletion.allowed, true);
+  assert.deepEqual(detail.deletion.blockers, []);
+});
+
+test('缺少 deletion 时按不可删除处理，不默认放开入口', () => {
+  const detail = mapSensorDetail({...sensor, parameters: [], hasHistory: false, version: 1});
+
+  // 服务端没给结论就不能假设能删，宁可让按钮置灰。
+  assert.equal(detail.deletion.allowed, false);
+  assert.deepEqual(detail.deletion.blockers, []);
+});
+
+test('删除请求走 DELETE，并自带二次确认', async () => {
+  const calls: {url: string; method?: string; body: unknown}[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input), method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify({
+      code: 'OK', message: '成功', data: {sensorId: '12', deleted: true},
+      timestamp: '2026-11-04T15:20:00+08:00',
+    }));
+  }) as typeof fetch;
+
+  try {
+    const result = await api.deleteSensor('12', {
+      requestId: 'req-p05', operatorName: '设备管理员', expectedVersion: 3, reason: '误建',
+    });
+
+    assert.equal(calls[0].url, '/api/v1/sensors/12');
+    assert.equal(calls[0].method, 'DELETE');
+    const body = calls[0].body as Record<string, unknown>;
+    assert.equal(body.requestId, 'req-p05');
+    assert.equal(body.expectedVersion, 3);
+    assert.equal(body.reason, '误建');
+    assert.equal(body.confirmed, true);
+    assert.equal(result.data.sensorId, '12');
+    assert.equal(result.data.deleted, true);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('服务未确认删除时报错，不当作成功', () => {
+  assert.throws(() => mapSensorDeleteResult({sensorId: '12', deleted: false}),
+    (error: unknown) => error instanceof ApiError);
 });

@@ -220,7 +220,10 @@ def main():
     print("== 6. 参数定义（P06） ==")
     parameter_id = None
     if items:
-        status, payload = get("/sensors/%s/parameters?page=1&pageSize=50" % items[0]["sensorId"])
+        # 挑第一个有参数的测点，而不是列表首位：库里可能残留无参数的误建测点，
+        # 拿首位会让后面四组断言被静默跳过，看起来"通过"其实什么都没验。
+        target = next((item for item in items if item["parameterCount"] > 0), items[0])
+        status, payload = get("/sensors/%s/parameters?page=1&pageSize=50" % target["sensorId"])
         page = data_of(payload) or {}
         check("参数分页返回 200", status == 200, status)
         check("参数 total 与 items 一致",
@@ -320,8 +323,10 @@ def main():
     # 空请求体必须被挡在校验层，而不是落一条空测点。
     status, _ = call("POST", BASE + "/sensors")
     check("POST /sensors 空请求体被校验拦下", status == 400, status)
+    # P05 已开放（见 verify_sensor_delete.py）：不带请求体的删除必须被校验拦下，
+    # 不能凭一个 URL 就把测点删掉。
     status, _ = call("DELETE", BASE + "/sensors/%s" % (items[0]["sensorId"] if items else "1"))
-    check("DELETE /sensors 未开放（405/404）", status in (404, 405), status)
+    check("DELETE /sensors 缺请求体被校验拦下", status == 400, status)
 
     print()
     print("通过 %d 项，失败 %d 项" % (len(passes), len(failures)))

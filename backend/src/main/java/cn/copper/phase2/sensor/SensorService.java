@@ -2,6 +2,7 @@ package cn.copper.phase2.sensor;
 
 import cn.copper.phase2.common.BusinessException;
 import cn.copper.phase2.common.PageResult;
+import cn.copper.phase2.sensor.SensorModels.DeletionBlocker;
 import cn.copper.phase2.sensor.SensorModels.HistoryRecord;
 import cn.copper.phase2.sensor.SensorModels.LatestReading;
 import cn.copper.phase2.sensor.SensorModels.ParameterSummary;
@@ -42,11 +43,13 @@ public class SensorService {
     private static final int DETAIL_PARAMETER_LIMIT = MAX_PAGE_SIZE;
 
     private final SensorRepository repository;
+    private final SensorReferenceChecker references;
     private final long staleAfterMinutes;
 
-    public SensorService(SensorRepository repository,
+    public SensorService(SensorRepository repository, SensorReferenceChecker references,
                          @Value("${phase2.monitoring.stale-after-minutes:15}") long staleAfterMinutes) {
         this.repository = repository;
+        this.references = references;
         this.staleAfterMinutes = Math.max(1, staleAfterMinutes);
     }
 
@@ -67,7 +70,7 @@ public class SensorService {
         return PageResult.of(items, resolvedPage, resolvedSize, total);
     }
 
-    /** S1-P02：测点详情，附带参数摘要。 */
+    /** S1-P02：测点详情，附带参数摘要与删除可行性。 */
     public SensorDetail detail(String sensorId) {
         long id = requiredId(sensorId, "sensorId", "测点");
         SensorDetail detail = repository.detail(id, staleBefore())
@@ -81,7 +84,18 @@ public class SensorService {
                 detail.sensorType(), detail.dataSource(), detail.location(), detail.purpose(),
                 detail.enabled(), detail.parameterCount(), detail.hasHistory(),
                 detail.monitoringStatus(), detail.configurationState(),
-                detail.version(), parameters);
+                detail.version(), parameters, deletionState(id, detail.sensorCode()));
+    }
+
+    /**
+     * 删除可行性。
+     *
+     * <p>与 P05 共用同一份检查，页面据此置灰删除入口，而不是等用户点了才报 409。
+     * 详情是单条读取，多几次计数查询换"按钮状态永远正确"是值得的。</p>
+     */
+    private SensorModels.DeletionState deletionState(long sensorId, String sensorCode) {
+        List<DeletionBlocker> blockers = references.blockers(sensorId, sensorCode);
+        return new SensorModels.DeletionState(blockers.isEmpty(), blockers);
     }
 
     /** S1-P06：一个测点的参数定义分页。 */

@@ -47,6 +47,11 @@ class SensorServiceTest {
         return repository;
     }
 
+    /** 详情依赖关联检查来填 deletion，测试里用真实 checker 包住同一个 mock 仓储。 */
+    private static SensorService service(SensorRepository repository, long staleAfterMinutes) {
+        return new SensorService(repository, new SensorReferenceChecker(repository), staleAfterMinutes);
+    }
+
     private static ParameterContext context(boolean parameterEnabled, boolean sensorEnabled) {
         return new ParameterContext(6L, 1L, "SPEED-001", "speed", "牵引速度",
                 "M_PER_MIN", "DECIMAL", parameterEnabled, sensorEnabled, "DEV_DEMO_METADATA");
@@ -56,7 +61,8 @@ class SensorServiceTest {
         return new SensorDetail("1", "SPEED-001", "牵引速度", "3", "CAST-01", "1#结晶牵引机",
                 "1", "车间1 · 铜杆生产", "速度", "DEV_DEMO_METADATA", null, null,
                 true, 1L, false, SensorModels.MONITORING_UNKNOWN,
-                SensorModels.CONFIGURATION_READY, 0L, List.of());
+                SensorModels.CONFIGURATION_READY, 0L, List.of(),
+                new SensorModels.DeletionState(true, List.of()));
     }
 
     // ------------------------------------------------------------ P01
@@ -65,7 +71,7 @@ class SensorServiceTest {
     void listDefaultsToFirstPageOfTwenty() {
         SensorRepository repository = emptyRepository();
 
-        PageResult<?> result = new SensorService(repository, 15)
+        PageResult<?> result = service(repository, 15)
                 .search(null, null, null, null, null, null);
 
         ArgumentCaptor<SensorQuery> captor = ArgumentCaptor.forClass(SensorQuery.class);
@@ -81,7 +87,7 @@ class SensorServiceTest {
         SensorRepository repository = emptyRepository();
         OffsetDateTime before = OffsetDateTime.now(ZONE);
 
-        new SensorService(repository, 60).search(null, null, null, null, 1, 10);
+        service(repository, 60).search(null, null, null, null, 1, 10);
 
         ArgumentCaptor<OffsetDateTime> captor = ArgumentCaptor.forClass(OffsetDateTime.class);
         verify(repository).search(any(), captor.capture());
@@ -93,7 +99,7 @@ class SensorServiceTest {
     @Test
     void monitoringStatusIsCaseInsensitiveAndValidated() {
         SensorRepository repository = emptyRepository();
-        SensorService service = new SensorService(repository, 15);
+        SensorService service = service(repository, 15);
 
         service.search(null, null, null, "online", 1, 10);
         ArgumentCaptor<SensorQuery> captor = ArgumentCaptor.forClass(SensorQuery.class);
@@ -111,7 +117,7 @@ class SensorServiceTest {
     void blankKeywordMeansNoFilter() {
         SensorRepository repository = emptyRepository();
 
-        new SensorService(repository, 15).search("  ", "   ", null, null, 1, 10);
+        service(repository, 15).search("  ", "   ", null, null, 1, 10);
 
         ArgumentCaptor<SensorQuery> captor = ArgumentCaptor.forClass(SensorQuery.class);
         verify(repository).search(captor.capture(), any());
@@ -121,7 +127,7 @@ class SensorServiceTest {
 
     @Test
     void pageAndPageSizeAreBounded() {
-        SensorService service = new SensorService(emptyRepository(), 15);
+        SensorService service = service(emptyRepository(), 15);
 
         assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class,
                 () -> service.search(null, null, null, null, 0, 20)).errorCode());
@@ -135,7 +141,7 @@ class SensorServiceTest {
     void unknownSensorIsNotFound() {
         SensorRepository repository = emptyRepository();
         when(repository.detail(anyLong(), any())).thenReturn(Optional.empty());
-        SensorService service = new SensorService(repository, 15);
+        SensorService service = service(repository, 15);
 
         assertEquals(ErrorCode.NOT_FOUND, assertThrows(BusinessException.class,
                 () -> service.detail("99")).errorCode());
@@ -149,7 +155,7 @@ class SensorServiceTest {
         when(repository.detail(eq(1L), any())).thenReturn(Optional.of(detailView()));
         when(repository.parameters(eq(1L), eq(1), anyInt())).thenReturn(List.of());
 
-        SensorDetail detail = new SensorService(repository, 15).detail("1");
+        SensorDetail detail = service(repository, 15).detail("1");
 
         assertEquals("SPEED-001", detail.sensorCode());
         assertEquals(SensorModels.CONFIGURATION_READY, detail.configurationState());
@@ -163,7 +169,7 @@ class SensorServiceTest {
         SensorRepository repository = emptyRepository();
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> new SensorService(repository, 15).detail("abc"));
+                () -> service(repository, 15).detail("abc"));
 
         assertEquals(ErrorCode.VALIDATION_ERROR, error.errorCode());
         verifyNoInteractions(repository);
@@ -177,7 +183,7 @@ class SensorServiceTest {
         when(repository.parameterContext(6L)).thenReturn(Optional.of(context(true, true)));
         when(repository.latest(6L)).thenReturn(Optional.empty());
 
-        LatestReading reading = new SensorService(repository, 15).latest("6");
+        LatestReading reading = service(repository, 15).latest("6");
 
         assertEquals(SensorModels.MONITORING_UNKNOWN, reading.monitoringStatus());
         assertNull(reading.value());
@@ -193,7 +199,7 @@ class SensorServiceTest {
                 new BigDecimal("12.5"), null, "M_PER_MIN", "GOOD", "NORMAL",
                 OffsetDateTime.now(ZONE), OffsetDateTime.now(ZONE))));
 
-        LatestReading reading = new SensorService(repository, 15).latest("6");
+        LatestReading reading = service(repository, 15).latest("6");
 
         assertEquals(SensorModels.MONITORING_DISABLED, reading.monitoringStatus());
         assertEquals("12.5", reading.value());
@@ -209,7 +215,7 @@ class SensorServiceTest {
                 OffsetDateTime.now(ZONE).minusMinutes(1))));
 
         assertEquals(SensorModels.MONITORING_ONLINE,
-                new SensorService(repository, 15).latest("6").monitoringStatus());
+                service(repository, 15).latest("6").monitoringStatus());
 
         when(repository.latest(6L)).thenReturn(Optional.of(new MonitorRow(
                 new BigDecimal("12.5"), null, "M_PER_MIN", "GOOD", "NORMAL",
@@ -217,7 +223,7 @@ class SensorServiceTest {
                 OffsetDateTime.now(ZONE).minusHours(3))));
 
         assertEquals(SensorModels.MONITORING_STALE,
-                new SensorService(repository, 15).latest("6").monitoringStatus());
+                service(repository, 15).latest("6").monitoringStatus());
     }
 
     @Test
@@ -228,7 +234,7 @@ class SensorServiceTest {
                 new BigDecimal("12.500000"), null, null, "GOOD", "NORMAL",
                 OffsetDateTime.now(ZONE), OffsetDateTime.now(ZONE))));
 
-        LatestReading reading = new SensorService(repository, 15).latest("6");
+        LatestReading reading = service(repository, 15).latest("6");
 
         assertEquals("12.500000", reading.value());
         assertEquals("M_PER_MIN", reading.unitCode());
@@ -240,7 +246,7 @@ class SensorServiceTest {
     void historyRequiresBothBounds() {
         SensorRepository repository = emptyRepository();
         when(repository.parameterContext(6L)).thenReturn(Optional.of(context(true, true)));
-        SensorService service = new SensorService(repository, 15);
+        SensorService service = service(repository, 15);
 
         assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class,
                 () -> service.history("6", null, "2026-11-04", 1, 10)).errorCode());
@@ -253,7 +259,7 @@ class SensorServiceTest {
     void historyRejectsReversedAndOversizedRange() {
         SensorRepository repository = emptyRepository();
         when(repository.parameterContext(6L)).thenReturn(Optional.of(context(true, true)));
-        SensorService service = new SensorService(repository, 15);
+        SensorService service = service(repository, 15);
 
         assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class,
                 () -> service.history("6", "2026-11-05", "2026-11-04", 1, 10)).errorCode());
@@ -269,7 +275,7 @@ class SensorServiceTest {
                 .thenReturn(List.of());
         when(repository.countHistory(anyString(), anyString(), any(), any())).thenReturn(0L);
 
-        new SensorService(repository, 15).history("6", "2026-11-04", "2026-11-04", 1, 10);
+        service(repository, 15).history("6", "2026-11-04", "2026-11-04", 1, 10);
 
         ArgumentCaptor<OffsetDateTime> captor = ArgumentCaptor.forClass(OffsetDateTime.class);
         verify(repository).history(eq("SPEED-001"), eq("speed"), captor.capture(),
@@ -298,7 +304,7 @@ class SensorServiceTest {
         when(repository.parameterContext(404L)).thenReturn(Optional.empty());
 
         assertEquals(ErrorCode.NOT_FOUND, assertThrows(BusinessException.class,
-                () -> new SensorService(repository, 15).ruleVersions("404", 1, 10)).errorCode());
+                () -> service(repository, 15).ruleVersions("404", 1, 10)).errorCode());
     }
 
     @Test
@@ -306,7 +312,7 @@ class SensorServiceTest {
         SensorRepository repository = emptyRepository();
         when(repository.parameterContext(6L)).thenReturn(Optional.of(context(true, true)));
 
-        new SensorService(repository, 15).ruleVersions("6", 2, 5);
+        service(repository, 15).ruleVersions("6", 2, 5);
 
         verify(repository).ruleVersions(6L, 2, 5);
         verify(repository).countRuleVersions(6L);

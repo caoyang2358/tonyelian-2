@@ -393,6 +393,15 @@ export function mapDeleteResult(value: unknown): EquipmentDeleteResult {
   return {id: id(data.id, '设备ID'), deleted};
 }
 
+export interface SensorDeleteResult { sensorId: string; deleted: boolean }
+/** 测点删除结果用 sensorId 回执，字段名与设备删除不同，因此单独解析。 */
+export function mapSensorDeleteResult(value: unknown): SensorDeleteResult {
+  const data = record(value, '删除结果');
+  const deleted = boolean(data.deleted, '删除结果');
+  if (!deleted) throw new ApiError('服务未确认删除成功，请刷新后重试。', 'INVALID_RESPONSE');
+  return {sensorId: id(data.sensorId, '测点ID'), deleted};
+}
+
 interface RequestOptions { signal?: AbortSignal; method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown }
 
 function extractFields(value: unknown): Record<string, string> {
@@ -615,6 +624,8 @@ export interface SensorHistoryQuery { from: string; to: string; page?: number; p
 export interface SensorDetail extends SensorSummary {
   purpose: string | null; hasHistory: boolean; version: number;
   parameters: SensorParameterSummary[];
+  /** 与 E02 设备详情同构：allowed 为 false 时 blockers 说明为什么不能删。 */
+  deletion: { allowed: boolean; blockers: DeletionBlocker[] };
 }
 
 /**
@@ -745,12 +756,22 @@ export function mapSensorDetail(value: unknown): SensorDetail {
   const row = record(value, '测点详情');
   const base = mapSensorSummary(row);
   if (!Array.isArray(row.parameters)) throw new ApiError('测点详情缺少parameters数组。', 'INVALID_RESPONSE');
+  const deletion = row.deletion == null ? {allowed: false, blockers: []} : record(row.deletion, '删除可用性');
+  const blockers = deletion.blockers == null ? [] : deletion.blockers;
+  if (!Array.isArray(blockers)) throw new ApiError('删除阻塞项不是数组。', 'INVALID_RESPONSE');
   return {
     ...base,
     purpose: optional(row.purpose, '用途'),
     hasHistory: boolean(row.hasHistory, '是否已有历史'),
     version: integer(row.version, '版本'),
     parameters: row.parameters.map(mapParameterSummary),
+    deletion: {
+      allowed: deletion.allowed === true,
+      blockers: blockers.map((item: unknown) => {
+        const b = record(item, '删除阻塞项');
+        return {type: str(b.type, '阻塞类型'), count: count(b.count, '阻塞数量') ?? 0, message: str(b.message, '阻塞说明')};
+      }),
+    },
   };
 }
 
@@ -984,6 +1005,11 @@ export const api = {
                  meta: {requestId: string; operatorName: string; expectedVersion: number; reason?: string | null}) =>
     requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}`, mapSensorDetail,
       {method: 'PUT', body: {...meta, ...values}}),
+  /** S1-P05 删除误建测点；有采集或业务历史时服务端返回 409 及 blockers。 */
+  deleteSensor: (sensorId: string,
+                 meta: {requestId: string; operatorName: string; expectedVersion: number; reason: string}) =>
+    requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}`, mapSensorDeleteResult,
+      {method: 'DELETE', body: {...meta, confirmed: true}}),
   /** S1-P09 最新读数；没有采集记录时返回缺值状态，不是 404。 */
   sensorLatest: (parameterId: string, signal?: AbortSignal) =>
     requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/latest`, mapLatestReading, {signal}),

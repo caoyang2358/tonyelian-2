@@ -44,7 +44,8 @@ class SensorWriteServiceTest {
             "11", "TEMP-011", "炉壳温度", "1", "SMELT-FUR-01", "1#熔炼炉",
             "1", "车间1 · 铜杆生产", "温度", null, "东侧炉壳", "监控炉壳温升",
             true, 0, false, SensorModels.MONITORING_UNKNOWN,
-            SensorModels.CONFIGURATION_PENDING, 1, List.of());
+            SensorModels.CONFIGURATION_PENDING, 1, List.of(),
+            new SensorModels.DeletionState(true, List.of()));
 
     private final SensorRepository repository = mock(SensorRepository.class);
     private final ChangeLogRepository changeLog = mock(ChangeLogRepository.class);
@@ -224,9 +225,11 @@ class SensorWriteServiceTest {
         service().update("11", updateBody("TEMP-011", 2L, false, "工位改造暂停采集"));
 
         verify(repository).updateSensor(11L, "TEMP-011", "炉壳温度", 1L, "温度", false);
-        // 停用不得删除原始数据、事件或工单：本模块没有任何删除入口。
-        assertFalse(java.util.Arrays.stream(SensorRepository.class.getDeclaredMethods())
-                .anyMatch(method -> method.getName().toLowerCase().contains("delete")));
+        // 停用不得删除原始数据、事件或工单：删除是独立的 P05 接口，停用这条路径不许碰。
+        verify(repository, never()).deleteSensor(anyLong());
+        verify(repository, never()).deleteParameters(anyLong());
+        verify(repository, never()).deleteRuleVersions(anyLong());
+        verify(repository, never()).deleteProfile(anyLong());
     }
 
     @Test

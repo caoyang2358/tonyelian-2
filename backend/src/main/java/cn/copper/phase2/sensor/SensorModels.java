@@ -77,6 +77,9 @@ public final class SensorModels {
      * 没依据时给 {@code null}，不用参数名反推一个看似合理的用途。</p>
      *
      * <p>{@code version} 在没有扩展档案行时为 0，与设备档案"首存用版本 0"的口径一致。</p>
+     *
+     * <p>{@code deletion} 与 P05 删除接口共用同一份关联检查，页面据此置灰删除入口；
+     * 不做成"点了才知道不行"。与 E02 设备详情同构。</p>
      */
     public record SensorDetail(
             String sensorId, String sensorCode, String name,
@@ -85,7 +88,19 @@ public final class SensorModels {
             String sensorType, String dataSource, String location, String purpose,
             boolean enabled, long parameterCount, boolean hasHistory,
             String monitoringStatus, String configurationState,
-            long version, List<ParameterSummary> parameters) {
+            long version, List<ParameterSummary> parameters, DeletionState deletion) {
+    }
+
+    /**
+     * 删除可行性：{@code allowed} 为 false 时 {@code blockers} 非空，说明为什么不能删。
+     *
+     * <p>与 E02 同名结构保持字段一致，前端可以复用同一套渲染。</p>
+     */
+    public record DeletionState(boolean allowed, List<DeletionBlocker> blockers) {
+    }
+
+    /** 一类阻塞性关联：{@code type} 是稳定类型码，{@code message} 直接可展示。 */
+    public record DeletionBlocker(String type, long count, String message) {
     }
 
     /**

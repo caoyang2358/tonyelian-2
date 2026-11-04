@@ -1061,3 +1061,14 @@
   padding: 10px 0 2px 12px;
   border-left: 2px solid #d7e2da;
 }
+
+/* 删除入口在有关联时置灰：原因写进 title，不做成"点了才报错" */
+.eq-row-link:disabled {
+  color: #b4b2a9;
+  cursor: not-allowed;
+}
+
+.eq-row-link:disabled:hover strong {
+  color: inherit;
+  text-decoration: none;
+}

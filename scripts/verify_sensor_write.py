@@ -7,7 +7,7 @@
   3. 幂等：同 requestId 同内容重放返回同一测点且不新增记录；同 requestId 改内容返回 409
   4. 校验：重复编码 409、编码格式 400、缺字段 400、非生产设备 400
   5. 更新：资料与启停用可改、版本推进、版本不符 409、无历史时编码可改
-  6. 只读性：不存在的测点 404、非法 ID 400、未开放 DELETE
+  6. 只读性：不存在的测点 404、非法 ID 400、误用 DELETE 缺请求体被拦下
 
 只用标准库：
     python scripts/verify_sensor_write.py
@@ -226,7 +226,7 @@ def main():
     status, payload = call("PUT", "/sensors/abc", probe)
     check("更新非法 ID 返回 400", status == 400, status)
     status, payload = call("DELETE", "/sensors/%s" % created_id)
-    check("未开放 DELETE（405/404）", status in (404, 405), status)
+    check("误用 DELETE 缺请求体被拦下", status == 400, status)
 
     print()
     print("通过 %d 项，失败 %d 项" % (len(passes), len(failures)))

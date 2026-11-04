@@ -7,6 +7,7 @@ import cn.copper.phase2.sensor.SensorModels.ParameterSummary;
 import cn.copper.phase2.sensor.SensorModels.SensorDetail;
 import cn.copper.phase2.sensor.SensorModels.SensorSummary;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,15 +18,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 测点接口 S1-P01—P04、P06、P07。
+ * 测点接口 S1-P01—P07。
  *
  * <p>读的一侧只取不改：测点身份沿用一期 {@code dim_sensor}，扩展位置资料在
  * {@code p2_sensor_profile}。写的一侧（P03/P04）只写这两张表的约定字段，
  * 不写采集来源；参数定义走 P07，写参数身份与首版规则。</p>
  *
- * <p>没有删除接口：契约 P05 要求"任何历史采集、参数使用、异常、维修等关联须完整检查"，
- * 在一期 {@code ods_sensor_data} 按 {@code sensor_code} 关联、且 {@code dim_sensor} 没有
- * 软删列的前提下，硬删除会留孤儿数据或直接撞外键。停用是当前唯一安全的退出方式。</p>
+ * <p>P05 删除是物理删除，但只在六类关联全部为空时才允许：原始采集记录、预警事件、
+ * 监测统计、能耗统计、下级测点、改过规则的参数。有采集记录的编码因此永久冻结，
+ * 停用仍是常态化退出方式，删除只用于纠正误建。</p>
  */
 @RestController
 @RequestMapping("/api/v1/sensors")
@@ -33,12 +34,15 @@ public class SensorController {
     private final SensorService service;
     private final SensorWriteService writeService;
     private final SensorParameterWriteService parameterWriteService;
+    private final SensorDeleteService deleteService;
 
     public SensorController(SensorService service, SensorWriteService writeService,
-                            SensorParameterWriteService parameterWriteService) {
+                            SensorParameterWriteService parameterWriteService,
+                            SensorDeleteService deleteService) {
         this.service = service;
         this.writeService = writeService;
         this.parameterWriteService = parameterWriteService;
+        this.deleteService = deleteService;
     }
 
     /** S1-P01：按设备、关键词、启停用、监测状态筛选，分页返回测点摘要。 */
@@ -87,5 +91,12 @@ public class SensorController {
     public ApiResponse<SensorDetail> update(@PathVariable String sensorId,
                                             @RequestBody JsonNode body) {
         return ApiResponse.success(writeService.update(sensorId, body));
+    }
+
+    /** S1-P05：删除误建测点；任一类关联仍有数据时返回 409 与 blockers。 */
+    @DeleteMapping("/{sensorId}")
+    public ApiResponse<SensorDeleteService.SensorDeleteResult> delete(@PathVariable String sensorId,
+                                                                      @RequestBody JsonNode body) {
+        return ApiResponse.success(deleteService.delete(sensorId, body));
     }
 }
