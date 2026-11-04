@@ -2,39 +2,19 @@
 // Node 22 自带全局 WebSocket，无需安装依赖。
 import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
-import path from 'node:path';
+
+import {loadDbConfig, mysqlArgs, preflightDatabase} from './db-env.mjs';
 
 const PORT = Number(process.env.CDP_PORT ?? 9337);
 const OUT = process.env.SHOT ?? 'C:/Users/29514/AppData/Local/Temp/sensor-delete.png';
 const API = process.env.API_BASE ?? 'http://127.0.0.1:18280/api/v1';
-const ROOT = path.resolve(import.meta.dirname, '..');
 
-function loadEnv() {
-  const values = {};
-  const file = path.join(ROOT, '.env');
-  if (existsSync(file)) {
-    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-      const index = trimmed.indexOf('=');
-      values[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
-    }
-  }
-  values.DB_PORT = process.env.DB_PORT ?? values.DB_PORT ?? '3306';
-  values.MYSQL_BIN = process.env.MYSQL_BIN ?? values.MYSQL_BIN
-    ?? 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
-  return values;
-}
-
-const ENV = loadEnv();
+// 先探库再动数据：端口不对时立刻退出，不留孤儿测点。
+const DB = loadDbConfig();
+preflightDatabase(DB);
 
 function sql(statement) {
-  return execFileSync(ENV.MYSQL_BIN, [
-    '--no-defaults', '--default-character-set=utf8mb4', '-h127.0.0.1',
-    `-P${ENV.DB_PORT}`, `-u${ENV.DB_USER}`, `-p${ENV.DB_PASSWORD}`,
-    ENV.DB_NAME, '-N', '-e', statement,
-  ], {encoding: 'utf8'});
+  return execFileSync(DB.bin, mysqlArgs(DB, statement), {encoding: 'utf8'});
 }
 
 async function api(method, pathname, body) {

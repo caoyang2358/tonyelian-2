@@ -26,38 +26,14 @@ import os
 import random
 import subprocess
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from db_env import load_config, preflight
+
 SEED_SOURCE = 'DEMO-SEED'
 
 
-def load_env() -> dict[str, str]:
-    path = ROOT / '.env'
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-    for line in path.read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, value = line.split('=', 1)
-        values[key.strip()] = value.strip()
-    return values
-
-
-def mysql_bin() -> str:
-    override = os.environ.get('MYSQL_BIN')
-    if override and Path(override).exists():
-        return override
-    for candidate in (r'D:/MySQL/MySQL Server 8.0/bin/mysql.exe', '/usr/bin/mysql', '/usr/local/bin/mysql'):
-        if Path(candidate).exists():
-            return candidate
-    return 'mysql'
-
-
 def run_sql(sql: str, config: dict[str, str], tuple_only: bool = False) -> str:
-    args = [mysql_bin(), '-h', config['host'], '-P', str(config['port']),
+    args = [config['bin'], '-h', config['host'], '-P', str(config['port']),
             '-u', config['user'], '--default-character-set=utf8mb4']
     if tuple_only:
         args += ['-N', '-B']
@@ -185,16 +161,12 @@ def main() -> int:
     if args.count <= 0:
         raise SystemExit('--count 必须大于 0。')
 
-    file_env = load_env()
-    config = {
-        'host': os.environ.get('DB_HOST') or file_env.get('DB_HOST', '127.0.0.1'),
-        'port': os.environ.get('DB_PORT') or file_env.get('DB_PORT', '3306'),
-        'name': os.environ.get('DB_NAME') or file_env.get('DB_NAME', ''),
-        'user': os.environ.get('DB_USER') or file_env.get('DB_USER', ''),
-        'password': os.environ.get('DB_PASSWORD') or file_env.get('DB_PASSWORD', ''),
-    }
+    config = load_config()
     if not config['name'] or not config['user']:
         raise SystemExit('数据库连接信息不完整，请检查 .env 的 DB_NAME / DB_USER。')
+
+    # 先探库再改数据：端口不对时立刻退出，不写半套演示读数。
+    preflight(config)
 
     random.seed(20261104)
     if args.clean:

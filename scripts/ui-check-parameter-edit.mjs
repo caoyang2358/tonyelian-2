@@ -5,9 +5,10 @@
 //
 // 前置：后端 18280、前端 5174、Chrome 以 --remote-debugging-port=9337 启动。
 // 脚本自己造测点和参数，结束时用 MySQL 清理（改过规则的参数会阻止测点删除，所以不能走 P05）。
-import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import path from 'node:path';
+
+import {loadDbConfig, mysqlArgs, preflightDatabase} from './db-env.mjs';
 
 const PORT = Number(process.env.CDP_PORT ?? 9337);
 const OUT = process.env.SHOT ?? 'C:/Users/29514/AppData/Local/Temp/sensor-parameter-edit.png';
@@ -24,30 +25,12 @@ async function api(method, path, body) {
   return {status: response.status, payload};
 }
 
-function loadEnv() {
-  const file = path.resolve('.env');
-  const values = {};
-  if (existsSync(file)) {
-    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-      const index = trimmed.indexOf('=');
-      values[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
-    }
-  }
-  values.DB_PORT = process.env.DB_PORT ?? values.DB_PORT ?? '3306';
-  values.MYSQL_BIN = process.env.MYSQL_BIN ?? values.MYSQL_BIN ?? 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
-  return values;
-}
+// 先探库再动数据：端口不对时立刻退出，不留孤儿测点/参数（清理只能走 MySQL）。
+const DB = loadDbConfig();
+preflightDatabase(DB);
 
-const env = loadEnv();
 function sql(statement) {
-  return execFileSync(env.MYSQL_BIN, [
-    '--no-defaults', '--default-character-set=utf8mb4',
-    `-h127.0.0.1`, `-P${env.DB_PORT}`,
-    `-u${env.DB_USER ?? 'root'}`, `-p${env.DB_PASSWORD ?? ''}`,
-    env.DB_NAME, '-N', '-e', statement,
-  ], {encoding: 'utf8'}).trim();
+  return execFileSync(DB.bin, mysqlArgs(DB, statement), {encoding: 'utf8'}).trim();
 }
 
 const stamp = Date.now().toString().slice(-6);
@@ -251,7 +234,9 @@ await sleep(2500);
 const afterThreshold = await evaluate(`[...document.querySelectorAll('.eq-form-hint')]
   .map(p => p.textContent.trim()).find(t => t.startsWith('上次保存')) ?? ''`);
 check('提示写明判断依据已变化', afterThreshold.includes('判断依据已变化'), afterThreshold);
-check('提示如实说明事件结束尚未接入', afterThreshold.includes('尚未接入'), afterThreshold);
+// P08 已实现事件结束：提示应交代活动事件的处理结果，而不是像实现前那样写「尚未接入」。
+check('提示如实交代活动事件的处理结果',
+  afterThreshold.includes('活动事件') && !afterThreshold.includes('尚未接入'), afterThreshold);
 
 // ---------------------------------------------------------------- 后端复核
 const versions = await api('GET', `/sensor-parameters/${parameterId}/rule-versions?page=1&pageSize=20`);

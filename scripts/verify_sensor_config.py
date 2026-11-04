@@ -20,7 +20,6 @@
 
 import argparse
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -28,30 +27,15 @@ import urllib.error
 import urllib.request
 import uuid
 
+from db_env import load_config, mysql_command, preflight
+
 BASE = "http://127.0.0.1:18280/api/v1"
-ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 passes = []
 failures = []
 
 
-def load_env():
-    values = {}
-    env_file = ROOT / ".env"
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
-    values["DB_PORT"] = os.environ.get("DB_PORT") or values.get("DB_PORT") or "3306"
-    values["MYSQL_BIN"] = os.environ.get("MYSQL_BIN") or values.get(
-        "MYSQL_BIN", "D:/MySQL/MySQL Server 8.0/bin/mysql.exe")
-    return values
-
-
-ENV = load_env()
+CONFIG = load_config()
 
 
 def call(method, path, body=None):
@@ -91,17 +75,13 @@ def data_of(payload):
 
 
 def sql_available():
-    return pathlib.Path(ENV["MYSQL_BIN"]).exists() and bool(ENV.get("DB_NAME"))
+    return bool(CONFIG.get("name")) and (
+        CONFIG["bin"] == "mysql" or pathlib.Path(CONFIG["bin"]).exists())
 
 
 def sql(statement):
-    command = [
-        ENV["MYSQL_BIN"], "--no-defaults", "--default-character-set=utf8mb4",
-        "-h127.0.0.1", "-P" + str(ENV["DB_PORT"]),
-        "-u" + ENV.get("DB_USER", "root"), "-p" + ENV.get("DB_PASSWORD", ""),
-        ENV["DB_NAME"], "-N", "-e", statement,
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    result = subprocess.run(mysql_command(CONFIG, statement),
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         print("    SQL 失败：%s" % (result.stderr or "").strip().splitlines()[-1:])
         return None
@@ -200,6 +180,9 @@ def main():
     parser.add_argument("--base-url", default=BASE)
     args = parser.parse_args()
     BASE = args.base_url.rstrip("/")
+
+    # 先探库再动数据：端口不对时立刻退出，不留 AUTOTEST- 测点。
+    preflight(CONFIG, require_mysql=False)
 
     stamp = int(uuid.uuid4().int % 100000)
     equipment = equipment_id()
