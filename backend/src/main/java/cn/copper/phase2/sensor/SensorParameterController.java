@@ -37,8 +37,11 @@ public class SensorParameterController {
     /**
      * S1-P08：一次保存参数配置与规则。
      *
-     * <p>判断依据变化才追加规则版本，没变化只推进配置版本。受影响活动事件的结束
-     * （{@code RULE_CHANGED}）属于异常服务事务，当前未接入，响应里如实返回空数组。</p>
+     * <p>判断依据变化才追加规则版本，没变化只推进配置版本。判断依据变化时，在同一事务里把
+     * 该参数仍挂着的活动事件按 {@code RULE_CHANGED} 结束，并把事件号回填到
+     * {@code affectedEventIds}（同一参数至多一条活动事件，所以是 0 或 1 条）。结束动作由
+     * {@code AlertEventTerminator} 承载，当前实现直接写 {@code p2_alert_event}；事件的生成与
+     * 人工处理仍属异常服务，等它提供接口后只替换实现，本流程不动。</p>
      */
     @PutMapping("/{parameterId}/configuration")
     public ApiResponse<ParameterConfigResult> updateConfiguration(
