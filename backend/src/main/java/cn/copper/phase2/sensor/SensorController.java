@@ -2,6 +2,7 @@ package cn.copper.phase2.sensor;
 
 import cn.copper.phase2.common.ApiResponse;
 import cn.copper.phase2.common.PageResult;
+import cn.copper.phase2.sensor.SensorModels.ParameterDetail;
 import cn.copper.phase2.sensor.SensorModels.ParameterSummary;
 import cn.copper.phase2.sensor.SensorModels.SensorDetail;
 import cn.copper.phase2.sensor.SensorModels.SensorSummary;
@@ -16,11 +17,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 测点接口 S1-P01—P04、P06。
+ * 测点接口 S1-P01—P04、P06、P07。
  *
  * <p>读的一侧只取不改：测点身份沿用一期 {@code dim_sensor}，扩展位置资料在
  * {@code p2_sensor_profile}。写的一侧（P03/P04）只写这两张表的约定字段，
- * 不写采集来源，也不碰参数定义。</p>
+ * 不写采集来源；参数定义走 P07，写参数身份与首版规则。</p>
  *
  * <p>没有删除接口：契约 P05 要求"任何历史采集、参数使用、异常、维修等关联须完整检查"，
  * 在一期 {@code ods_sensor_data} 按 {@code sensor_code} 关联、且 {@code dim_sensor} 没有
@@ -31,10 +32,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class SensorController {
     private final SensorService service;
     private final SensorWriteService writeService;
+    private final SensorParameterWriteService parameterWriteService;
 
-    public SensorController(SensorService service, SensorWriteService writeService) {
+    public SensorController(SensorService service, SensorWriteService writeService,
+                            SensorParameterWriteService parameterWriteService) {
         this.service = service;
         this.writeService = writeService;
+        this.parameterWriteService = parameterWriteService;
     }
 
     /** S1-P01：按设备、关键词、启停用、监测状态筛选，分页返回测点摘要。 */
@@ -63,6 +67,13 @@ public class SensorController {
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer pageSize) {
         return ApiResponse.success(service.parameters(sensorId, page, pageSize));
+    }
+
+    /** S1-P07：新增参数定义，可选同时带首版规则；同测点内参数编码唯一。 */
+    @PostMapping("/{sensorId}/parameters")
+    public ApiResponse<ParameterDetail> createParameter(@PathVariable String sensorId,
+                                                        @RequestBody JsonNode body) {
+        return ApiResponse.success(parameterWriteService.create(sensorId, body));
     }
 
     /** S1-P03：新增测点，返回与详情同结构，{@code version=1}。 */

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  ApiError, api, mapHistoryPage, mapLatestReading, mapParameterPage, mapRuleVersionPage, mapSensorDetail, mapSensorPage,
+  ApiError, api, mapHistoryPage, mapLatestReading, mapParameterDetail, mapParameterPage,
+  mapRuleVersionPage, mapSensorDetail, mapSensorPage,
 } from '../src/lib/api.ts';
 
 const sensor = {
@@ -213,6 +214,77 @@ test('修改测点带上版本号与原因，地址含测点ID', async () => {
     assert.equal(body.enabled, false);
     assert.equal(result.data.monitoringStatus, 'DISABLED');
     assert.equal(result.data.version, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+// ---------------------------------------------------------------- P07 新增参数
+
+const parameterDetail = {
+  parameterId: '501', sensorId: '12', parameterCode: 'PRESSURE', name: '出口压力',
+  dataType: 'DECIMAL', unitCode: 'Pa', decimalPlaces: 2, samplingIntervalSeconds: 60,
+  processId: null, enabled: true,
+  rule: {
+    normalLower: '0.5', normalUpper: '1.5', alarmLower: '0.1', alarmUpper: '2',
+    unitCode: 'Pa', triggerMode: 'SUSTAINED', durationSeconds: 30, enabled: true,
+  },
+  ruleVersionId: '9001', version: 1,
+};
+
+const parameterDetailPayload = {
+  code: 'OK', message: '成功', data: parameterDetail, timestamp: '2026-11-04T13:40:00+08:00',
+};
+
+test('参数详情解析出规则全文与配置版本', () => {
+  const detail = mapParameterDetail(parameterDetail);
+
+  assert.equal(detail.parameterId, '501');
+  assert.equal(detail.sensorId, '12');
+  assert.equal(detail.version, 1);
+  assert.equal(detail.ruleVersionId, '9001');
+  assert.equal(detail.rule?.normalLower, '0.5');
+  assert.equal(detail.rule?.triggerMode, 'SUSTAINED');
+  assert.equal(detail.rule?.durationSeconds, 30);
+});
+
+test('未配规则时 rule 为 null，不伪造一版空规则', () => {
+  const detail = mapParameterDetail({...parameterDetail, rule: null, ruleVersionId: null});
+
+  assert.equal(detail.rule, null);
+  assert.equal(detail.ruleVersionId, null);
+});
+
+test('新增参数走测点下的参数地址，规则可为 null', async () => {
+  const calls: {url: string; method?: string; body: unknown}[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input), method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify(parameterDetailPayload));
+  }) as typeof fetch;
+
+  try {
+    const result = await api.createSensorParameter('12', {
+      parameterCode: 'PRESSURE', name: '出口压力', dataType: 'DECIMAL',
+      unitCode: null, decimalPlaces: 2, samplingIntervalSeconds: null,
+      processId: null, enabled: true, rule: null,
+    }, {requestId: 'req-p07', operatorName: '设备管理员'});
+
+    assert.equal(calls[0].url, '/api/v1/sensors/12/parameters');
+    assert.equal(calls[0].method, 'POST');
+    const body = calls[0].body as Record<string, unknown>;
+    assert.equal(body.requestId, 'req-p07');
+    assert.equal(body.parameterCode, 'PRESSURE');
+    // 可空字段必须显式出现，漏传会被后端判成校验失败。
+    assert.equal('unitCode' in body, true);
+    assert.equal(body.unitCode, null);
+    assert.equal('rule' in body, true);
+    assert.equal(body.rule, null);
+    assert.equal('dataSource' in body, false);
+    assert.equal(result.data.parameterId, '501');
   } finally {
     globalThis.fetch = original;
   }

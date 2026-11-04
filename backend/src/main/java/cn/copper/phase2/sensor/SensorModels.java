@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
- * 测点、参数与读数（S1-P01/P02/P06/P09/P10/P11）。
+ * 测点、参数与读数（S1-P01/P02/P03/P04/P06/P07/P09/P10/P11）。
  *
  * <p>本批只读：测点身份来自一期 {@code dim_sensor}，扩展资料来自 {@code p2_sensor_profile}；
  * 参数来自 {@code dim_sensor_parameter}，配置版本来自 {@code p2_sensor_parameter_profile}；
@@ -148,6 +148,35 @@ public final class SensorModels {
     public record RuleSnapshot(
             String normalLower, String normalUpper, String alarmLower, String alarmUpper,
             String unitCode, String triggerMode, Integer durationSeconds, boolean enabled) {
+    }
+
+    /**
+     * 参数写入请求（S1-P07）。
+     *
+     * <p>可空字段同样要求显式出现：传 {@code null} 表示不设该项，漏传即校验失败。
+     * {@code rule} 为 {@code null} 时不产生规则版本行，参数处于"未配规则"状态，
+     * 与"配了规则但停用"（{@code rule.enabled=false}）是两回事。</p>
+     *
+     * <p>{@code decimalPlaces} 给 {@code null} 时按库默认的 2 位小数落库，
+     * 而不是让 NOT NULL 列在插入时才报错。</p>
+     */
+    public record ParameterWriteRequest(
+            String requestId, String operatorName, String reason,
+            String parameterCode, String name, String dataType,
+            String unitCode, Integer decimalPlaces, Integer samplingIntervalSeconds,
+            Long processId, boolean enabled, RuleSnapshot rule) {
+    }
+
+    /**
+     * 参数详情（P07 的新建结果，也供后续配置更新复用）。
+     *
+     * <p>{@code version} 来自 {@code p2_sensor_parameter_profile}；一期种子参数没有该行时为 0，
+     * 与测点、设备"未维护过即版本 0"的口径一致。{@code ruleVersionId} 指向当前生效的快照。</p>
+     */
+    public record ParameterDetail(
+            String parameterId, String sensorId, String parameterCode, String name, String dataType,
+            String unitCode, int decimalPlaces, Integer samplingIntervalSeconds, String processId,
+            boolean enabled, RuleSnapshot rule, String ruleVersionId, long version) {
     }
 
     /**

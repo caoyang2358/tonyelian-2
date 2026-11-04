@@ -2,7 +2,9 @@ package cn.copper.phase2.sensor;
 
 import cn.copper.phase2.sensor.SensorModels.HistoryRecord;
 import cn.copper.phase2.sensor.SensorModels.LatestReading;
+import cn.copper.phase2.sensor.SensorModels.ParameterDetail;
 import cn.copper.phase2.sensor.SensorModels.ParameterSummary;
+import cn.copper.phase2.sensor.SensorModels.ParameterWriteRequest;
 import cn.copper.phase2.sensor.SensorModels.RuleSnapshot;
 import cn.copper.phase2.sensor.SensorModels.RuleVersionView;
 import cn.copper.phase2.sensor.SensorModels.SensorDetail;
@@ -30,7 +32,7 @@ import java.util.Optional;
  * <p>读的一侧不碰任何写操作：测点与参数身份属于一期维表，读数属于采集侧，二期只取不改。
  * 写的一侧只写两类列：{@code dim_sensor} 的约定主数据（编码、名称、归属设备、类型、启停用）
  * 与 {@code p2_sensor_profile} 的扩展资料（位置、用途、版本）。采集来源 {@code data_source}
- * 与参数定义都不在这里写——前者由现场对接产生，后者走 P07。</p>
+ * 与参数定义都不在这里写——前者由现场对接产生，后者走 P07 的参数写入服务。</p>
  *
  * <p>监测状态在 SQL 里现算，靠一个"每个测点最后刷新时间"的派生表与本机时间比较。
  * 没有冗余状态列，也就没有"停了采集但状态还写着在线"这种失真。</p>
@@ -370,10 +372,10 @@ public class SensorRepository {
     static final RowMapper<RuleVersionView> RULE_MAPPER = (rs, rowNum) -> {
         Object previous = rs.getObject("previous_rule_version_id");
         RuleSnapshot rule = new RuleSnapshot(
-                decimalText(rs.getBigDecimal("normal_lower")),
-                decimalText(rs.getBigDecimal("normal_upper")),
-                decimalText(rs.getBigDecimal("alarm_lower")),
-                decimalText(rs.getBigDecimal("alarm_upper")),
+                boundText(rs.getBigDecimal("normal_lower")),
+                boundText(rs.getBigDecimal("normal_upper")),
+                boundText(rs.getBigDecimal("alarm_lower")),
+                boundText(rs.getBigDecimal("alarm_upper")),
                 rs.getString("unit_code"),
                 rs.getString("trigger_mode"),
                 rs.getObject("duration_seconds") == null ? null : rs.getInt("duration_seconds"),
@@ -412,6 +414,16 @@ public class SensorRepository {
      */
     static String decimalText(BigDecimal value) {
         return value == null ? null : value.toPlainString();
+    }
+
+    /**
+     * 规则边界的读法：去掉库上 {@code DECIMAL(20,6)} 补出来的尾随零。
+     *
+     * <p>存 0.5 读回 0.500000 在数值上没错，但页面会原样回填成六个小数位，现场再改一次就多一层
+     * 无意义的精度。读数不走这里——采集值要原样呈现，配置边界是要给人再编辑的。</p>
+     */
+    static String boundText(BigDecimal value) {
+        return value == null ? null : value.stripTrailingZeros().toPlainString();
     }
 
     static OffsetDateTime toOffset(Timestamp timestamp) {
@@ -544,6 +556,190 @@ public class SensorRepository {
                 UPDATE p2_sensor_profile
                    SET location = ?, purpose = ?, version = version + 1, updated_at = ?
                  WHERE sensor_id = ? AND version = ?
-                """, location, purpose, LocalDateTime.now(ZONE), sensorId, expectedVersion);
+                 """, location, purpose, LocalDateTime.now(ZONE), sensorId, expectedVersion);
+    }
+
+    // ---------------------------------------------------------------- 参数写入（P07）
+
+    /** 同测点下参数编码是否已被占用；返回 ID 便于给出可读的 409。 */
+    public Optional<Long> findParameterIdByCode(long sensorId, String parameterCode) {
+        List<Long> ids = jdbc.queryForList(
+                "SELECT parameter_id FROM dim_sensor_parameter WHERE sensor_id = ? AND parameter_code = ?",
+                Long.class, sensorId, parameterCode);
+        return ids.stream().findFirst();
+    }
+
+    /**
+     * 本测点下一个展示序号。
+     *
+     * <p>只用于让新参数排在末尾；并发新增拿到同一个值时，列表仍按编码与 ID 兜底排序，
+     * 不会出现"顺序不稳定"的读结果。</p>
+     */
+    public int nextDisplayOrder(long sensorId) {
+        Integer max = jdbc.queryForObject(
+                "SELECT COALESCE(MAX(display_order), -1) FROM dim_sensor_parameter WHERE sensor_id = ?",
+                Integer.class, sensorId);
+        return max == null ? 0 : max + 1;
+    }
+
+    /**
+     * 新增参数定义。
+     *
+     * <p>一期维表另有 {@code normal_lower_limit} 等四个旧阈值列，这里刻意不写：二期规则以
+     * {@code p2_alert_rule_version} 的快照为唯一真相，两处同时写会出现"改了一处、另一处还是旧值"
+     * 的分裂。旧列为空表示"未在一期配置过阈值"，不伪装成已配置。</p>
+     */
+    public long insertParameter(long sensorId, ParameterWriteRequest request, int displayOrder) {
+        int decimalPlaces = request.decimalPlaces() == null ? 2 : request.decimalPlaces();
+        KeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO dim_sensor_parameter
+                        (sensor_id, parameter_code, parameter_name, data_type, unit_code,
+                         decimal_places, sampling_frequency_seconds, enabled, process_id, display_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, Statement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, sensorId);
+            statement.setString(2, request.parameterCode());
+            statement.setString(3, request.name());
+            statement.setString(4, request.dataType());
+            statement.setString(5, request.unitCode());
+            statement.setInt(6, decimalPlaces);
+            if (request.samplingIntervalSeconds() == null) {
+                statement.setNull(7, java.sql.Types.INTEGER);
+            } else {
+                statement.setInt(7, request.samplingIntervalSeconds());
+            }
+            statement.setBoolean(8, request.enabled());
+            if (request.processId() == null) {
+                statement.setNull(9, java.sql.Types.BIGINT);
+            } else {
+                statement.setLong(9, request.processId());
+            }
+            statement.setInt(10, displayOrder);
+            return statement;
+        }, keys);
+        Number key = keys.getKey();
+        if (key == null) {
+            throw new IllegalStateException("新增参数后未取得主键。");
+        }
+        return key.longValue();
+    }
+
+    /** 新参数的配置版本行，首版为 1；与测点扩展档案同一口径。 */
+    public void insertParameterProfile(long parameterId, long version) {
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        jdbc.update("""
+                INSERT INTO p2_sensor_parameter_profile (parameter_id, version, updated_at)
+                VALUES (?, ?, ?)
+                """, parameterId, version, now);
+    }
+
+    /** 参数首版规则快照；{@code previous} 为空表示这是该参数的第一版。 */
+    public long insertRuleVersion(long parameterId, RuleSnapshot rule, String reason,
+                                  String operatorName) {
+        KeyHolder keys = new GeneratedKeyHolder();
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO p2_alert_rule_version
+                        (parameter_id, rule_version, previous_rule_version_id,
+                         normal_lower, normal_upper, alarm_lower, alarm_upper, unit_code,
+                         trigger_mode, duration_seconds, enabled, effective_at, reason, operator_name)
+                    VALUES (?, 1, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, Statement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, parameterId);
+            setDecimal(statement, 2, rule.normalLower());
+            setDecimal(statement, 3, rule.normalUpper());
+            setDecimal(statement, 4, rule.alarmLower());
+            setDecimal(statement, 5, rule.alarmUpper());
+            statement.setString(6, rule.unitCode());
+            statement.setString(7, rule.triggerMode());
+            if (rule.durationSeconds() == null) {
+                statement.setNull(8, java.sql.Types.INTEGER);
+            } else {
+                statement.setInt(8, rule.durationSeconds());
+            }
+            statement.setBoolean(9, rule.enabled());
+            statement.setObject(10, now);
+            statement.setString(11, reason);
+            statement.setString(12, operatorName);
+            return statement;
+        }, keys);
+        Number key = keys.getKey();
+        if (key == null) {
+            throw new IllegalStateException("新增规则版本后未取得主键。");
+        }
+        return key.longValue();
+    }
+
+    /** 参数详情：定义、配置版本与当前规则快照三处合一，供 P07 返回新建结果。 */
+    public Optional<ParameterDetail> parameterDetail(long parameterId) {
+        List<ParameterDetail> rows = jdbc.query("""
+                SELECT dp.parameter_id, dp.sensor_id, dp.parameter_code, dp.parameter_name,
+                       dp.data_type, dp.unit_code, dp.decimal_places,
+                       dp.sampling_frequency_seconds, dp.process_id, dp.enabled,
+                       COALESCE(pp.version, 0) AS parameter_version,
+                       rv.rule_version_id, rv.normal_lower, rv.normal_upper,
+                       rv.alarm_lower, rv.alarm_upper, rv.unit_code AS rule_unit_code,
+                       rv.trigger_mode, rv.duration_seconds, rv.enabled AS rule_enabled
+                  FROM dim_sensor_parameter dp
+                  LEFT JOIN p2_sensor_parameter_profile pp
+                         ON pp.parameter_id = dp.parameter_id
+                  LEFT JOIN (SELECT parameter_id, MAX(rule_version_id) AS rule_version_id
+                               FROM p2_alert_rule_version
+                              GROUP BY parameter_id) rm
+                         ON rm.parameter_id = dp.parameter_id
+                  LEFT JOIN p2_alert_rule_version rv ON rv.rule_version_id = rm.rule_version_id
+                 WHERE dp.parameter_id = ?
+                """, (rs, rowNum) -> {
+            Object ruleVersionId = rs.getObject("rule_version_id");
+            RuleSnapshot rule = ruleVersionId == null ? null : new RuleSnapshot(
+                    boundText(rs.getBigDecimal("normal_lower")),
+                    boundText(rs.getBigDecimal("normal_upper")),
+                    boundText(rs.getBigDecimal("alarm_lower")),
+                    boundText(rs.getBigDecimal("alarm_upper")),
+                    rs.getString("rule_unit_code"),
+                    rs.getString("trigger_mode"),
+                    rs.getObject("duration_seconds") == null ? null : rs.getInt("duration_seconds"),
+                    rs.getBoolean("rule_enabled"));
+            return new ParameterDetail(
+                    String.valueOf(rs.getLong("parameter_id")),
+                    String.valueOf(rs.getLong("sensor_id")),
+                    rs.getString("parameter_code"),
+                    rs.getString("parameter_name"),
+                    rs.getString("data_type"),
+                    rs.getString("unit_code"),
+                    rs.getInt("decimal_places"),
+                    rs.getObject("sampling_frequency_seconds") == null
+                            ? null : rs.getInt("sampling_frequency_seconds"),
+                    rs.getObject("process_id") == null ? null : String.valueOf(rs.getLong("process_id")),
+                    rs.getBoolean("enabled"),
+                    rule,
+                    ruleVersionId == null ? null : String.valueOf(((Number) ruleVersionId).longValue()),
+                    rs.getLong("parameter_version"));
+        }, parameterId);
+        return rows.stream().findFirst();
+    }
+
+    public boolean unitExists(String unitCode) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dim_unit WHERE unit_code = ?", Long.class, unitCode);
+        return count != null && count > 0;
+    }
+
+    public boolean processExists(long processId) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dim_process WHERE process_id = ?", Long.class, processId);
+        return count != null && count > 0;
+    }
+
+    private static void setDecimal(PreparedStatement statement, int index, String value)
+            throws java.sql.SQLException {
+        if (value == null) {
+            statement.setNull(index, java.sql.Types.DECIMAL);
+        } else {
+            statement.setBigDecimal(index, new BigDecimal(value));
+        }
     }
 }

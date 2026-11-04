@@ -618,6 +618,32 @@ export interface SensorDetail extends SensorSummary {
 }
 
 /**
+ * 参数详情（P07 新建结果）。
+ *
+ * 比摘要多两项：规则全文与配置版本。摘要只知道"有没有规则"，详情才够回填表单。
+ * rule 为 null 表示从未配规则，与"配了但停用"（rule.enabled=false）不是一回事。
+ */
+export interface SensorParameterDetail {
+  parameterId: string; sensorId: string; parameterCode: string; name: string; dataType: string;
+  unitCode: string | null; decimalPlaces: number; samplingIntervalSeconds: number | null;
+  processId: string | null; enabled: boolean;
+  rule: SensorRuleSnapshot | null; ruleVersionId: string | null; version: number;
+}
+
+/**
+ * 参数可写字段（P07）。
+ *
+ * 不含 dataSource：参数有没有真的接到采集，取决于采集映射建立。
+ * rule 为 null 时不产生规则版本行；给了 rule 才有首版快照。
+ */
+export interface SensorParameterFormValues {
+  parameterCode: string; name: string; dataType: string;
+  unitCode: string | null; decimalPlaces: number | null;
+  samplingIntervalSeconds: number | null; processId: string | null;
+  enabled: boolean; rule: SensorRuleSnapshot | null; reason?: string | null;
+}
+
+/**
  * 测点可写字段（P03/P04）。
  *
  * 不含 dataSource：采集来源由现场对接产生，页面不能凭一次表单提交就声称"已接 PLC"。
@@ -737,6 +763,39 @@ export function mapParameterPage(value: unknown): PageResult<SensorParameterSumm
   };
 }
 
+function mapRuleSnapshot(value: unknown): SensorRuleSnapshot {
+  const rule = record(value, '规则快照');
+  return {
+    normalLower: optional(rule.normalLower, '正常下限'),
+    normalUpper: optional(rule.normalUpper, '正常上限'),
+    alarmLower: optional(rule.alarmLower, '报警下限'),
+    alarmUpper: optional(rule.alarmUpper, '报警上限'),
+    unitCode: optional(rule.unitCode, '单位'),
+    triggerMode: optional(rule.triggerMode, '触发模式'),
+    durationSeconds: count(rule.durationSeconds, '持续秒数'),
+    enabled: boolean(rule.enabled, '规则启用'),
+  };
+}
+
+export function mapParameterDetail(value: unknown): SensorParameterDetail {
+  const row = record(value, '参数详情');
+  return {
+    parameterId: id(row.parameterId, '参数ID'),
+    sensorId: id(row.sensorId, '测点ID'),
+    parameterCode: str(row.parameterCode, '参数编码'),
+    name: str(row.name, '参数名称'),
+    dataType: str(row.dataType, '数据类型'),
+    unitCode: optional(row.unitCode, '单位'),
+    decimalPlaces: integer(row.decimalPlaces, '小数位'),
+    samplingIntervalSeconds: count(row.samplingIntervalSeconds, '采样周期'),
+    processId: row.processId == null ? null : id(row.processId, '工序ID'),
+    enabled: boolean(row.enabled, '启用状态'),
+    rule: row.rule == null ? null : mapRuleSnapshot(row.rule),
+    ruleVersionId: row.ruleVersionId == null ? null : id(row.ruleVersionId, '规则版本ID'),
+    version: integer(row.version, '版本'),
+  };
+}
+
 export function mapLatestReading(value: unknown): SensorLatestReading {
   const row = record(value, '最新读数');
   return {
@@ -783,21 +842,11 @@ export function mapRuleVersionPage(value: unknown): PageResult<SensorRuleVersion
   return {
     items: data.items.map((item: unknown) => {
       const row = record(item, '规则版本');
-      const rule = record(row.rule, '规则快照');
       return {
         ruleVersionId: id(row.ruleVersionId, '规则版本ID'),
         ruleVersion: integer(row.ruleVersion, '规则版本号'),
         previousRuleVersionId: row.previousRuleVersionId == null ? null : id(row.previousRuleVersionId, '上一版ID'),
-        rule: {
-          normalLower: optional(rule.normalLower, '正常下限'),
-          normalUpper: optional(rule.normalUpper, '正常上限'),
-          alarmLower: optional(rule.alarmLower, '报警下限'),
-          alarmUpper: optional(rule.alarmUpper, '报警上限'),
-          unitCode: optional(rule.unitCode, '单位'),
-          triggerMode: optional(rule.triggerMode, '触发模式'),
-          durationSeconds: count(rule.durationSeconds, '持续秒数'),
-          enabled: boolean(rule.enabled, '规则启用'),
-        },
+        rule: mapRuleSnapshot(row.rule),
         effectiveAt: optional(row.effectiveAt, '生效时间'),
         reason: optional(row.reason, '修改原因'),
         operatorName: str(row.operatorName, '经办人'),
@@ -922,6 +971,11 @@ export const api = {
   sensorParameters: (sensorId: string, page = 1, pageSize = 50, signal?: AbortSignal) =>
     requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}/parameters?page=${page}&pageSize=${pageSize}`,
       mapParameterPage, {signal}),
+  /** S1-P07 新增参数；可选带首版规则，同测点内参数编码唯一。 */
+  createSensorParameter: (sensorId: string, values: SensorParameterFormValues,
+                          meta: {requestId: string; operatorName: string}) =>
+    requestApi(`/api/v1/sensors/${encodeURIComponent(sensorId)}/parameters`, mapParameterDetail,
+      {method: 'POST', body: {...meta, ...values}}),
   /** S1-P03 新增测点；返回详情，首存版本 1、配置状态 PENDING。 */
   createSensor: (values: SensorFormValues, meta: {requestId: string; operatorName: string}) =>
     requestApi('/api/v1/sensors', mapSensorDetail, {method: 'POST', body: {...meta, ...values}}),

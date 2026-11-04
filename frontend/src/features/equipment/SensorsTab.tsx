@@ -3,6 +3,7 @@ import { ApiError, api } from '../../lib/api';
 import type { SensorDetail, SensorLatestReading, SensorMonitoringStatus, SensorSummary } from '../../lib/api';
 import { SensorReadingsDialog } from './SensorReadingsDialog';
 import { SensorFormDialog } from './SensorFormDialog';
+import { ParameterFormDialog } from './ParameterFormDialog';
 import './equipment.css';
 
 /**
@@ -60,6 +61,7 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
   const [readings, setReadings] = useState<Record<string, SensorLatestReading>>({});
   const [reading, setReading] = useState<{sensor: SensorSummary; parameterId: string; parameterName: string} | null>(null);
   const [form, setForm] = useState<{sensor: SensorDetail | null} | null>(null);
+  const [parameterForm, setParameterForm] = useState<SensorDetail | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -78,14 +80,11 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
   // 切换设备时收起已展开的测点，否则会显示上一台设备的参数。
   useEffect(() => { setExpanded(null); setDetail(null); setReadings({}); }, [equipmentId]);
 
-  async function toggle(sensor: SensorSummary) {
-    if (expanded === sensor.sensorId) { setExpanded(null); setDetail(null); return; }
-    setExpanded(sensor.sensorId);
-    setDetail(null);
-    setDetailError(null);
+  async function loadSensorDetail(sensorId: string) {
     setDetailLoading(true);
+    setDetailError(null);
     try {
-      const result = await api.sensorDetail(sensor.sensorId);
+      const result = await api.sensorDetail(sensorId);
       setDetail(result.data);
       // 参数逐个取最新值。参数数量受测点配置约束（通常个位数），并发请求比串行等待更合适。
       const pairs = await Promise.all(result.data.parameters.map(async parameter => {
@@ -107,6 +106,13 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  async function toggle(sensor: SensorSummary) {
+    if (expanded === sensor.sensorId) { setExpanded(null); setDetail(null); return; }
+    setExpanded(sensor.sensorId);
+    setDetail(null);
+    await loadSensorDetail(sensor.sensorId);
   }
 
   const busy = loading && rows === null;
@@ -153,6 +159,9 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                   {' · '}
                   {detail.hasHistory ? '已有原始采集记录' : '暂无原始采集记录'}
                 </p>
+                <button type="button" className="eq-row-link" onClick={() => setParameterForm(detail)}>
+                  新增参数
+                </button>
                 <button type="button" className="eq-row-link" onClick={() => setForm({sensor: detail})}>
                   修改
                 </button>
@@ -188,8 +197,8 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
       </ul>)}
 
     <p className="eq-form-hint">
-      测点身份沿用一期主数据，读数取最新值快照。参数配置与报警规则待写入侧接口开放后提供；
-      没有删除入口——契约要求先做完整关联检查，停用是当前唯一安全的退出方式。
+      测点身份沿用一期主数据，读数取最新值快照。展开测点可新增参数并同时写入首版规则；
+      参数规则修改与测点删除尚未开放，停用是当前唯一安全的退出方式。
     </p>
 
     {reading && <SensorReadingsDialog
@@ -203,5 +212,16 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
       equipmentId={equipmentId}
       onClose={() => setForm(null)}
       onSaved={() => { setForm(null); setExpanded(null); setDetail(null); setReloadKey(key => key + 1); }} />}
+
+    {parameterForm && <ParameterFormDialog
+      sensorId={parameterForm.sensorId}
+      sensorCode={parameterForm.sensorCode}
+      onClose={() => setParameterForm(null)}
+      onSaved={() => {
+        const sensorId = parameterForm.sensorId;
+        setParameterForm(null);
+        setReloadKey(key => key + 1);
+        void loadSensorDetail(sensorId);
+      }} />}
   </>;
 }
