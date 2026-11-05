@@ -49,6 +49,25 @@ assert.equal(
   await run('document.querySelectorAll(".knowledge-page form").length'),
   1,
 );
+assert.equal(
+  await run(
+    'document.querySelectorAll(".knowledge-filters,.knowledge-list, .knowledge-page article").length',
+  ),
+  0,
+  "editor replaces the list and detail",
+);
+assert.ok(
+  await run(
+    'document.getElementById("knowledge-view-title").getBoundingClientRect().top < innerHeight',
+  ),
+  "new article is visible without scrolling",
+);
+await send("Page.captureScreenshot", { format: "png" }).then((r) =>
+  writeFileSync(
+    ".local/knowledge-editor-ui.png",
+    Buffer.from(r.result.data, "base64"),
+  ),
+);
 await click("添加步骤");
 await click("添加步骤");
 assert.equal(
@@ -58,8 +77,37 @@ assert.equal(
   2,
 );
 await click("取消编辑");
+assert.equal(
+  await run('document.querySelectorAll(".knowledge-form").length'),
+  0,
+);
+await click("从已验收工单整理案例");
+assert.equal(
+  await run(
+    'document.querySelectorAll(".knowledge-list,.knowledge-filters").length',
+  ),
+  0,
+  "source picker replaces list",
+);
+assert.equal(
+  await run('document.getElementById("knowledge-view-title").textContent'),
+  "整理维修案例",
+);
+await click("返回知识列表");
+await send("Emulation.setDeviceMetricsOverride", {
+  width: 1440,
+  height: 1000,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+await send("Page.captureScreenshot", { format: "png" }).then((r) =>
+  writeFileSync(
+    ".local/knowledge-list-ui.png",
+    Buffer.from(r.result.data, "base64"),
+  ),
+);
 const firstTitle = await run(
-  "document.querySelector('.knowledge-page ul button')?.textContent",
+  "document.querySelector('.knowledge-list .knowledge-title-link')?.textContent",
 );
 assert.ok(firstTitle);
 await click(firstTitle);
@@ -144,6 +192,7 @@ if (missingType) {
     0,
   );
 }
+await click("返回知识列表");
 const articles = await (
   await fetch("http://127.0.0.1:18280/api/v1/knowledge-articles?pageSize=100")
 ).json();
@@ -153,7 +202,7 @@ await run(
   `window.fetch=(input,init)=>String(input).includes('/attachments/')?Promise.reject(new TypeError('unavailable')):window.__originalFetch(input,init)`,
 );
 await run(
-  `document.querySelectorAll('.knowledge-page > ul button')[${articles.data.items.indexOf(withAttachment)}].click()`,
+  `document.querySelectorAll('.knowledge-list .knowledge-title-link')[${articles.data.items.indexOf(withAttachment)}].click()`,
 );
 await wait();
 assert.ok(

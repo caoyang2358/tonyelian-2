@@ -82,6 +82,24 @@ const empty = (): KnowledgeCommand => ({
   sourceRepairOrderId: null,
 });
 export function KnowledgePage({ back }: PendingPageProps) {
+  const [view, setView] = useState<"list" | "detail" | "editor" | "source">(
+    "list",
+  );
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.scrollIntoView({ block: "start" });
+    document
+      .getElementById("knowledge-view-title")
+      ?.focus({ preventScroll: true });
+  }, [view]);
+  function returnToList() {
+    selection.current++;
+    setView("list");
+    setDraft(null);
+    setChoosing(false);
+    setSource(null);
+    setSourceError("");
+  }
   const [filter, setFilter] = useState({
     equipmentId: "",
     equipmentType: "",
@@ -205,6 +223,9 @@ export function KnowledgePage({ back }: PendingPageProps) {
     setPage(1);
   }
   async function read(id: string) {
+    setView("detail");
+    setSource(null);
+    setSourceError("");
     lastArticle.current = id;
     const n = ++selection.current;
     setDetailLoading(true);
@@ -220,6 +241,8 @@ export function KnowledgePage({ back }: PendingPageProps) {
     }
   }
   function edit(a?: Article) {
+    setView("editor");
+    setChoosing(false);
     setEditingId(a?.articleId);
     setDraft(
       a
@@ -257,6 +280,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
       });
       setArticle(a);
       setDraft(null);
+      setView("detail");
       setReload((x) => x + 1);
     } catch (e) {
       setSaveError(
@@ -308,134 +332,223 @@ export function KnowledgePage({ back }: PendingPageProps) {
     return `${e?.name ?? (id ? `设备 ${id}` : "按类型适用")} · ${types.find((t) => t.code === (e?.typeCode ?? type))?.name ?? "待补充"}`;
   };
   return (
-    <section className="panel knowledge-page">
-      <span className="section-kicker">系统一</span>
-      <h2>运维知识库</h2>
-      <p>选择设备和故障，查阅人工维护的知识与排查步骤。</p>
-      <div className="toolbar">
-        <button onClick={back}>返回设备</button>{" "}
-        <button
-          onClick={() => {
-            setSource(null);
-            edit();
-          }}
-        >
-          新增知识
-        </button>{" "}
-        <button
-          onClick={() => {
-            setChoosing(true);
-            setOrderPage(1);
-          }}
-        >
-          从已验收工单整理案例
-        </button>
-      </div>
+    <section
+      ref={panel}
+      className={`panel knowledge-page knowledge-view-${view}`}
+    >
+      <header className="knowledge-header">
+        <div>
+          <h2 id="knowledge-view-title" tabIndex={-1}>
+            {view === "list"
+              ? "知识条目"
+              : view === "editor"
+                ? editingId
+                  ? "编辑知识"
+                  : "新增知识"
+                : view === "source"
+                  ? "整理维修案例"
+                  : "知识详情"}
+          </h2>
+          <p>
+            {view === "list"
+              ? "选择设备和故障，查阅人工维护的知识与排查步骤。"
+              : view === "editor"
+                ? "完善适用范围、正文与排查步骤，核对后保存。"
+                : view === "source"
+                  ? "选择已验收工单，人工整理为可复用的维修知识。"
+                  : "查看知识正文、人工步骤和引用资料。"}
+          </p>
+        </div>
+        <div className="knowledge-actions">
+          {view === "list" ? (
+            <>
+              <button className="button" onClick={back}>
+                返回设备
+              </button>
+              <button
+                className="button"
+                onClick={() => {
+                  setSource(null);
+                  setDraft(null);
+                  setView("source");
+                  setChoosing(true);
+                  setOrderPage(1);
+                }}
+              >
+                从已验收工单整理案例
+              </button>
+              <button
+                className="button button-primary"
+                onClick={() => {
+                  setSource(null);
+                  edit();
+                }}
+              >
+                新增知识
+              </button>
+            </>
+          ) : (
+            <button className="button" disabled={saving} onClick={returnToList}>
+              返回知识列表
+            </button>
+          )}
+        </div>
+      </header>
       {referenceError && (
         <p role="alert">
           {referenceError}
           <button onClick={() => setReload((x) => x + 1)}>重试</button>
         </p>
       )}
-      <div
-        style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "20px 0" }}
-      >
-        <label>
-          设备
-          <select
-            value={filter.equipmentId}
-            onChange={(e) => change("equipmentId", e.target.value)}
-          >
-            <option value="">全部设备</option>
-            {equipment.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name} · {e.typeName ?? "待补充"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          设备类型
-          <select
-            value={filter.equipmentType}
-            onChange={(e) => change("equipmentType", e.target.value)}
-          >
-            <option value="">全部类型</option>
-            {types.map((t) => (
-              <option key={t.code} value={t.code}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          分类
-          <select
-            value={filter.category}
-            onChange={(e) => change("category", e.target.value)}
-          >
-            <option value="">全部分类</option>
-            {Object.entries(categories).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          关键词 / 故障现象
-          <input
-            value={filter.keyword}
-            onChange={(e) => change("keyword", e.target.value)}
-          />
-        </label>
-      </div>
-      {loading ? (
-        <p role="status">正在读取知识…</p>
-      ) : error ? (
-        <p role="alert">
-          {error}
-          <button onClick={() => setReload((x) => x + 1)}>重试</button>
-        </p>
-      ) : (
+      {view === "list" && (
         <>
-          <p>共 {total} 篇</p>
-          {items.length === 0 ? (
-            <p>
-              {Object.values(filter).some(Boolean)
-                ? "没有匹配的知识，请调整筛选条件。"
-                : "暂无知识，可新增文章或整理维修案例。"}
+          <div className="knowledge-filters">
+            <label>
+              设备
+              <select
+                value={filter.equipmentId}
+                onChange={(e) => change("equipmentId", e.target.value)}
+              >
+                <option value="">全部设备</option>
+                {equipment.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} · {e.typeName ?? "待补充"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              设备类型
+              <select
+                value={filter.equipmentType}
+                onChange={(e) => change("equipmentType", e.target.value)}
+              >
+                <option value="">全部类型</option>
+                {types.map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              分类
+              <select
+                value={filter.category}
+                onChange={(e) => change("category", e.target.value)}
+              >
+                <option value="">全部分类</option>
+                {Object.entries(categories).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              关键词 / 故障现象
+              <input
+                value={filter.keyword}
+                onChange={(e) => change("keyword", e.target.value)}
+              />
+            </label>
+          </div>
+          {loading ? (
+            <p role="status">正在读取知识…</p>
+          ) : error ? (
+            <p role="alert">
+              {error}
+              <button onClick={() => setReload((x) => x + 1)}>重试</button>
             </p>
           ) : (
-            <ul>
-              {items.map((a) => (
-                <li key={a.articleId}>
-                  <button onClick={() => void read(a.articleId)}>
-                    {a.title}
-                  </button>{" "}
-                  <span>
-                    {categories[a.category]} ·{" "}
-                    {eqLabel(a.equipmentId, a.equipmentType)}
-                  </span>
-                  <p>{a.faultPhenomenon}</p>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="knowledge-count">
+                共 <strong>{total}</strong> 篇知识
+              </div>
+              {items.length === 0 ? (
+                <p>
+                  {Object.values(filter).some(Boolean)
+                    ? "没有匹配的知识，请调整筛选条件。"
+                    : "暂无知识，可新增文章或整理维修案例。"}
+                </p>
+              ) : (
+                <div
+                  className="table-region"
+                  role="region"
+                  aria-label="知识条目表，可横向滚动"
+                  tabIndex={0}
+                >
+                  <table className="knowledge-list">
+                    <thead>
+                      <tr>
+                        <th>知识标题 / 故障现象</th>
+                        <th>分类</th>
+                        <th>适用范围</th>
+                        <th>更新时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((a) => (
+                        <tr key={a.articleId}>
+                          <td>
+                            <button
+                              className="knowledge-title-link"
+                              data-article-id={a.articleId}
+                              onClick={() => void read(a.articleId)}
+                            >
+                              {a.title}
+                            </button>
+                            <p className="knowledge-fault">
+                              {a.faultPhenomenon || "未填写故障现象"}
+                            </p>
+                          </td>
+                          <td>
+                            <span className="knowledge-badge">
+                              {categories[a.category]}
+                            </span>
+                          </td>
+                          <td>{eqLabel(a.equipmentId, a.equipmentType)}</td>
+                          <td>
+                            {new Date(a.updatedAt).toLocaleString("zh-CN", {
+                              hour12: false,
+                            })}
+                          </td>
+                          <td>
+                            <button
+                              className="knowledge-text-button"
+                              onClick={() => void read(a.articleId)}
+                            >
+                              查看详情
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="table-footer knowledge-pagination">
+                <button
+                  disabled={page === 1}
+                  onClick={() => setPage((x) => x - 1)}
+                >
+                  上一页
+                </button>{" "}
+                第 {page} 页{" "}
+                <button
+                  disabled={page * 20 >= total}
+                  onClick={() => setPage((x) => x + 1)}
+                >
+                  下一页
+                </button>
+              </div>
+            </>
           )}
-          <button disabled={page === 1} onClick={() => setPage((x) => x - 1)}>
-            上一页
-          </button>{" "}
-          第 {page} 页{" "}
-          <button
-            disabled={page * 20 >= total}
-            onClick={() => setPage((x) => x + 1)}
-          >
-            下一页
-          </button>
         </>
       )}
-      {detailLoading && <p role="status">正在打开文章…</p>}
-      {detailError && (
+      {view === "detail" && detailLoading && <p role="status">正在打开文章…</p>}
+      {view === "detail" && detailError && (
         <p role="alert">
           {detailError}
           <button
@@ -447,7 +560,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
           </button>
         </p>
       )}
-      {article && (
+      {view === "detail" && article && (
         <article style={{ borderTop: "1px solid #ddd", marginTop: 24 }}>
           <h3>{article.title}</h3>
           <p>
@@ -487,7 +600,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
           <button onClick={() => edit(article)}>编辑知识</button>
         </article>
       )}
-      {choosing && (
+      {view === "source" && choosing && (
         <aside>
           <h3>选择已验收工单</h3>
           {sourceError && (
@@ -516,12 +629,13 @@ export function KnowledgePage({ back }: PendingPageProps) {
           >
             下一页
           </button>
-          <button onClick={() => setChoosing(false)}>关闭</button>
+          <button onClick={returnToList}>关闭</button>
         </aside>
       )}
       {sourceError && !choosing && <p role="alert">{sourceError}</p>}
-      {source && (
-        <aside>
+      {source && view !== "list" && (
+        <details className="knowledge-source">
+          <summary>源工单 {source.orderNo} · 查看维修记录</summary>
           <h3>源工单 {source.orderNo}</h3>
           <p>
             {source.equipmentName} · {source.status}
@@ -534,22 +648,19 @@ export function KnowledgePage({ back }: PendingPageProps) {
               </li>
             ))}
           </ol>
-        </aside>
+        </details>
       )}
-      {draft && (
+      {view === "editor" && draft && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void save();
           }}
-          style={{
-            borderTop: "1px solid #ddd",
-            marginTop: 24,
-            display: "grid",
-            gap: 12,
-          }}
+          className="knowledge-form"
         >
-          <h3>{editingId ? "编辑知识" : "新增知识"} · 请人工核对内容后保存</h3>
+          <p className="knowledge-form-note">
+            请人工核对内容后保存，标注必填的内容不能为空。
+          </p>
           <label>
             标题
             <input
@@ -817,17 +928,13 @@ export function KnowledgePage({ back }: PendingPageProps) {
             <button disabled={saving || conflict}>
               {saving ? "保存中…" : "确认保存"}
             </button>{" "}
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => setDraft(null)}
-            >
+            <button type="button" disabled={saving} onClick={returnToList}>
               取消编辑
             </button>
           </div>
         </form>
       )}
-      {article && !draft && (
+      {view === "detail" && article && !draft && (
         <label>
           为当前文章上传配图（经办人必填）
           <input placeholder="经办人" id="knowledge-upload-operator" />
