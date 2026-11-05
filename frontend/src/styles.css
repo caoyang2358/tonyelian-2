@@ -16,6 +16,68 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 @media(max-width:390px){main{padding-left:12px;padding-right:12px}.topbar{padding-left:13px;padding-right:13px}.metric{padding:12px 9px}.metric-label>svg{display:none}.page-heading p{max-width:220px}.initialization-tag{display:none}.metrics{gap:7px}.select-field{width:100%;flex:auto}.metric-value{font-size:25px}.sidebar{padding-left:12px;padding-right:12px}.footer{margin-left:12px;margin-right:12px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
+/* ===== 运维管理（S1-3 批次页面） ===== */
+.ops-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:22px}
+.ops-tab{border:1px solid #e0e6dd;background:#fff;border-radius:9px;padding:14px 18px;text-align:left;display:flex;flex-direction:column;gap:4px;transition:border-color .15s,background .15s;min-height:64px}
+.ops-tab>span{font-size:13px;font-weight:600;color:#46583e}
+.ops-tab>small{font-size:10px;color:#9aa294}
+.ops-tab:hover{background:#f7faf3}
+.ops-tab.active{border-color:#2e6c51;background:#eef5ec}
+.ops-tab.active>span{color:#245d43}
+.ops-two-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.ops-two-column>.panel{min-width:0}
+.ops-selected{background:#eef5ec}
+.ops-selected:hover{background:#eef5ec!important}
+.ops-tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:3px 9px;border-radius:5px;margin-right:5px;white-space:nowrap}
+.ops-tag:before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.65}
+.ops-tag-blue{background:#eaf2ef;color:#2e6c51}
+.ops-tag-green{background:#eef5e4;color:#5c7f34}
+.ops-tag-amber{background:#f9f1de;color:#8a6a1f}
+.ops-tag-red{background:#f9e9e4;color:#a04a34}
+.ops-tag-gray{background:#f1f3ed;color:#7c877a}
+.ops-detail{padding:0 23px 21px}
+.ops-detail-padded{padding-top:4px}
+.ops-detail dl,.ops-caliber{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 28px;margin:0 0 6px}
+.ops-detail dl>div,.ops-caliber>div{min-width:0}
+.ops-detail dt,.ops-caliber dt{font-size:10px;color:#93a08b;margin-bottom:3px}
+.ops-detail dd,.ops-caliber dd{margin:0;font-size:12px;color:#5c6b57;line-height:1.7;overflow-wrap:anywhere}
+.ops-detail dd strong{color:#3c5238;font-weight:600}
+.ops-detail-row{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.ops-detail-row dt{font-size:10px;color:#93a08b}
+.ops-detail-row dd{margin:0;display:flex}
+.ops-json{margin:13px 0 4px;border:1px solid #e7ecdf;border-radius:7px;background:#fbfcf7}
+.ops-json>summary{cursor:pointer;padding:9px 13px;font-size:10px;color:#7d8d72;list-style:none}
+.ops-json>summary::-webkit-details-marker{display:none}
+.ops-json>summary:hover{color:#4f6a45}
+.ops-json pre{margin:0;padding:0 13px 13px;font-size:10px;line-height:1.7;color:#5c6b57;overflow:auto;max-height:230px}
+.ops-form{padding:0 23px 21px}
+.ops-form-context{font-size:11px;color:#71835f;background:#f4f8ef;border:1px solid #e7eddf;border-radius:6px;padding:8px 12px;margin:0 0 13px}
+.ops-form-inline{padding-top:2px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.ops-form-row{display:flex;align-items:flex-end;gap:13px;flex-wrap:wrap;margin-bottom:12px}
+.ops-form-row:empty{display:none}
+.ops-grow{flex:1;min-width:180px}
+.ops-text-field{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#8a9684;margin-bottom:12px;min-width:0}
+.ops-form-row .ops-text-field{margin-bottom:0}
+.ops-text-field input,.ops-text-field textarea{border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#3a4d36;font-size:11px;padding:8px 11px;width:100%;resize:vertical;font-family:inherit}
+.ops-text-field input:disabled,.ops-text-field textarea:disabled{background:#fafbf8;color:#a0aa97}
+.ops-text-field select{font-size:11px;border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#687e5c;min-width:113px;height:36px;padding:0 11px}
+.ops-form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:3px}
+.ops-feedback-ok{font-size:11px;color:#527a3c;background:#eff6e3;border:1px solid #e0ecd0;border-radius:6px;padding:9px 12px;margin:12px 0 0;line-height:1.7}
+.ops-feedback-error{font-size:11px;color:#9c5a34;background:#fbf2e7;border:1px solid #f0e2cd;border-radius:6px;padding:9px 12px;margin:12px 0 0;line-height:1.7}
+.ops-history{margin-top:16px;border-top:1px dashed #e4eae0;padding-top:13px}
+.ops-history h3{font-size:11px;font-weight:600;color:#4f6547;margin:0 0 9px}
+.ops-actions-available{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:10px;color:#8a9684;margin:4px 0 6px}
+.ops-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:0 23px 19px}
+.ops-metric{border:1px solid #e4eadf;border-radius:8px;background:#fbfcf7;padding:14px 16px}
+.ops-metric strong{display:block;font-size:23px;font-weight:600;color:#344b35;font-variant-numeric:tabular-nums}
+.ops-metric span{font-size:10px;color:#96a291}
+.ops-section-title{font-size:11px;font-weight:600;color:#4f6547;margin:17px 0 10px}
+.ops-note-block{font-size:11px;color:#8c795e;background:#fcf8f1;border:1px solid #efe4cf;border-radius:6px;padding:10px 13px;margin:0;line-height:1.8}
+.ops-caliber dd{font-size:11px}
+.ops-cell-text{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1150px){.ops-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-two-column{grid-template-columns:1fr}.ops-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.ops-detail dl,.ops-caliber{grid-template-columns:1fr}}
+@media(max-width:760px){.ops-tabs{grid-template-columns:1fr}.ops-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 
 .network-panel { padding: clamp(16px, 2.5vw, 30px); color: #294633; }
 .network-toolbar, .network-map-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem; }
@@ -67,3 +129,13 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 
 .network-workshop { margin-top: 1.35rem; padding: 1rem; border: 1px solid #d4e0d4; border-radius: 10px; }
 .network-workshop-title { margin: 0; font-size: 1.05rem; color: #284b37; }
+
+/* 运维管理：分页器（三个列表共用） */
+.ops-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 23px 0;border-top:1px solid #eef1e9;margin-top:4px}
+.ops-pager-range{font-size:10px;color:#8d9a86;font-variant-numeric:tabular-nums}
+.ops-pager-controls{display:flex;align-items:center;gap:8px}
+.ops-pager-controls .button{padding:5px 11px;font-size:10px;min-height:28px}
+.ops-pager-controls .button:disabled{opacity:.45;cursor:not-allowed}
+.ops-pager-num{font-size:10px;color:#5c6b57;min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+.ops-pager-size{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#8d9a86}
+.ops-pager-size select{font-size:10px;height:28px;border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#687e5c;padding:0 6px}
