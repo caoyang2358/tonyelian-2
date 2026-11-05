@@ -77,10 +77,17 @@ public class AttachmentWriteService {
         if (!repository.ownerExists(request.ownerType(), ownerId)) {
             throw BusinessException.notFound(ownerLabel(request.ownerType()) + "不存在，无法关联附件。");
         }
+        Integer articleVersion = AttachmentModels.OWNER_ARTICLE.equals(request.ownerType()) ? repository.lockArticle(ownerId) : null;
+        Object beforeReferences = articleVersion == null ? null : Map.of("attachmentIds", repository.articleReferences(ownerId));
         String storageKey = storage.persist(file);
         long attachmentId = repository.insert(request.ownerType(), ownerId, request.fileKind(),
                 request.originalName(), request.mediaType(), request.size(), storageKey);
 
+        if (articleVersion != null) {
+            repository.linkArticle(ownerId, attachmentId);
+            changeLog.insert(new ChangeLogWrite("KNOWLEDGE_ARTICLE",request.ownerId(),"UPDATE",beforeReferences,
+                Map.of("attachmentIds", repository.articleReferences(ownerId)),"上传文章配图",request.operatorName(),articleVersion,articleVersion+1,request.requestId()));
+        }
         changeLog.insert(new ChangeLogWrite(OBJECT_TYPE, String.valueOf(attachmentId), "CREATE",
                 null, snapshot(request.ownerType(), request.ownerId(), request.fileKind(),
                         request.originalName(), request.mediaType(), request.size(), 1),

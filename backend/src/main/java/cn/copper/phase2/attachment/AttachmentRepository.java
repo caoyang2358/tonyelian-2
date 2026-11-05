@@ -203,6 +203,17 @@ public class AttachmentRepository {
     }
 
     /** 插入一条归属唯一的附件；只写一个外键列，其余保持 NULL，符合表上的 CHECK 约束。 */
+    public List<String> articleReferences(long id) {
+        return jdbc.query("SELECT attachment_id FROM p2_knowledge_attachment WHERE article_id=? ORDER BY display_order,attachment_id", (rs,n) -> rs.getString(1), id);
+    }
+    public int lockArticle(long id) {
+        return jdbc.queryForObject("SELECT version FROM p2_knowledge_article WHERE article_id=? FOR UPDATE", Integer.class, id);
+    }
+    public void linkArticle(long articleId, long attachmentId) {
+        Integer next = jdbc.queryForObject("SELECT COALESCE(MAX(display_order),-1)+1 FROM p2_knowledge_attachment WHERE article_id=?", Integer.class, articleId);
+        jdbc.update("INSERT INTO p2_knowledge_attachment(article_id,attachment_id,display_order) VALUES(?,?,?)",articleId,attachmentId,next);
+        jdbc.update("UPDATE p2_knowledge_article SET version=version+1,updated_at=NOW(3) WHERE article_id=?",articleId);
+    }
     public long insert(String ownerType, long ownerId, String fileKind, String originalName,
                        String mediaType, long sizeBytes, String storageKey) {
         String sql = INSERT_TEMPLATE.formatted(ownerColumn(ownerType));
