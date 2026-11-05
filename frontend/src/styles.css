@@ -140,3 +140,12 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-pager-num{font-size:10px;color:#5c6b57;min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
 .ops-pager-size{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#8d9a86}
 .ops-pager-size select{font-size:10px;height:28px;border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#687e5c;padding:0 6px}
+
+/* Knowledge library uses the shared panel, typography and form colors. */
+.knowledge-page{padding:24px;line-height:1.7}
+.knowledge-page h2{margin:6px 0 10px}.knowledge-page h3{margin:16px 0 10px}
+.knowledge-page button{border:1px solid #d9e3ee;background:#f5f8fc;color:#234b75;border-radius:7px;padding:6px 12px;cursor:pointer;font:inherit;font-size:13px;margin:3px}
+.knowledge-page button:hover:not(:disabled){background:#e6f0fc;border-color:#91b7e1}.knowledge-page button:disabled{opacity:.45;cursor:default}
+.knowledge-page input:not([type=checkbox]):not([type=file]),.knowledge-page select,.knowledge-page textarea{border:1px solid #ccd9e8;border-radius:6px;padding:7px 10px;background:white;color:#283d57;font:inherit;max-width:100%}
+.knowledge-page form>label{display:grid;gap:5px}.knowledge-page textarea{width:100%;resize:vertical}.knowledge-page fieldset{border:1px solid #dce5ef;border-radius:8px;padding:14px}.knowledge-page fieldset label{display:inline-grid;margin-right:12px}
+.knowledge-page [role=alert]{padding:10px 14px;border-radius:6px;background:#fff4e8;color:#914d10}.knowledge-page aside{padding:14px;background:#f5f8fc;border-radius:8px;margin:16px 0}.knowledge-page article{overflow-wrap:anywhere}.knowledge-page li{margin:7px 0}.knowledge-page label{font-size:13px}.knowledge-page select{margin-left:6px}
