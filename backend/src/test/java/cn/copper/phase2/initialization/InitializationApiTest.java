@@ -3,9 +3,13 @@ package cn.copper.phase2.initialization;
 import cn.copper.phase2.common.ApiExceptionHandler;
 import cn.copper.phase2.equipment.EquipmentController;
 import cn.copper.phase2.equipment.EquipmentModels.EquipmentItem;
-import cn.copper.phase2.equipment.EquipmentModels.EquipmentList;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentListResponse;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentQuery;
+import cn.copper.phase2.equipment.EquipmentDeleteService;
 import cn.copper.phase2.equipment.EquipmentService;
+import cn.copper.phase2.equipment.EquipmentWriteService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -28,6 +32,8 @@ class InitializationApiTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private InitializationService service;
     @MockitoBean private EquipmentService equipmentService;
+    @MockitoBean private EquipmentWriteService equipmentWriteService;
+    @MockitoBean private EquipmentDeleteService equipmentDeleteService;
 
     @Test
     void livenessDoesNotAccessDatabaseOrService() throws Exception {
@@ -97,18 +103,21 @@ class InitializationApiTest {
 
     @Test
     void equipmentPreservesSharedIdentifiersAndNullablePerson() throws Exception {
-        when(equipmentService.equipment()).thenReturn(new EquipmentList(List.of(
-                new EquipmentItem(41, "SMELT-FUR-01", "1#熔化炉", 7, "车间一", null, false))));
+        when(equipmentService.equipment(ArgumentMatchers.any(EquipmentQuery.class))).thenReturn(
+                EquipmentListResponse.all(List.of(
+                        new EquipmentItem(41, "SMELT-FUR-01", "1#熔化炉", 7, "车间一", null, false,
+                                null, null, null, 0L))));
         mvc.perform(get("/api/v1/equipment"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].id").value(41))
                 .andExpect(jsonPath("$.data.items[0].code").value("SMELT-FUR-01"))
                 .andExpect(jsonPath("$.data.items[0].workshopId").value(7))
-                .andExpect(jsonPath("$.data.items[0].enabled").value(false));
+                .andExpect(jsonPath("$.data.items[0].enabled").value(false))
+                .andExpect(jsonPath("$.data.total").doesNotExist());
     }
 
     @Test
     void unsupportedMethodUsesEnvelopeRatherThanAnHtmlError() throws Exception {
-        mvc.perform(post("/api/v1/equipment")).andExpect(status().isMethodNotAllowed())
+        mvc.perform(post("/api/v1/health/live")).andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
         verifyNoInteractions(equipmentService);
     }

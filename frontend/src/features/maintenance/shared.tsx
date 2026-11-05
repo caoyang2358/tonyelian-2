@@ -23,8 +23,8 @@ export function useOperatorName(initial = ''): [string, (value: string) => void]
 let equipmentCache: Promise<Equipment[]> | null = null;
 
 function loadEquipment(): Promise<Equipment[]> {
-  equipmentCache ??= api.equipment()
-    .then(result => result.data.filter(item => item.enabled))
+  equipmentCache ??= api.equipment({})
+    .then(result => result.data.items.filter(item => item.enabled))
     .catch(error => { equipmentCache = null; throw error; });
   return equipmentCache;
 }

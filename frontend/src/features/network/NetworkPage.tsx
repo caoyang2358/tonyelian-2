@@ -41,11 +41,11 @@ export function NetworkPage({back}: PendingPageProps) {
     setNotice('');
     setLoading(true);
     void Promise.allSettled([
-      api.equipment(signal),
+      api.equipment({}, signal),
       read<{workshops: {workshopId?: string; id?: string; name?: string; workshopName?: string}[]}>('/reference-data', signal),
     ]).then(([devices, references]) => {
       if (signal.aborted) return;
-      const rows = devices.status === 'fulfilled' ? devices.value.data : [];
+      const rows = devices.status === 'fulfilled' ? devices.value.data.items : [];
       setLoading(false);
       setEquipment(rows.map(row => ({...row, kind: 'EQUIPMENT'})));
       const options = references.status === 'fulfilled'

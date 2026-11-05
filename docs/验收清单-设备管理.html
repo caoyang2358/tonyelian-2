@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设备管理 · 功能验收清单</title>
+<style>
+  :root {
+    --bg: #f6f7f5;
+    --panel: #ffffff;
+    --ink: #1d2621;
+    --ink-soft: #5c6b62;
+    --ink-faint: #8b998f;
+    --line: #e2e7e2;
+    --line-strong: #cfd8d0;
+    --accent: #1f6b4a;
+    --accent-soft: #e6f2ec;
+    --warn: #9a6412;
+    --warn-soft: #fdf2df;
+    --danger: #a83a32;
+    --danger-soft: #fbeae8;
+    --shadow: 0 1px 2px rgba(24, 40, 32, .05), 0 8px 24px rgba(24, 40, 32, .05);
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141917;
+      --panel: #1b211e;
+      --ink: #e8ede9;
+      --ink-soft: #a7b3ab;
+      --ink-faint: #7d8a83;
+      --line: #2b332e;
+      --line-strong: #3a443d;
+      --accent: #6ec49b;
+      --accent-soft: #1f2f27;
+      --warn: #e0b168;
+      --warn-soft: #2e2618;
+      --danger: #e58a80;
+      --danger-soft: #2f1e1c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.65 "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px 80px; }
+
+  /* ---------- 顶部 ---------- */
+  .hero { padding: 40px 0 22px; }
+  .hero .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; letter-spacing: .12em; color: var(--accent); text-transform: uppercase;
+  }
+  .hero .eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--accent); }
+  .hero h1 { margin: 10px 0 6px; font-size: 30px; line-height: 1.25; letter-spacing: -.01em; }
+  .hero p { margin: 0; color: var(--ink-soft); max-width: 720px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 12.5px; color: var(--ink-faint); }
+  .meta-row b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- 进度条 ---------- */
+  .sticky-bar {
+    position: sticky; top: 0; z-index: 20;
+    margin: 0 -22px; padding: 12px 22px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar-inner { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .progress { flex: 1 1 260px; min-width: 200px; }
+  .progress-track { height: 7px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .progress-fill { height: 100%; width: 0; border-radius: 99px; background: var(--accent); transition: width .25s ease; }
+  .progress-text { display: flex; gap: 12px; font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .progress-text .fail { color: var(--danger); }
+  .filters { display: flex; gap: 6px; }
+  .chip {
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-soft);
+    border-radius: 99px; padding: 4px 11px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .tool {
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-soft);
+    border-radius: 8px; padding: 5px 11px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+  }
+  .tool:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- 目录 ---------- */
+  .toc { margin: 26px 0 30px; display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; }
+  .toc a {
+    display: flex; justify-content: space-between; gap: 8px; text-decoration: none;
+    color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 9px 12px; font-size: 13px; transition: .15s;
+  }
+  .toc a:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  .toc a span { color: var(--ink-faint); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+  /* ---------- 分组 ---------- */
+  section.group { margin: 0 0 34px; scroll-margin-top: 74px; }
+  .group-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+  .group-head h2 { font-size: 17px; margin: 0; letter-spacing: -.005em; }
+  .group-head .apis { font-size: 11.5px; color: var(--ink-faint); font-family: var(--mono); }
+  .group-desc { margin: 0 0 14px; color: var(--ink-soft); font-size: 13px; }
+
+  /* ---------- 条目 ---------- */
+  .item {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+    padding: 15px 16px; margin-bottom: 10px; box-shadow: var(--shadow);
+    border-left: 3px solid var(--line-strong); transition: border-color .2s;
+  }
+  .item[data-status="pass"] { border-left-color: var(--accent); }
+  .item[data-status="fail"] { border-left-color: var(--danger); }
+  .item-top { display: flex; align-items: flex-start; gap: 10px; }
+  .item-id {
+    flex: none; font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+    border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; margin-top: 2px; background: var(--bg);
+  }
+  .item-title { flex: 1; margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.005em; }
+  .verdict { display: flex; gap: 5px; flex: none; }
+  .verdict button {
+    font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink-soft);
+    padding: 3px 9px; transition: .13s;
+  }
+  .verdict button:hover { border-color: var(--ink-soft); }
+  .verdict button[data-on="pass"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .verdict button[data-on="fail"] { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+  .func { margin: 8px 0 10px; color: var(--ink-soft); font-size: 13px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+  .col h4 {
+    margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; color: var(--ink-faint);
+    text-transform: uppercase; font-weight: 600;
+  }
+  .col ol, .col ul { margin: 0 0 2px; padding-left: 18px; font-size: 13px; }
+  .col ol li, .col ul li { margin-bottom: 3px; }
+  .col ul { list-style: none; padding-left: 0; }
+  .col ul li { position: relative; padding-left: 16px; }
+  .col ul li::before {
+    content: "✓"; position: absolute; left: 0; top: 0; color: var(--accent);
+    font-size: 11px; line-height: 1.7;
+  }
+  .note-line {
+    margin-top: 10px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px;
+    background: var(--warn-soft); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 18%, transparent);
+  }
+  .note-line b { font-weight: 600; }
+  .own-note {
+    width: 100%; margin-top: 9px; resize: vertical; min-height: 34px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+    font-family: inherit; font-size: 12.5px; background: var(--bg); color: var(--ink);
+  }
+  .own-note:focus { outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 1px; }
+  .own-note::placeholder { color: var(--ink-faint); }
+
+  /* ---------- 说明块 ---------- */
+  .callout {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+    padding: 16px 18px; margin: 0 0 14px; box-shadow: var(--shadow);
+  }
+  .callout h3 { margin: 0 0 8px; font-size: 14px; }
+  .callout p { margin: 0 0 8px; color: var(--ink-soft); font-size: 13px; }
+  .callout p:last-child { margin-bottom: 0; }
+  code {
+    font-family: var(--mono); font-size: 12px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px;
+  }
+  pre {
+    margin: 8px 0 0; padding: 12px 14px; overflow-x: auto;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink-soft);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink-faint); font-weight: 600; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; }
+  td code { font-size: 11.5px; }
+  .empty-hint { display: none; color: var(--ink-faint); font-size: 13px; padding: 10px 0; }
+  footer { color: var(--ink-faint); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 8px; }
+
+  @media print {
+    .sticky-bar, .toc, .verdict, .own-note, .tool, .filters { display: none !important; }
+    body { background: #fff; }
+    .item, .callout { box-shadow: none; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">系统一 · 设备管理 · 验收</div>
+    <h1>设备管理功能验收清单</h1>
+    <p>逐条对照真实页面操作。每条给出「本项验证什么 / 怎么点 / 应该看到什么」，判定结果会保存在本机浏览器里，刷新不丢。</p>
+    <div class="meta-row">
+      <span><b>前端</b> http://127.0.0.1:5174</span>
+      <span><b>后端</b> http://127.0.0.1:18280</span>
+      <span><b>契约</b> 33 条 · S1-E / S / C / F / T / P</span>
+      <span><b>基线</b> 9 台设备 · 10 测点 · 27 条期限</span>
+    </div>
+  </header>
+
+  <div class="sticky-bar">
+    <div class="bar-inner">
+      <div class="progress">
+        <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+        <div class="progress-text">
+          <span id="stat-pass">通过 0</span>
+          <span id="stat-fail" class="fail">不通过 0</span>
+          <span id="stat-todo">待测 0</span>
+        </div>
+      </div>
+      <div class="filters" role="group" aria-label="筛选">
+        <button class="chip" data-filter="all" aria-pressed="true">全部</button>
+        <button class="chip" data-filter="todo" aria-pressed="false">待测</button>
+        <button class="chip" data-filter="fail" aria-pressed="false">不通过</button>
+        <button class="chip" data-filter="pass" aria-pressed="false">通过</button>
+      </div>
+      <button class="tool" id="export">导出结果</button>
+      <button class="tool" id="reset">清空进度</button>
+    </div>
+  </div>
+
+  <nav class="toc" id="toc" aria-label="目录"></nav>
+
+  <section class="group" id="g-prep">
+    <div class="group-head"><h2>0 · 验收前准备</h2><span class="apis">环境</span></div>
+    <p class="group-desc">先确认这三条，否则后面所有"看不到数据"的失败都不算缺陷。</p>
+    <div class="callout">
+      <h3>当前数据库里有什么（本次验收的既有数据）</h3>
+      <table>
+        <thead><tr><th>对象</th><th>现状</th></tr></thead>
+        <tbody>
+          <tr><td>设备</td><td>9 台：SMELT-FUR-01、HOLD-FUR-01、CAST-01、ROLL-01、DRAW-01/02/03、GAUGE-02、EQUIP-DEMO-002</td></tr>
+          <tr><td>供应商</td><td>1 个，关联 SMELT-FUR-01 与 CAST-01</td></tr>
+          <tr><td>维保合同</td><td>1 份，覆盖 SMELT-FUR-01 与 CAST-01，结束 2026-12-31（剩余 57 天）</td></tr>
+          <tr><td>附件</td><td>1 个，挂在 CAST-01，版本 v2</td></tr>
+          <tr><td>测点</td><td>10 个；SMELT-FUR-01 有 5 个（TEMP-001/002/003、PRESS-001、LEVEL-001）</td></tr>
+          <tr><td>采集读数</td><td>TEMP-001 有 20 条演示数据（标记 DEMO-SEED）</td></tr>
+          <tr><td>规则版本 / 预警事件</td><td>0 / 0</td></tr>
+          <tr><td>提醒设置</td><td>质保 30 天、维保 30 天，版本 v1</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px">建议把写操作集中在一台测试设备上（例如新建 <code>ACC-TEST-01</code>），验完删掉，不动既有 9 台。</p>
+    </div>
+  </section>
+
+  <section class="group" id="g-list">
+    <div class="group-head"><h2>1 · 设备列表与筛选</h2><span class="apis">S1-E01</span></div>
+    <p class="group-desc">列表是全页入口，先确认"能读、能筛、能翻页、能刷新"。</p>
+  </section>
+
+  <section class="group" id="g-write">
+    <div class="group-head"><h2>2 · 新增与编辑档案</h2><span class="apis">S1-E01 写 · E02 · E03</span></div>
+    <p class="group-desc">重点看两件事：必填校验是否落在具体字段上；更正是否留下版本痕迹。</p>
+  </section>
+
+  <section class="group" id="g-delete">
+    <div class="group-head"><h2>3 · 删除与变更记录</h2><span class="apis">S1-E04 · E06</span></div>
+    <p class="group-desc">删除要能拦住"有业务关联"的设备；变更记录要能讲清"谁、什么时候、把什么改成了什么"。</p>
+  </section>
+
+  <section class="group" id="g-supplier">
+    <div class="group-head"><h2>4 · 供应商页签</h2><span class="apis">S1-S01 — S04</span></div>
+    <p class="group-desc">供应商是设备级关联，注意"解绑"只是断开关系，不删供应商资料。</p>
+  </section>
+
+  <section class="group" id="g-contract">
+    <div class="group-head"><h2>5 · 维保合同页签</h2><span class="apis">S1-C01 — C04</span></div>
+    <p class="group-desc">合同决定维保期限，所以它的日期和徽标要和期限抽屉对得上。</p>
+  </section>
+
+  <section class="group" id="g-attach">
+    <div class="group-head"><h2>6 · 附件页签</h2><span class="apis">S1-F01 — F05</span></div>
+    <p class="group-desc">契约没有删除接口，误传只能"替换"；替换要保持附件 ID 不变。</p>
+  </section>
+
+  <section class="group" id="g-deadline">
+    <div class="group-head"><h2>7 · 期限提醒与提醒设置</h2><span class="apis">S1-T01 · T02 · T03</span></div>
+    <p class="group-desc">这是全系统共用配置唯一的入口，验收重点是"改一个数字，两处判定同时变"。</p>
+  </section>
+
+  <section class="group" id="g-sensor">
+    <div class="group-head"><h2>8 · 测点页签</h2><span class="apis">S1-P01 — P04</span></div>
+    <p class="group-desc">测点身份沿用一期主数据；有采集记录的测点编码会被锁死。</p>
+  </section>
+
+  <section class="group" id="g-param">
+    <div class="group-head"><h2>9 · 参数与规则版本</h2><span class="apis">S1-P07 · P08</span></div>
+    <p class="group-desc">核心判定：改判断依据 → 追加一版规则；只改展示字段 → 只推进配置版本。</p>
+  </section>
+
+  <section class="group" id="g-reading">
+    <div class="group-head"><h2>10 · 读数、历史与规则快照</h2><span class="apis">S1-P06 · P09 · P10 · P11</span></div>
+    <p class="group-desc">读数精度在参数行和历史列表里必须写成同一个样子。</p>
+  </section>
+
+  <section class="group" id="g-ux">
+    <div class="group-head"><h2>11 · 交互与边界</h2><span class="apis">横切</span></div>
+    <p class="group-desc">这些不写在契约里，但决定现场用起来会不会误操作。</p>
+  </section>
+
+  <section class="group" id="g-cleanup">
+    <div class="group-head"><h2>12 · 验收后清理</h2><span class="apis">收尾</span></div>
+    <p class="group-desc">把验收过程中写进去的数据还原，避免污染演示环境。</p>
+    <div class="callout">
+      <h3>必须还原的两项</h3>
+      <p><b>1. 提醒设置</b>：验收中若把「维保提前」改成 90，务必改回 <code>30</code> 并保存，确认顶部提示「当前 0 条即将到期」。</p>
+      <p><b>2. 验收用设备与测点</b>：通过「删除设备」「删除测点」删除即可（有采集记录或规则版本 &gt; 1 的参数会阻止删除，这正是 P05 的预期行为）。</p>
+      <p>若删除被拒，按下列顺序清库（把 <code>设备ID</code> 换成实际值，仅用于验收数据）：</p>
+      <pre>UPDATE p2_alert_rule_version SET previous_rule_version_id = NULL
+ WHERE parameter_id IN (SELECT parameter_id FROM dim_sensor_parameter WHERE sensor_id IN (...));
+DELETE FROM p2_alert_event          WHERE parameter_id IN (...);
+DELETE FROM p2_alert_rule_version   WHERE parameter_id IN (...);
+DELETE FROM p2_sensor_parameter_profile WHERE parameter_id IN (...);
+DELETE FROM dim_sensor_parameter    WHERE sensor_id IN (...);
+DELETE FROM p2_sensor_profile       WHERE sensor_id IN (...);
+DELETE FROM dim_sensor              WHERE sensor_id IN (...);
+DELETE FROM dim_equipment           WHERE equipment_code = 'ACC-TEST-01';</pre>
+      <p style="margin-top:8px">清理后基线应为：<b>9 台设备 / 10 测点 / 0 规则版本 / 0 事件 / 提醒设置 30·30</b>。</p>
+    </div>
+  </section>
+
+  <footer>勾选状态保存在本机 localStorage（键名 <code>eq-accept-2026-11-04</code>），换浏览器或清缓存会丢失，可用「导出结果」留存。</footer>
+</div>
+
+<script>
+const STORE = 'eq-accept-2026-11-04';
+
+const GROUPS = [
+  {
+    id: 'g-prep', title: '验收前准备',
+    items: [
+      {
+        id: '0.1', t: '前后端都可访问',
+        func: '先确认服务在跑，否则后面全部环节都会误判成功能缺陷。',
+        steps: [
+          '浏览器打开 http://127.0.0.1:5174',
+          '右上角状态胶囊与页面底部「连接状态与环境」展开查看'
+        ],
+        expect: [
+          '页面正常渲染，左侧导航高亮「设备管理」',
+          '状态胶囊显示「数据连接正常」；连接详情里应用服务「运行正常」、数据库「连接正常」'
+        ]
+      },
+      {
+        id: '0.2', t: '列表与数据基线一致',
+        func: '确认连的是本机 3308 私有库，不是别人的库。',
+        steps: ['看指标卡「生产设备」数字与列表标题右侧的「N 台」'],
+        expect: ['显示 9 台（加上你新建的测试设备会变多）', '「关联测点」显示 10']
+      },
+      {
+        id: '0.3', t: '记住当前提醒设置',
+        func: '第 7 组会改这个数字，先记下原值才好还原。',
+        steps: ['点列表右上「期限提醒」→ 点筛选行右侧「提醒设置」'],
+        expect: ['显示「全系统生效 · 版本 v1」，质保 30、维保 30']
+      }
+    ]
+  },
+  {
+    id: 'g-list', title: '设备列表与筛选',
+    items: [
+      {
+        id: '1.1', t: '列表默认加载',
+        func: 'E01 列表接口的字段、分页信息、读取时间。',
+        steps: ['刷新页面，观察表格'],
+        expect: [
+          '表头为：序号 / 设备名称·编码 / 所属车间 / 设备类型 / 管理状态 / 责任人 / 启用状态',
+          '每行「设备名称」下方有灰色编码；管理状态是彩色徽标，缺失时显示「待补档」「未知」「待补充」',
+          '页脚显示「共 N 台，第 1 / N 页」与「最近读取 时:分:秒」'
+        ]
+      },
+      {
+        id: '1.2', t: '关键字搜索（输入停顿 300ms 才发请求）',
+        func: 'E01 的 keyword 参数，避免逐字打接口。',
+        steps: ['在搜索框输入 SMELT', '等约 0.3 秒'],
+        expect: ['列表只剩 SMELT-FUR-01 一行', '筛选行右侧出现「清除筛选」']
+      },
+      {
+        id: '1.3', t: '四个下拉筛选与组合',
+        func: '车间 / 类型 / 管理状态 / 启用状态四个条件，任一变化都回到第 1 页。',
+        steps: ['所属车间选「熔炼车间」（按实际下拉项）', '再叠加「启用状态 = 已启用」'],
+        expect: ['结果逐级收窄，计数随之变化', '每改一次都自动回到第 1 页']
+      },
+      {
+        id: '1.4', t: '清除筛选与空结果',
+        func: '筛选无结果时不能显示"系统出错"。',
+        steps: ['在搜索框输入一段不存在的编码如 ZZZZ', '观察空态', '点「清除筛选」'],
+        expect: [
+          '显示「没有匹配的设备」与「清除筛选」按钮，不出现错误提示',
+          '点清除后列表恢复全量'
+        ]
+      },
+      {
+        id: '1.5', t: '刷新数据',
+        func: '页面头部「刷新数据」会重新拉列表与概览。',
+        steps: ['点右上角「刷新数据」，注意页脚「最近读取」时间'],
+        expect: ['按钮短暂显示「刷新中…」，时间戳更新', '数据不闪空、不重复']
+      }
+    ]
+  },
+  {
+    id: 'g-write', title: '新增与编辑档案',
+    items: [
+      {
+        id: '2.1', t: '新增表单的必填校验',
+        func: '校验要落到具体字段，而不是只弹一句"校验未通过"。',
+        steps: ['点「＋ 新增设备」', '什么都不填直接点「保存并新增」'],
+        expect: ['设备编码、设备名称、所属车间、设备类型四个字段下方出现红色字段级提示', '弹窗不关闭，已填内容不丢']
+      },
+      {
+        id: '2.2', t: '正常新增一台设备（含技术参数）',
+        func: 'E01 写入：共享字段 + 扩展档案 + 技术参数一次提交。',
+        steps: [
+          '编码填 ACC-TEST-01，名称填「验收测试设备」',
+          '选所属车间、设备类型；责任人填「验收人」',
+          '技术参数区点「＋ 添加技术参数」，填参数名 temperature、显示名 熔体温度、值 1150、单位 ℃',
+          '操作人保留「设备管理员」，点「保存并新增」'
+        ],
+        expect: [
+          '弹窗关闭并自动打开该设备的详情抽屉',
+          '列表上方提示「已新增 验收测试设备，当前版本 v1。」',
+          '列表出现新行，技术参数可在「档案信息」页签看到'
+        ]
+      },
+      {
+        id: '2.3', t: '重复编码被拒',
+        func: '编码唯一，冲突应给出可读原因而不是 500。',
+        steps: ['再次新增，编码仍填 ACC-TEST-01，其余照填', '点「保存并新增」'],
+        expect: ['弹窗顶部出现冲突提示，说明编码已存在', '弹窗保持打开，可改编码后重试']
+      },
+      {
+        id: '2.4', t: '详情六个页签都能打开',
+        func: 'E02 详情 + S/C/F/P 各自列表都在抽屉里。',
+        steps: ['点 ACC-TEST-01 那一行打开抽屉', '依次点：档案信息 / 测点 / 供应商 / 维保合同 / 附件 / 变更记录'],
+        expect: [
+          '六个页签切换无报错，切换后内容不串台',
+          '空页签显示各自的空态文案（如「这台设备还没有配件…」）',
+          '抽屉底部显示「当前版本 v1」'
+        ]
+      },
+      {
+        id: '2.5', t: '更正档案并留下版本痕迹',
+        func: 'E03 更正：版本 +1、写变更记录、编码不可改。',
+        steps: [
+          '在抽屉底部点「编辑档案」',
+          '观察「设备编码」是否只读',
+          '把型号改成 TEST-M1，更正原因填「验收：补充型号」，点「保存更正」'
+        ],
+        expect: [
+          '编辑态编码只读，且有「编码在更正时不可修改」提示',
+          '保存后版本升为 v2，列表上方提示「已更正…」',
+          '「变更记录」页签新增一条：更正 · v1 → v2 · 操作人 · 时间 · 更正原因'
+        ]
+      },
+      {
+        id: '2.6', t: '版本冲突（可选，需两个窗口）',
+        func: 'E03 乐观锁：后提交者必须被拦住。',
+        steps: [
+          '同一设备用两个浏览器窗口分别打开详情',
+          '窗口 A 打开编辑并保存成功',
+          '窗口 B 仍用旧版本提交'
+        ],
+        expect: ['窗口 B 提示版本冲突，并告知服务器当前版本', '不会静默覆盖 A 的修改']
+      }
+    ]
+  },
+  {
+    id: 'g-delete', title: '删除与变更记录',
+    items: [
+      {
+        id: '3.1', t: '有业务关联时删除被禁用',
+        func: 'E04 的阻断检查：有测量点、合同、供应商的设备不能物理删除。',
+        steps: ['打开 SMELT-FUR-01 详情', '看底部「删除设备」按钮'],
+        expect: [
+          '「删除设备」呈禁用态，鼠标悬停显示被阻断的原因',
+          '「档案信息」页签顶部有「不能删除，仍有业务关联」提示，逐条列出原因'
+        ]
+      },
+      {
+        id: '3.2', t: '删除一台无关联设备',
+        func: '删除原因必填，确认后列表即时刷新。',
+        steps: ['打开 ACC-TEST-01 详情（刚建的，无关联）', '点「删除设备」', '原因留空直接点「确认删除」', '填写原因后再确认'],
+        expect: [
+          '原因留空时提示「删除原因不得为空」且不提交',
+          '确认后抽屉关闭，列表提示「已删除设备 …，变更记录仍可追溯。」',
+          '该行从列表中消失'
+        ]
+      },
+      {
+        id: '3.3', t: '变更记录内容完整',
+        func: 'E06：时间线要能独立读懂一次改动。',
+        steps: ['打开 SMELT-FUR-01（或任一改过的设备）的「变更记录」页签', '展开某条「查看变更后快照」'],
+        expect: [
+          '每条含：操作类型（新增/更正/删除）、版本区间 v0 → v1、操作人、时间',
+          '有原因时显示「更正原因：…」',
+          '快照是可折叠的 JSON，字段与档案一致'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'g-supplier', title: '供应商页签',
+    items: [
+      {
+        id: '4.1', t: '查看已关联供应商',
+        func: 'S01 列表：包含"共关联 N 台设备"，说明是多对多。',
+        steps: ['打开 CAST-01 详情 → 「供应商」页签'],
+        expect: ['列出 1 个供应商，显示「共关联 2 台设备」', '每行有「编辑」「解绑」两个操作']
+      },
+      {
+        id: '4.2', t: '关联一个新供应商',
+        func: 'S02 新增：保存后自动关联当前设备。',
+        steps: ['点「关联供应商」', '名称填「验收供应商」，联系人、电话随意填', '点「保存」'],
+        expect: ['弹窗关闭，列表立即出现该供应商', '再次点「编辑」，弹窗标题为「编辑供应商」并显示 ID 与版本']
+      },
+      {
+        id: '4.3', t: '编辑不丢关联，解绑不删资料',
+        func: 'S03 整体替换语义：改电话不能把设备关联清空。',
+        steps: [
+          '编辑刚建的供应商，只改电话并保存',
+          '确认「共关联 N 台设备」数量不变',
+          '点「解绑」，在浏览器确认框里确认'
+        ],
+        expect: [
+          '改电话后关联数量不变',
+          '解绑只让本行消失；换个设备或换页签查不到它，但供应商资料本身未被删除'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'g-contract', title: '维保合同页签',
+    items: [
+      {
+        id: '5.1', t: '合同列表与到期徽标',
+        func: 'C01：期限状态由服务端按业务日期现算，页面只展示。',
+        steps: ['打开 CAST-01 → 「维保合同」页签'],
+        expect: ['显示 1 份合同，含合同编号、覆盖台数、起止日期', '徽标显示「剩余 57 天」（数值随当天变化）']
+      },
+      {
+        id: '5.2', t: '新建合同的日期校验',
+        func: 'C02：前端先挡明显错误，后端再兜一层。',
+        steps: ['点「新建合同」', '服务单位填「验收维保中心」', '开始日期填 2026-12-31，结束日期填 2026-01-01', '点「保存」'],
+        expect: ['提示「结束日期不得早于开始日期。」，不提交', '改成正常区间后可保存成功，列表立即出现']
+      },
+      {
+        id: '5.3', t: '移除本设备不删除合同',
+        func: 'C03：解绑是改覆盖集合，不是删合同。',
+        steps: ['对刚建的合同点「移出本设备」并确认'],
+        expect: ['本设备的合同列表里它消失', '若该合同还覆盖其他设备，那些设备仍能看到它']
+      }
+    ]
+  },
+  {
+    id: 'g-attach', title: '附件页签',
+    items: [
+      {
+        id: '6.1', t: '附件列表与元信息',
+        func: 'F01：类别、大小、版本、更新时间都要能看清。',
+        steps: ['打开 CAST-01 → 「附件」页签'],
+        expect: ['显示 1 个图片附件，标注「设备配图 · 大小 · v2」与更新时间', '每行有「查看」「下载」「替换」，且没有删除按钮']
+      },
+      {
+        id: '6.2', t: '上传附件（选类别）',
+        func: 'F02：类别决定归属用途，设备页只给配图/手册/文档三类。',
+        steps: ['类别下拉选「设备手册」', '点「上传附件」，选一个不超过 20 MB 的文件'],
+        expect: ['上传中按钮变「上传中…」，完成后列表出现新行', '类别显示为「设备手册」，版本 v1']
+      },
+      {
+        id: '6.3', t: '超限与空文件被本地拦下',
+        func: '前端先挡明显错误，减少无效请求。',
+        steps: ['尝试上传一个空文件（或用 0 字节文本）', '再尝试上传超过 20 MB 的文件'],
+        expect: ['分别提示「这个文件是空的…」与「超过 20 MB 上限」，不发请求']
+      },
+      {
+        id: '6.4', t: '替换附件内容（版本 +1，ID 不变）',
+        func: 'F04：附件不能删只能换，引用关系必须保持。',
+        steps: ['对刚上传的附件点「替换」', '选一个新文件，替换原因填「验收：换新版」', '点「确认替换」'],
+        expect: [
+          '原因留空时提示必填',
+          '替换成功后版本变 v2，文件名随新文件变化，列表不新增行',
+          '「查看」「下载」打开的是新内容'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'g-deadline', title: '期限提醒与提醒设置',
+    items: [
+      {
+        id: '7.1', t: '期限抽屉总览',
+        func: 'T01：跨设备总览，一台设备每个期限来源各占一行。',
+        steps: ['在列表页点「期限提醒」'],
+        expect: [
+          '抽屉顶部标注「S1-T01 · 质保 / 维保 / 预计寿命」，筛选行显示「共 27 条」',
+          '每行含设备名+编码、到期日、类型徽标、状态徽标、车间、责任人、剩余天数',
+          '当前基线：4 条「正常」、23 条「待补资料」、0 条「即将到期」'
+        ]
+      },
+      {
+        id: '7.2', t: '缺资料的设备也会列出',
+        func: '待补清单本身就是价值，不能只显示"有日期的"。',
+        steps: ['找一条 HOLD-FUR-01 的「待补资料」行'],
+        expect: ['行下方写明「缺少质保到期日，补齐后自动重新计算。」','缺的字段名翻成中文，不显示 warrantyExpiresOn 这类字段名']
+      },
+      {
+        id: '7.3', t: '类型与状态筛选',
+        func: 'T01 的两个查询条件可组合。',
+        steps: ['期限类型选「维保」', '计算状态选「待补资料」'],
+        expect: ['只显示维保且缺资料的记录，计数同步变化', '切换筛选回到第 1 页']
+      },
+      {
+        id: '7.4', t: '提醒设置能打开、能 Esc 收起',
+        func: 'T02 读取 + 抽屉内行内展开（不叠第二层弹层）。',
+        steps: ['点筛选行右侧「提醒设置」', '按一次 Esc', '再按一次 Esc'],
+        expect: [
+          '展开区显示「提前提醒天数 / 全系统生效 · 版本 v1」与两个输入框',
+          '第一次 Esc 只收起设置区，抽屉仍在；第二次 Esc 才关抽屉（避免丢掉未保存的数字）'
+        ]
+      },
+      {
+        id: '7.5', t: '非法输入被就地拦下',
+        func: 'T03：两个天数必须是非负整数，0 表示到期当天提醒。',
+        steps: ['把「质保提前」清空，点「保存」', '再填 -1 或 1.5 并保存'],
+        expect: ['提示「两个提前天数都必须填非负整数，0 表示到期当天才提醒。」', '不发起请求，已填内容保留']
+      },
+      {
+        id: '7.6', t: '改为 90 天，影响面当场可见（核心用例）',
+        func: 'T03 写入 + 全系统生效：改一个数字，期限列表与合同页签同时变。',
+        steps: [
+          '把「维保提前（天）」改成 90，点「保存」',
+          '看抽屉顶部提示与列表变化',
+          '计算状态选「即将到期」再确认',
+          '打开 CAST-01 的「维保合同」页签看徽标'
+        ],
+        expect: [
+          '提示「提醒设置已更新 · 当前 2 条即将到期（+2）」',
+          '列表出现 SMELT-FUR-01 与 CAST-01 两条「即将到期」，到期日 2026-12-31、剩余 57 天',
+          '合同页签徽标从「剩余 57 天」变为「即将到期」样式（同一数字、不同判定）'
+        ]
+      },
+      {
+        id: '7.7', t: '改回 30 天，数据回流',
+        func: '还原验证，确认增减方向也对。',
+        steps: ['再点「提醒设置」，把维保提前改回 30，保存'],
+        expect: ['提示「当前 0 条即将到期（-2）」', '「即将到期」筛选变空，合同徽标恢复普通样式']
+      }
+    ]
+  },
+  {
+    id: 'g-sensor', title: '测点页签',
+    items: [
+      {
+        id: '8.1', t: '测点列表与四种监测状态',
+        func: 'P01：在线 / 数据过期 / 暂无数据 / 已停用分开显示，不合并成"离线"。',
+        steps: ['打开 SMELT-FUR-01 → 「测点」页签'],
+        expect: [
+          '右上显示「共 5 个」与「新增测点」按钮',
+          '每行含编码、名称·类型、位置·来源（模拟数据/现场采集）、「N 个参数」、状态徽标、展开/收起'
+        ]
+      },
+      {
+        id: '8.2', t: '展开测点看参数与读数',
+        func: 'P02 详情 + P06 参数列表 + P09 最新值。',
+        steps: ['点开 TEMP-001', '观察详情条与参数行'],
+        expect: [
+          '详情条显示用途、「参数与来源已配齐」或「待配置」、以及「已有原始采集记录」',
+          '参数行显示参数编码、名称·数据类型·单位、当前值与「在线 · 时间」',
+          '详情条右侧有「新增参数」「修改」「删除」'
+        ]
+      },
+      {
+        id: '8.3', t: '新增测点',
+        func: 'P03：编码格式有约束，新建后默认「待配置」。',
+        steps: [
+          '点「新增测点」',
+          '编码填「bad code!」试一次',
+          '改成 ACC-SENSOR-001，名称填「验收测点」，启用保持勾选，点「新增测点」'
+        ],
+        expect: [
+          '非法编码提示「只能包含字母、数字、点、横线与下划线，且以字母或数字开头」',
+          '合法后保存成功，列表出现新测点，状态为「暂无数据」'
+        ]
+      },
+      {
+        id: '8.4', t: '修改测点：有采集记录时编码锁定',
+        func: 'P04：原始表按 sensor_code 关联，改编码等于剪断历史。',
+        steps: ['展开 TEMP-001（已有演示读数）点「修改」', '观察编码输入框', '改成停用并保存（改完记得改回来）'],
+        expect: [
+          '编码输入框禁用，并提示「该测点已有原始采集记录，编码不可修改」',
+          '取消「启用」保存后状态变「已停用」，参数与历史都还在'
+        ],
+        note: '若先做了这一步，「历史读数」仍应能查到 20 条演示数据。'
+      }
+    ]
+  },
+  {
+    id: 'g-param', title: '参数与规则版本',
+    items: [
+      {
+        id: '9.1', t: '新增参数：字段校验',
+        func: 'P07：编码/名称必填，小数位 0—10，采样周期正整数。',
+        steps: ['展开 ACC-SENSOR-001（或任一测点）点「新增参数」', '参数编码留空直接保存', '小数位填 12 再保存'],
+        expect: ['分别提示「请填写参数编码。」与「小数位必须是 0 到 10 之间的整数。」', '弹窗不关闭']
+      },
+      {
+        id: '9.2', t: '不勾规则：参数保存为「未配规则」',
+        func: 'P07 允许 rule 为空，这是与"配了但停用"不同的状态。',
+        steps: ['填参数编码 temp，名称「验收温度」，单位选 ℃，小数位 1', '不勾「同时配置告警规则」，保存'],
+        expect: ['参数出现在测点展开区，值为「待采集」', '右端点「历史 / 规则」→「规则版本」显示「这个参数还没有规则版本」']
+      },
+      {
+        id: '9.3', t: '首次配置规则（生成 v1）',
+        func: 'P07 首版规则快照：字段齐、单位继承参数单位。',
+        steps: [
+          '再新增一个参数 press，勾选「同时配置告警规则」',
+          '正常下限 0.4、正常上限 0.6、报警下限 0.2、报警上限 0.8',
+          '触发模式「持续异常 SUSTAINED」，持续秒数 30，规则生效勾选',
+          '保存后点该参数「历史 / 规则」→「规则版本」'
+        ],
+        expect: [
+          '规则版本出现 v1，标注「生效」、操作人与时间',
+          '区间显示 正常 [0.4, 0.6]、报警 [0.2, 0.8]、持续 30 秒，单位与参数一致'
+        ]
+      },
+      {
+        id: '9.4', t: '上下界颠倒被拒',
+        func: 'P07 校验：上界必须大于等于下界。',
+        steps: ['再新增一个参数，正常下限填 0.9、正常上限填 0.1，保存'],
+        expect: ['提示上下界顺序不合法，参数不落库']
+      },
+      {
+        id: '9.5', t: '只改展示字段：不产生新规则版本（关键判定）',
+        func: 'P08：判断依据没变 → 只推进配置版本。',
+        steps: ['对 press 参数点「修改」', '只把名称改成「验收压力」，其余不动，点「保存配置」'],
+        expect: [
+          '测点展开区下方提示「上次保存：判断依据未变化，未生成新规则版本，仅推进参数配置版本。」',
+          '「规则版本」仍只有 v1'
+        ]
+      },
+      {
+        id: '9.6', t: '改判断依据：追加新规则版本（关键判定）',
+        func: 'P08：判断依据变了 → 追加不可覆盖的 v2，旧版保留可查。',
+        steps: ['再次「修改」press，把报警上限从 0.8 改成 0.85，点「保存配置」', '打开「规则版本」'],
+        expect: [
+          '提示「判断依据已变化，已生成新的规则版本 …，旧版本保留可查」',
+          '规则版本出现 v2（v1 仍在），v2 报警上限 0.85',
+          '若该参数有活动事件，提示里会写明按 RULE_CHANGED 结束了 N 条（当前库中为 0 条事件，属正常）'
+        ]
+      },
+      {
+        id: '9.7', t: '修改时编码与数据类型只读',
+        func: '两者是采集映射连接键与解析依据，改了历史读数无法解释。',
+        steps: ['「修改」任一已有参数', '看参数编码与数据类型两个字段'],
+        expect: ['两个字段灰显不可编辑，并有说明文字']
+      }
+    ]
+  },
+  {
+    id: 'g-reading', title: '读数、历史与规则快照',
+    items: [
+      {
+        id: '10.1', t: '参数行读数按精度显示',
+        func: 'P09 最新值 + 前端按 decimalPlaces 补齐小数位。',
+        steps: ['展开 SMELT-FUR-01 的 TEMP-001', '查看参数值'],
+        expect: ['显示 1092（不带 6 位小数）', '下方标注「在线 · 时间」', '无数据的参数显示「待采集」而不是 0']
+      },
+      {
+        id: '10.2', t: '历史读数列表',
+        func: 'P10：默认最近 24 小时，分页 20 条。',
+        steps: ['点 TEMP-001 参数行的「历史 / 规则」', '停留在「历史读数」'],
+        expect: [
+          '区间默认最近 24 小时，含「起始」「截止（不含）」',
+          '列出 20 条记录，每条含 时间、数值+单位、质量码、来源系统',
+          '数值写法与参数行完全一致（都是 1092）'
+        ]
+      },
+      {
+        id: '10.3', t: '区间边界与空态',
+        func: '把"没有数据"和"接口失败"分开，现场排查才不会被误导。',
+        steps: ['把起始时间改到 1 年前、截止改成 93 天前，观察提示', '再把区间调回最近 1 小时以外的空区间'],
+        expect: [
+          '超过 92 天时服务端拒绝，页面显示具体原因',
+          '真正无数据时显示「这个区间没有采集记录…」而非错误样式'
+        ]
+      },
+      {
+        id: '10.4', t: '规则版本快照可逐版查看',
+        func: 'P11：规则只追加不可覆盖，历史版本必须能看到。',
+        steps: ['切到「规则版本」页签，看 v1 与 v2'],
+        expect: [
+          '每版显示 v 号、生效/已停用徽标、生效时间、操作人',
+          '显示正常区间、报警区间、触发方式、单位',
+          '有修改原因时显示原因；被本版结束过事件时显示「这一版接手时结束了 N 条活动事件」'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'g-ux', title: '交互与边界',
+    items: [
+      {
+        id: '11.1', t: 'Esc 逐层关闭，不误丢输入',
+        func: '抽屉、确认框、设置区叠在一起时，Esc 必须先退最近一层。',
+        steps: ['打开设备详情抽屉', '点「删除设备」打开确认框，输入一半原因', '按 Esc', '再按 Esc'],
+        expect: ['第一次 Esc 只关确认框，抽屉与已填内容仍在', '第二次 Esc 才关抽屉']
+      },
+      {
+        id: '11.2', t: '键盘可达与焦点',
+        func: '不只靠鼠标，Tab 能走完主要操作。',
+        steps: ['刷新页面后连续按 Tab', '打开任一抽屉后直接按 Esc'],
+        expect: ['焦点依次经过导航、筛选、表格行内按钮，有明显焦点环', '抽屉打开时焦点落在关闭按钮上，Esc 直接可用']
+      },
+      {
+        id: '11.3', t: '窄屏不塌陷',
+        func: '笔记本 1280 宽是最常见现场分辨率。',
+        steps: ['把窗口宽度缩到约 1280，再缩到 1100', '检查列表、抽屉、设置区'],
+        expect: ['表格可横向滚动，不撑破页面', '抽屉内设置区的两个输入框与按钮不挤成单字换行', '文字不截断、不重叠']
+      }
+    ]
+  }
+];
+
+/* ---------------- 状态 ---------------- */
+let state = {items: {}, notes: {}, filter: 'all'};
+try {
+  const raw = localStorage.getItem(STORE);
+  if (raw) state = Object.assign(state, JSON.parse(raw));
+} catch (e) { /* 隐私模式下忽略 */ }
+
+function save() {
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {}
+}
+
+const ALL = GROUPS.flatMap(g => g.items);
+
+function statusOf(id) { return state.items[id] || 'todo'; }
+
+function stats() {
+  let pass = 0, fail = 0;
+  for (const item of ALL) {
+    const s = statusOf(item.id);
+    if (s === 'pass') pass++;
+    else if (s === 'fail') fail++;
+  }
+  return {pass, fail, todo: ALL.length - pass - fail, total: ALL.length};
+}
+
+function updateBar() {
+  const s = stats();
+  const pct = Math.round(s.pass / s.total * 100);
+  document.getElementById('fill').style.width = pct + '%';
+  document.getElementById('stat-pass').textContent = `通过 ${s.pass} / ${s.total}`;
+  document.getElementById('stat-fail').textContent = `不通过 ${s.fail}`;
+  document.getElementById('stat-todo').textContent = `待测 ${s.todo}`;
+  document.title = `设备管理验收 ${s.pass}/${s.total}`;
+}
+
+/* ---------------- 渲染 ---------------- */
+function esc(text) {
+  return String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+}
+
+function itemHtml(item) {
+  const status = statusOf(item.id);
+  const note = state.notes[item.id] || '';
+  const steps = item.steps.map(s => `<li>${esc(s)}</li>`).join('');
+  const expect = item.expect.map(s => `<li>${esc(s)}</li>`).join('');
+  const noteLine = item.note ? `<div class="note-line"><b>注意</b>：${esc(item.note)}</div>` : '';
+  return `<article class="item" data-id="${item.id}" data-status="${status}">
+    <div class="item-top">
+      <span class="item-id">${esc(item.id)}</span>
+      <h3 class="item-title">${esc(item.t)}</h3>
+      <div class="verdict" role="group" aria-label="判定">
+        <button type="button" data-set="pass" ${status === 'pass' ? 'data-on="pass"' : ''}>通过</button>
+        <button type="button" data-set="fail" ${status === 'fail' ? 'data-on="fail"' : ''}>不通过</button>
+      </div>
+    </div>
+    <p class="func">${esc(item.func)}</p>
+    <div class="cols">
+      <div class="col"><h4>怎么操作</h4><ol>${steps}</ol></div>
+      <div class="col"><h4>应该看到</h4><ul>${expect}</ul></div>
+    </div>
+    ${noteLine}
+    <textarea class="own-note" rows="1" data-note="${item.id}" placeholder="备注：不通过时写清现象与所在设备/参数">${esc(note)}</textarea>
+  </article>`;
+}
+
+function render() {
+  for (const group of GROUPS) {
+    const host = document.getElementById(group.id);
+    if (!host) continue;
+    // 去掉上一次渲染的条目，保留分组标题与说明
+    host.querySelectorAll('.item').forEach(node => node.remove());
+    const html = group.items.map(itemHtml).join('');
+    host.insertAdjacentHTML('beforeend', html);
+  }
+  const toc = document.getElementById('toc');
+  toc.innerHTML = GROUPS.map(g => {
+    const done = g.items.filter(i => statusOf(i.id) === 'pass').length;
+    return `<a href="#${g.id}">${esc(g.title)}<span>${done}/${g.items.length}</span></a>`;
+  }).join('');
+  applyFilter();
+  updateBar();
+}
+
+function applyFilter() {
+  const filter = state.filter || 'all';
+  for (const node of document.querySelectorAll('.item')) {
+    const status = node.dataset.status;
+    const keep = filter === 'all'
+      || (filter === 'todo' && status === 'todo')
+      || (filter === 'pass' && status === 'pass')
+      || (filter === 'fail' && status === 'fail');
+    node.style.display = keep ? '' : 'none';
+  }
+  for (const group of GROUPS) {
+    const host = document.getElementById(group.id);
+    if (!host) continue;
+    const visible = [...host.querySelectorAll('.item')].some(node => node.style.display !== 'none');
+    host.style.display = visible ? '' : 'none';
+  }
+}
+
+/* ---------------- 事件 ---------------- */
+document.addEventListener('click', event => {
+  const btn = event.target.closest('.verdict button');
+  if (btn) {
+    const item = btn.closest('.item');
+    const id = item.dataset.id;
+    const next = btn.dataset.set;
+    state.items[id] = statusOf(id) === next ? 'todo' : next;
+    if (statusOf(id) === 'todo') delete state.items[id];
+    item.dataset.status = statusOf(id);
+    item.querySelectorAll('.verdict button').forEach(b => b.removeAttribute('data-on'));
+    if (statusOf(id) !== 'todo') btn.setAttribute('data-on', next);
+    save();
+    updateBar();
+    applyFilter();
+    document.getElementById('toc').innerHTML = GROUPS.map(g => {
+      const done = g.items.filter(i => statusOf(i.id) === 'pass').length;
+      return `<a href="#${g.id}">${esc(g.title)}<span>${done}/${g.items.length}</span></a>`;
+    }).join('');
+    return;
+  }
+
+  const chip = event.target.closest('.chip');
+  if (chip) {
+    state.filter = chip.dataset.filter;
+    document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
+    save();
+    applyFilter();
+  }
+});
+
+document.addEventListener('input', event => {
+  const box = event.target.closest('[data-note]');
+  if (!box) return;
+  const id = box.dataset.note;
+  if (box.value.trim()) state.notes[id] = box.value; else delete state.notes[id];
+  save();
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!window.confirm('清空全部判定与备注？此操作不可撤销。')) return;
+  state = {items: {}, notes: {}, filter: 'all'};
+  save();
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.filter === 'all')));
+  render();
+});
+
+document.getElementById('export').addEventListener('click', () => {
+  const s = stats();
+  const lines = [
+    '# 设备管理验收结果',
+    '',
+    `- 时间：${new Date().toLocaleString('zh-CN', {hour12: false})}`,
+    `- 进度：通过 ${s.pass} / ${s.total}，不通过 ${s.fail}，待测 ${s.todo}`,
+    ''
+  ];
+  for (const group of GROUPS) {
+    lines.push(`## ${group.title}`, '');
+    for (const item of group.items) {
+      const st = statusOf(item.id);
+      const marks = {pass: '✅ 通过', fail: '❌ 不通过', todo: '⬜ 待测'};
+      lines.push(`- ${marks[st]} · ${item.id} ${item.t}`);
+      const note = state.notes[item.id];
+      if (note) lines.push(`  - 备注：${note.replace(/\n/g, ' ')}`);
+    }
+    lines.push('');
+  }
+  const blob = new Blob([lines.join('\n')], {type: 'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `设备管理验收结果-${new Date().toISOString().slice(0, 10)}.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+});
+
+render();
+</script>
+</body>
+</html>

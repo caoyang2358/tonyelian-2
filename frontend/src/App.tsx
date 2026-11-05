@@ -38,18 +38,19 @@ function ConnectionDetails({live, ready, overview, retry}: {live: Resource<Healt
 
 export default function App() {
   const [page, setPage] = useState<Page>('equipment');
-  const equipment = useResource(api.equipment), overview = useResource(api.overview), live = useResource(api.live), ready = useResource(api.ready);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const overview = useResource(api.overview), live = useResource(api.live), ready = useResource(api.ready);
   const backToEquipment = () => setPage('equipment');
   const active = navigation.find(item => item.id === page)!;
   const PageComponent = page === 'equipment' ? null : pageComponents[page];
   useEffect(() => { document.title = `${active.label} · 铜冶炼二期`; }, [active.label]);
-  const retry = () => { live.reload(); ready.reload(); overview.reload(); equipment.reload(); };
+  const retry = () => { live.reload(); ready.reload(); overview.reload(); setRefreshToken(value => value + 1); };
   const connected = ready.data?.database?.status === 'UP' && !ready.error;
   const checking = ready.loading && !ready.data;
   return <><a className="skip-link" href="#main-content">跳到主要内容</a><div className="app-shell"><aside className="sidebar"><a className="brand" href="#main-content" onClick={() => setPage('equipment')} aria-label="铜冶炼二期，返回设备管理"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy">铜冶炼二期<small>COPPER OPERATIONS</small></span></a><div className="workspace-caption">管理工作台<span>PHASE 02</span></div><nav aria-label="主导航">{([1, 2] as const).map(system => <div className="navigation-group" key={system}><p className="navigation-label">系统{system === 1 ? '一' : '二'}<span>{system === 1 ? '区域能源管理' : '全生命周期管控'}</span></p><div className="navigation-items">{navigation.filter(item => item.system === system).map(item => <button type="button" className={`navigation-item ${page === item.id ? 'active' : ''}`} key={item.id} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><Icon name={item.id} size={19} /><span>{item.label}</span>{item.id !== 'equipment' && item.id !== 'operations' && item.id !== 'network' && <span className="nav-pending">待开发</span>}{page === item.id && <span className="nav-active-dot" />}</button>)}</div></div>)}</nav><div className="sidebar-bottom"><div className="sidebar-lines" aria-hidden="true"><i /><i /><i /><i /></div><span>设备 · 生产 · 能源</span><p>信息连接，协同生产</p></div></aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumb"><span>管理平台</span><Icon name="arrow" size={14} /><strong>{active.label}</strong></div><div className="topbar-right"><span className="initialization-tag">工程初始化</span><span className="header-divider" /><span className={`status-pill ${checking ? 'loading' : connected ? 'up' : 'down'}`}><span className="status-dot" />{checking ? '检测连接中' : connected ? '数据连接正常' : '等待数据连接'}</span></div></header>
-      <main id="main-content" tabIndex={-1}><div className="page-heading"><div><div className="eyebrow"><span />{active.system === 1 ? '铜冶炼区域能源管理系统' : '全生命周期管控与决策支持系统'}</div><h1>{active.label}</h1><p>{page === 'equipment' ? '统一查看生产设备，建立清晰的设备信息底账。' : active.description}</p></div>{page === 'equipment' && <button className="button refresh-button" type="button" onClick={retry} disabled={equipment.loading}><Icon name="refresh" size={17} /><span>{equipment.loading ? '读取中…' : '刷新数据'}</span></button>}</div>
-      {page === 'equipment' ? <EquipmentPage resource={equipment} overview={overview.data} /> :
+      <main id="main-content" tabIndex={-1}><div className="page-heading"><div><div className="eyebrow"><span />{active.system === 1 ? '铜冶炼区域能源管理系统' : '全生命周期管控与决策支持系统'}</div><h1>{active.label}</h1><p>{page === 'equipment' ? '统一查看生产设备，建立清晰的设备信息底账。' : active.description}</p></div>{page === 'equipment' && <button className="button refresh-button" type="button" onClick={retry}><Icon name="refresh" size={17} /><span>{overview.loading ? '刷新中…' : '刷新数据'}</span></button>}</div>
+      {page === 'equipment' ? <EquipmentPage overview={overview.data} refreshToken={refreshToken} /> :
         page === 'operations' ? <MaintenancePage /> :
         PageComponent && <PageComponent item={{...active, id: page}} back={backToEquipment} />}
       <ConnectionDetails live={live} ready={ready} overview={overview} retry={retry} /></main><footer className="footer"><span>铜冶炼二期管理平台</span><span>独立二期工程<span className="footer-dot">·</span>初始化接入范围</span></footer></div></div></>;

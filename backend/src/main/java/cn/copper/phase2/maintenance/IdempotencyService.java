@@ -17,8 +17,12 @@ import java.util.Optional;
  * 同一标识、同一业务内容重复提交 → 返回第一次的成功结果，不重复入库；
  * 同一标识携带不同内容 → 409 IDEMPOTENCY_CONFLICT；
  * 先查已成功结果，再做版本判断，避免正常重试被误判成版本冲突。
+ *
+ * <p>与 {@code cn.copper.phase2.common.IdempotencyService} 简单类名相同，两者都在
+ * 组件扫描范围内；若不显式指定 bean 名，启动时会抛 ConflictingBeanDefinitionException。
+ * 注入方按类型取用，行为不受影响。</p>
  */
-@Service
+@Service("maintenanceIdempotencyService")
 public class IdempotencyService {
     private final IdempotencyRepository repository;
     private final ObjectMapper objectMapper;

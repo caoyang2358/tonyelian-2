@@ -13,3 +13,12 @@
 | maven-settings.xml | 本次构建使用 Maven Central，不修改全局镜像设置 |
 
 完整前提、数据库连接、首次/重复启动和故障处理见[根说明](../README.md)。脚本支持 Windows PowerShell 5.1 / PowerShell 7；不能直接在 Linux shell 中执行。其他平台可按前后端说明手工启动，并提供独立 MySQL 开发库。
+
+## 验收脚本的数据库连接
+
+会连库的脚本（`verify_sensor_config.py`、`verify_sensor_delete.py`、`ui-check-parameter-edit.mjs`、`ui-check-sensor-delete.mjs`、`seed_demo_readings.py`）共用 `db_env.py` / `db-env.mjs` 解析连接信息，并在造测试数据之前先探一次库。
+
+- 端口优先级：环境变量 `DB_PORT` > 仓库根 `.env` > 内置默认值 3306（仅历史兼容，不要依赖）。
+- 每次运行会打印实际端口与来源，例如 `[DB] 127.0.0.1:3308 连接正常（端口来源：.env 文件）`。
+- 连不上时立刻退出并说明端口来自哪里，不会留下半截验收数据；按提示改 `.env` 或 `export DB_PORT=<端口>` 后重跑即可。
+- 本机 3306 可能被其他 MySQL 实例占用且账号不同，看到 `Access denied` 先确认 `.env` 的 `DB_PORT` 是否为运行中实例的端口。
