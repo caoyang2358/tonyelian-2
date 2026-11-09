@@ -163,3 +163,65 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .knowledge-page aside,.knowledge-source{margin:24px 32px;padding:20px 24px;border:1px solid #dce5d8;background:#f8faf6;border-radius:8px}.knowledge-source summary{cursor:pointer;color:#42694d;font-size:13px}.knowledge-view-detail>label{display:grid;gap:12px;border-top:1px solid var(--line);padding:22px 32px;max-width:960px}.knowledge-page aside h3{margin-top:0}
 @media(max-width:1100px){.knowledge-header{align-items:flex-start;flex-direction:column;gap:16px}.knowledge-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.knowledge-header,.knowledge-filters,.knowledge-form{padding:18px}.knowledge-filters,.knowledge-form{grid-template-columns:minmax(0,1fr)}.knowledge-actions{gap:8px}.knowledge-form>*{grid-column:1!important}.knowledge-page article{padding:22px 18px}.knowledge-page aside,.knowledge-source{margin:18px}.knowledge-list{min-width:850px}.knowledge-count{padding-inline:18px}}
+
+/* ===== 运维管理补充样式（2026-11 评审：流程条、照片凭证、优先级、柱状图与悬停口径） ===== */
+.ops-value-alert{color:#a04a34!important;font-variant-numeric:tabular-nums}
+.ops-inline-context{margin:0;display:inline-block}
+.ops-snapshot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px 20px;margin:8px 0 4px;padding:13px 15px;border:1px solid #e7ecdf;border-radius:7px;background:#fbfcf7}
+.ops-snapshot dt{font-size:10px;color:#93a08b;margin-bottom:2px}
+.ops-snapshot dd{margin:0;font-size:11px;color:#4f6547;overflow-wrap:anywhere}
+/* 四步流程条 */
+.ops-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;list-style:none;margin:0 0 18px;padding:0}
+.ops-flow-step{position:relative;display:flex;gap:9px;padding:12px 13px;border:1px solid #e4eadf;border-radius:8px;background:#fbfcf7}
+.ops-flow-step.done{border-color:#cfe0c6;background:#f4f9ee}
+.ops-flow-step.active{border-color:#2e6c51;background:#eef5ec;box-shadow:0 0 0 1px #2e6c51 inset}
+.ops-flow-step.todo{opacity:.72}
+.ops-flow-index{flex:0 0 20px;height:20px;border-radius:50%;background:#e7ecdf;color:#7c877a;font-size:10px;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.ops-flow-step.done .ops-flow-index{background:#cfe0c6;color:#3f6b32}
+.ops-flow-step.active .ops-flow-index{background:#2e6c51;color:#fff}
+.ops-flow-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ops-flow-body strong{font-size:11px;color:#3c5238}
+.ops-flow-body strong small{font-weight:400;color:#93a08b;margin-left:3px}
+.ops-flow-hint{font-size:10px;color:#8d9a86;line-height:1.55}
+.ops-flow-who{font-size:10px;color:#5c7b4b}
+.ops-flow-step.active .ops-flow-who{color:#245d43;font-weight:600}
+/* 现场照片 */
+.ops-photos{margin:0 0 14px}
+.ops-photos-head{display:flex;align-items:center;gap:9px;font-size:10px;color:#8a9684;margin-bottom:8px}
+.ops-photos-head .button{padding:4px 10px;font-size:10px;min-height:26px}
+.ops-photos-tip{color:#a8b1a2}
+.ops-photo-grid{display:flex;flex-wrap:wrap;gap:9px}
+.ops-photo{display:flex;flex-direction:column;gap:4px;width:96px;border:1px solid #e4eadf;border-radius:7px;padding:5px;background:#fff;text-decoration:none;color:#7c877a;font-size:9px}
+.ops-photo img{width:100%;height:64px;object-fit:cover;border-radius:4px;background:#f1f3ed}
+.ops-photo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 悬停口径提示 */
+.ops-tip{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:#e7ecdf;color:#6f7d67;font-size:9px;cursor:help;position:relative;margin-left:4px;vertical-align:middle}
+.ops-tip:hover,.ops-tip:focus{background:#2e6c51;color:#fff;outline:none}
+.ops-tip:after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%);width:max-content;max-width:290px;padding:8px 11px;border-radius:6px;background:#2f4632;color:#f4f8f0;font-size:10px;line-height:1.65;text-align:left;white-space:normal;opacity:0;pointer-events:none;transition:opacity .12s;z-index:20;box-shadow:0 6px 18px rgba(36,60,40,.22)}
+.ops-tip:hover:after,.ops-tip:focus:after{opacity:1}
+/* 柱状图 */
+.ops-chart-head{display:flex;align-items:center;gap:12px;margin:17px 0 10px}
+.ops-chart-head .ops-section-title{margin:0}
+.ops-chart-legend{display:flex;align-items:center;gap:13px;font-size:10px;color:#8a9684}
+.ops-chart-legend span{display:inline-flex;align-items:center;gap:5px}
+.ops-chart-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.ops-legend-report{background:#5b8f6f}
+.ops-legend-done{background:#a8c48f}
+.ops-bars{display:flex;flex-direction:column;gap:9px;padding:4px 0 6px}
+.ops-bar-row{display:flex;align-items:center;gap:12px}
+.ops-bar-name{flex:0 0 132px;font-size:11px;color:#5c6b57;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-bar-group{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.ops-bar-line{display:flex;align-items:center;gap:7px;height:11px}
+.ops-bar{height:100%;border-radius:3px;min-width:0;transition:width .2s}
+.ops-bar-report{background:#5b8f6f}
+.ops-bar-done{background:#a8c48f}
+.ops-bar-line b{font-size:10px;color:#6f7d67;font-weight:600;font-variant-numeric:tabular-nums}
+/* 期限提醒 */
+.ops-reminder{display:flex;align-items:center;gap:13px;padding:13px 16px;border:1px solid #e4eadf;border-radius:8px;background:#fbfcf7}
+.ops-reminder-warn{border-color:#efdfc2;background:#fdf8ee}
+.ops-reminder strong{font-size:22px;color:#8a6a1f;font-variant-numeric:tabular-nums}
+.ops-reminder div{display:flex;flex-direction:column;gap:3px}
+.ops-reminder span{font-size:11px;color:#5c6b57}
+.ops-reminder small{font-size:10px;color:#96a291}
+@media(max-width:1150px){.ops-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-snapshot{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.ops-flow{grid-template-columns:1fr}.ops-bar-name{flex-basis:88px}}

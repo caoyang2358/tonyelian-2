@@ -18,9 +18,15 @@ public final class InspectionModels {
             String inspectorName,
             String result,
             List<String> repairOrderIds,
+            int photoCount,
             int version) {}
 
-    /** 详情：在列表行基础上补巡检内容、情况说明与录入时间。 */
+    /**
+     * 详情：在列表行基础上补巡检内容、情况说明与录入时间。
+     *
+     * <p>{@code photoCount} 只是"有没有现场照片"的提示，照片本身走共用附件接口
+     * （ownerType=INSPECTION、ownerId=巡检编号）按需拉取，避免详情体里塞一堆二进制地址。</p>
+     */
     public record InspectionDetail(
             String inspectionId,
             String equipmentId,
@@ -31,6 +37,7 @@ public final class InspectionModels {
             String result,
             String description,
             List<String> repairOrderIds,
+            int photoCount,
             OffsetDateTime recordedAt,
             int version) {}
 

@@ -27,7 +27,9 @@ public class InspectionRepository {
                    i.content, i.result, i.description, i.recorded_at, i.version,
                    (SELECT GROUP_CONCAT(r.repair_order_id ORDER BY r.repair_order_id)
                       FROM p2_repair_order r
-                     WHERE r.source_inspection_id = i.inspection_id) AS repair_order_ids
+                     WHERE r.source_inspection_id = i.inspection_id) AS repair_order_ids,
+                   (SELECT COUNT(*) FROM p2_attachment a
+                     WHERE a.inspection_id = i.inspection_id) AS photo_count
             FROM p2_inspection i
             JOIN dim_equipment e ON e.equipment_id = i.equipment_id
             """;
@@ -40,6 +42,7 @@ public class InspectionRepository {
             rs.getString("inspector_name"),
             rs.getString("result"),
             splitIds(rs.getString("repair_order_ids")),
+            rs.getInt("photo_count"),
             rs.getInt("version"));
 
     static final RowMapper<InspectionDetail> INSPECTION_DETAIL_MAPPER = (rs, row) -> new InspectionDetail(
@@ -52,6 +55,7 @@ public class InspectionRepository {
             rs.getString("result"),
             rs.getString("description"),
             splitIds(rs.getString("repair_order_ids")),
+            rs.getInt("photo_count"),
             MaintenanceTimes.toOffset(rs, "recorded_at"),
             rs.getInt("version"));
 

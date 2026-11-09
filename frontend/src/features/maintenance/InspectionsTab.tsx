@@ -3,7 +3,7 @@ import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, inspectionApi } from '../../lib/maintenanceApi';
 import type { InspectionDetail, InspectionItem, InspectionWriteFields } from '../../lib/maintenanceApi';
 import { formatTime, inspectionResultLabels, label, localInputValue } from './labels';
-import { EquipmentSelect, Pager, useOperatorName } from './shared';
+import { EquipmentSelect, Pager, PhotoPicker, PhotoSection, uploadPhotos, useOperatorName } from './shared';
 import type { RepairHandoff } from './shared';
 
 type Feedback = {kind: 'ok' | 'error'; text: string} | null;
@@ -25,6 +25,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
 
   const [operator, setOperator] = useOperatorName();
   const [createFields, setCreateFields] = useState<InspectionWriteFields>(() => emptyFields(''));
+  const [createPhotos, setCreatePhotos] = useState<File[]>([]);
   const [createFeedback, setCreateFeedback] = useState<Feedback>(null);
   const [creating, setCreating] = useState(false);
 
@@ -34,6 +35,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
   const [updateFields, setUpdateFields] = useState<InspectionWriteFields>(() => emptyFields(''));
   const [updateFeedback, setUpdateFeedback] = useState<Feedback>(null);
   const [updating, setUpdating] = useState(false);
+  const [photoRefresh, setPhotoRefresh] = useState(0);
 
   // 首次拿到已记住的经办人后回填一次，避免覆盖用户正在输入的内容
   useEffect(() => { if (operator) setCreateFields(fields => fields.operatorName ? fields : {...fields, operatorName: operator, inspectorName: operator}); }, [operator]);
@@ -82,7 +84,17 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
     try {
       setOperator(createFields.operatorName);
       const data = await inspectionApi.create(createFields);
-      setCreateFeedback({kind: 'ok', text: `巡检记录 ${data.inspectionId} 已登记，结果「${label(inspectionResultLabels, data.result)}」。`});
+      // 现场照片依赖巡检编号，只能等记录落库后再上传；上传失败不回滚已登记的巡检，只提示补传。
+      const photos = createPhotos.length
+        ? await uploadPhotos('INSPECTION', data.inspectionId, createFields.operatorName.trim(), createPhotos)
+        : {uploaded: 0, failed: []};
+      setCreateFeedback({
+        kind: photos.failed.length ? 'error' : 'ok',
+        text: `巡检记录 ${data.inspectionId} 已登记，结果「${label(inspectionResultLabels, data.result)}」`
+          + (photos.uploaded ? `，已上传 ${photos.uploaded} 张现场照片。` : '。')
+          + (photos.failed.length ? ` 有 ${photos.failed.length} 张未上传成功：${photos.failed.join('；')}，可在下方"更正巡检"里补传。` : ''),
+      });
+      setCreatePhotos([]);
       setCreateFields(emptyFields(createFields.operatorName, createFields.equipmentId));
       await loadList();
     } catch (error) {
@@ -90,7 +102,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
     } finally {
       setCreating(false);
     }
-  }, [createFields, loadList, setOperator]);
+  }, [createFields, createPhotos, loadList, setOperator]);
 
   const submitUpdate = useCallback(async () => {
     if (!updateId) { setUpdateFeedback({kind: 'error', text: '请先在列表中选择要更正的巡检记录。'}); return; }
@@ -101,6 +113,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
       setOperator(updateFields.operatorName);
       const data = await inspectionApi.update(updateId, updateVersion, updateReason.trim(), updateFields);
       setUpdateFeedback({kind: 'ok', text: `巡检记录 ${updateId} 已更正，新版本 ${data.version}。`});
+      setPhotoRefresh(value => value + 1);
       await Promise.all([loadList(), openDetail(updateId)]);
     } catch (error) {
       if (error instanceof MaintenanceApiError && error.code === 'VERSION_CONFLICT') {
@@ -116,7 +129,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
 
   return <>
     <section className="panel" aria-label="巡检记录列表">
-      <div className="panel-heading"><div><h2>巡检记录<span className="panel-count">{items ? `${total} 条` : '等待读取'}</span></h2><p>人工登记的巡检实际；异常巡检不会自动产生维修单</p></div><span className="read-only-label"><Icon name="check" size={14} />S1-I01</span></div>
+      <div className="panel-heading"><div><h2>巡检记录<span className="panel-count">{items ? `${total} 条` : '等待读取'}</span></h2><p>人工登记的巡检实际；异常巡检不会自动产生维修单</p></div></div>
       <div className="filters">
         <label className="select-field"><span>巡检结果</span>
           <select value={result} onChange={event => {setResult(event.target.value); setPage(1);}}>
@@ -130,7 +143,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
         : listLoading && !items ? <div className="loading-state" role="status"><span className="spinner" /><span>正在读取巡检记录…</span></div>
         : items && items.length === 0 ? <div className="empty-state" role="status"><div className="empty-icon"><Icon name="operations" size={30} /></div><h3>当前没有巡检记录</h3><p>可在下方登记第一条巡检。</p></div>
         : items && <div className="table-region" role="region" aria-label="巡检记录表" tabIndex={0}><table>
-          <thead><tr><th className="number-column">编号</th><th>设备</th><th>巡检时间</th><th>巡检人</th><th>结果</th><th>内容</th><th>关联工单</th></tr></thead>
+          <thead><tr><th className="number-column">编号</th><th>设备</th><th>巡检时间</th><th>巡检人</th><th>结果</th><th>内容</th><th>现场照片</th><th>关联工单</th></tr></thead>
           <tbody>{items.map(item => <tr key={item.inspectionId} className={updateId === item.inspectionId ? 'ops-selected' : ''} onClick={() => void openDetail(item.inspectionId)}>
             <td className="row-number">{item.inspectionId}</td>
             <td>{item.equipmentName}</td>
@@ -138,6 +151,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
             <td>{item.inspectorName}</td>
             <td><span className={`ops-tag ${item.result === 'ABNORMAL' ? 'ops-tag-red' : 'ops-tag-green'}`}>{label(inspectionResultLabels, item.result)}</span></td>
             <td className="ops-cell-text">{item.content}</td>
+            <td>{item.photoCount > 0 ? `${item.photoCount} 张` : <span className="missing-value">无</span>}</td>
             <td>{item.repairOrderIds.length ? item.repairOrderIds.join('、') : <span className="missing-value">无</span>}</td>
           </tr>)}</tbody>
         </table></div>}
@@ -148,7 +162,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
 
     <div className="ops-two-column">
       <section className="panel" aria-label="登记巡检">
-        <div className="panel-heading"><div><h2>登记巡检<span className="panel-count">S1-I03</span></h2><p>人工填写实际巡检情况</p></div></div>
+        <div className="panel-heading"><div><h2>登记巡检</h2><p>人工填写实际巡检情况；现场照片选填，用于留存凭证</p></div></div>
         <div className="ops-form">
           <div className="ops-form-row">
             <EquipmentSelect label="设备" value={createFields.equipmentId} onChange={next => setCreateFields({...createFields, equipmentId: next})} />
@@ -167,6 +181,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
             <textarea rows={2} value={createFields.content} onChange={event => setCreateFields({...createFields, content: event.target.value})} placeholder="例如：炉体轴承部位温度偏高，伴有异响" /></label>
           <label className="ops-text-field"><span>补充说明（选填）</span>
             <textarea rows={2} value={createFields.description} onChange={event => setCreateFields({...createFields, description: event.target.value})} placeholder="例如：轴承可能缺油，建议安排检修" /></label>
+          <PhotoPicker files={createPhotos} onChange={setCreatePhotos} disabled={creating} />
           <div className="ops-form-actions">
             <button className="button button-primary" type="button" onClick={() => void submitCreate()} disabled={creating}>{creating ? '登记中…' : '登记巡检'}</button>
           </div>
@@ -175,7 +190,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
       </section>
 
       <section className="panel" aria-label="更正巡检">
-        <div className="panel-heading"><div><h2>更正巡检<span className="panel-count">S1-I02 / I04</span></h2><p>整份保存；原值留痕、来源快照不被改写</p></div></div>
+        <div className="panel-heading"><div><h2>更正巡检</h2><p>整份保存；原值留痕、来源快照不被改写</p></div></div>
         {updateId ? <div className="ops-form">
           <p className="ops-form-context">记录 <strong>#{updateId}</strong> · 当前版本 <strong>{updateVersion}</strong>{detail ? ` · 原登记人 ${detail.operatorName}` : ''}</p>
           <div className="ops-form-row">
@@ -192,6 +207,8 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
             <textarea rows={2} value={updateFields.content} onChange={event => setUpdateFields({...updateFields, content: event.target.value})} /></label>
           <label className="ops-text-field"><span>补充说明</span>
             <textarea rows={2} value={updateFields.description} onChange={event => setUpdateFields({...updateFields, description: event.target.value})} /></label>
+          <PhotoSection ownerType="INSPECTION" ownerId={updateId} operatorName={updateFields.operatorName || operator}
+            refreshKey={photoRefresh} emptyHint="该记录还没有现场照片，可在此补传。" />
           <div className="ops-form-row">
             <label className="ops-text-field ops-grow"><span>更正原因（必填）</span>
               <input value={updateReason} onChange={event => setUpdateReason(event.target.value)} /></label>
@@ -205,7 +222,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
                 sourceType: 'INSPECTION', sourceId: detail.inspectionId, equipmentId: detail.equipmentId,
                 summary: `巡检 #${detail.inspectionId}｜${detail.equipmentName}｜${detail.content}`,
               })}>
-              以此巡检创建报修草稿
+              以此巡检报修
             </button>}
           </div>
           {updateFeedback && <p className={updateFeedback.kind === 'ok' ? 'ops-feedback-ok' : 'ops-feedback-error'} role={updateFeedback.kind === 'ok' ? 'status' : 'alert'}>{updateFeedback.text}</p>}

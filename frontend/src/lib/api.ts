@@ -545,8 +545,8 @@ export function mapReminderSetting(value: unknown): ReminderSetting {
   };
 }
 
-/** 附件归属对象（S1-F01—F05）：一套接口服务设备、合同、知识条目与维修单。 */
-export type AttachmentOwnerType = 'EQUIPMENT' | 'MAINTENANCE_CONTRACT' | 'KNOWLEDGE_ARTICLE' | 'REPAIR_ORDER';
+/** 附件归属对象（S1-F01—F05）：一套接口服务设备、合同、知识条目、维修单与巡检记录。 */
+export type AttachmentOwnerType = 'EQUIPMENT' | 'MAINTENANCE_CONTRACT' | 'KNOWLEDGE_ARTICLE' | 'REPAIR_ORDER' | 'INSPECTION';
 /** 附件类别。IMAGE 用于档案配图，MANUAL 用于设备手册，DOCUMENT 用于合同正文，PHOTO 用于报修照片。 */
 export type AttachmentFileKind = 'IMAGE' | 'MANUAL' | 'DOCUMENT' | 'PHOTO';
 
@@ -568,7 +568,7 @@ export interface AttachmentQuery {
 
 function attachmentOwnerType(value: unknown): AttachmentOwnerType {
   const raw = str(value, '附件归属类型');
-  if (raw === 'EQUIPMENT' || raw === 'MAINTENANCE_CONTRACT' || raw === 'KNOWLEDGE_ARTICLE' || raw === 'REPAIR_ORDER') return raw;
+  if (raw === 'EQUIPMENT' || raw === 'MAINTENANCE_CONTRACT' || raw === 'KNOWLEDGE_ARTICLE' || raw === 'REPAIR_ORDER' || raw === 'INSPECTION') return raw;
   throw new ApiError(`附件归属类型「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
 }
 

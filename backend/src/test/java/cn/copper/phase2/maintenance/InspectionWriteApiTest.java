@@ -62,7 +62,7 @@ class InspectionWriteApiTest {
 
     private InspectionDetail detail(int version) {
         return new InspectionDetail("7", "3", "1#结晶牵引机", INSPECTED_AT, "李四",
-                "检查结晶轮与牵引速度", "ABNORMAL", "牵引速度波动偏大", List.of(),
+                "检查结晶轮与牵引速度", "ABNORMAL", "牵引速度波动偏大", List.of(), 0,
                 INSPECTED_AT.plusMinutes(3), version);
     }
 

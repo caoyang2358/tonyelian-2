@@ -64,7 +64,8 @@ class AlertEventApiTest {
         when(repository.findEvents(any(), anyInt(), anyInt())).thenReturn(List.of(
                 new AlertEventItem("9", "3", "1#结晶牵引机", "11", "TC-001", "21", "TEMP",
                         TRIGGERED_AT, TRIGGERED_AT, RECOVERED_AT, RECOVERED_AT, "RECOVERED",
-                        AlertEventStates.RECOVERED, AlertEventStates.PENDING, List.of("14"), 1)));
+                        AlertEventStates.RECOVERED, AlertEventStates.PENDING,
+                        AlertEventStates.PRIORITY_NORMAL, List.of("14"), 1)));
 
         mvc.perform(get("/api/v1/alert-events"))
                 .andExpect(status().isOk())
@@ -74,6 +75,7 @@ class AlertEventApiTest {
                 .andExpect(jsonPath("$.data.items[0].parameterCode").value("TEMP"))
                 .andExpect(jsonPath("$.data.items[0].eventState").value("RECOVERED"))
                 .andExpect(jsonPath("$.data.items[0].handlingState").value("PENDING"))
+                .andExpect(jsonPath("$.data.items[0].priority").value("NORMAL"))
                 .andExpect(jsonPath("$.data.items[0].repairOrderIds[0]").value("14"))
                 .andExpect(jsonPath("$.data.items[0].triggeredAt").value(startsWith("2026-11-03T08:30")))
                 .andExpect(jsonPath("$.data.items[0].triggeredAt").value(endsWith("+08:00")));
@@ -103,6 +105,38 @@ class AlertEventApiTest {
         assertThat(query.handlingState()).isEqualTo("PENDING");
         assertThat(query.from()).isEqualTo("2026-11-01T00:00:00+08:00");
         assertThat(query.to()).isEqualTo("2026-11-04T00:00:00+08:00");
+    }
+
+    @Test
+    void sortDefaultsToTimeAndIsPassedToRepository() throws Exception {
+        when(repository.countEvents(any())).thenReturn(0L);
+
+        mvc.perform(get("/api/v1/alert-events")).andExpect(status().isOk());
+
+        ArgumentCaptor<AlertEventQuery> captor = ArgumentCaptor.forClass(AlertEventQuery.class);
+        verify(repository).countEvents(captor.capture());
+        assertThat(captor.getValue().sort()).isEqualTo(AlertEventStates.SORT_TIME);
+    }
+
+    @Test
+    void sortPriorityIsPassedToRepository() throws Exception {
+        when(repository.countEvents(any())).thenReturn(0L);
+
+        mvc.perform(get("/api/v1/alert-events").param("sort", "priority"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<AlertEventQuery> captor = ArgumentCaptor.forClass(AlertEventQuery.class);
+        verify(repository).countEvents(captor.capture());
+        assertThat(captor.getValue().sort()).isEqualTo(AlertEventStates.SORT_PRIORITY);
+    }
+
+    @Test
+    void invalidSortIsRejectedBeforeQuerying() throws Exception {
+        mvc.perform(get("/api/v1/alert-events").param("sort", "priority_desc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.fieldErrors[0].field").value("sort"));
+        verifyNoInteractions(repository);
     }
 
     @Test
@@ -241,6 +275,7 @@ class AlertEventApiTest {
                 "9", "3", "1#结晶牵引机", "11", "TC-001", "21", "TEMP",
                 TRIGGERED_AT.minusMinutes(20), TRIGGERED_AT, RECOVERED_AT, RECOVERED_AT, "RECOVERED",
                 AlertEventStates.RECOVERED, AlertEventStates.DEFER_REPAIR,
+                AlertEventStates.PRIORITY_LOW,
                 "78.5", "℃", Map.of("sampleId", "S-20261103-1"), "31",
                 snapshot, orders, 2);
     }

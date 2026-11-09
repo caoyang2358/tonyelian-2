@@ -21,8 +21,10 @@ public final class AttachmentModels {
     public static final String OWNER_CONTRACT = "MAINTENANCE_CONTRACT";
     public static final String OWNER_ARTICLE = "KNOWLEDGE_ARTICLE";
     public static final String OWNER_REPAIR = "REPAIR_ORDER";
+    /** 巡检现场照片；2026-11 评审后加入，用于保留巡检凭证。 */
+    public static final String OWNER_INSPECTION = "INSPECTION";
     public static final List<String> OWNER_TYPES =
-            List.of(OWNER_EQUIPMENT, OWNER_CONTRACT, OWNER_ARTICLE, OWNER_REPAIR);
+            List.of(OWNER_EQUIPMENT, OWNER_CONTRACT, OWNER_ARTICLE, OWNER_REPAIR, OWNER_INSPECTION);
 
     public static final String KIND_IMAGE = "IMAGE";
     public static final String KIND_MANUAL = "MANUAL";

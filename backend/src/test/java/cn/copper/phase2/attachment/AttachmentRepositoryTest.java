@@ -88,7 +88,8 @@ class AttachmentRepositoryTest {
                 AttachmentRepository.OWNER_TYPE_EXPR, AttachmentRepository.OWNER_ID_EXPR);
 
         assertFalse(sql.toLowerCase().contains("storage_key"), sql);
-        assertTrue(sql.contains("COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id)"), sql);
+        assertTrue(sql.contains(
+                "COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id, a.inspection_id)"), sql);
     }
 
     /**

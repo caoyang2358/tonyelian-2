@@ -160,6 +160,11 @@ public class AlertEventService {
                 "事件状态取值无效，应为 ONGOING / RECOVERED / ENDED。");
         String handlingState = stateValue("handlingState", query.handlingState(), AlertEventStates.HANDLING_STATES,
                 "人工状态取值无效，应为 PENDING / ACKNOWLEDGED / DEFER_REPAIR。");
+        String sort = stateValue("sort", query.sort(), AlertEventStates.SORTS,
+                "排序方式取值无效，应为 time（按时间）或 priority（按优先级）。");
+        if (sort == null) {
+            sort = AlertEventStates.SORT_TIME;
+        }
 
         String from = MaintenanceIds.blankToNull(query.from());
         String to = MaintenanceIds.blankToNull(query.to());
@@ -185,7 +190,8 @@ public class AlertEventService {
                 eventState,
                 handlingState,
                 from,
-                to);
+                to,
+                sort);
     }
 
     /** 枚举值统一按大写比较，避免前端传小写被误判为无效。 */

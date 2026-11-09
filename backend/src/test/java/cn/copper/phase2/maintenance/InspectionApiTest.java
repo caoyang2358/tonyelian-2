@@ -41,7 +41,7 @@ class InspectionApiTest {
         when(repository.countInspections(any())).thenReturn(1L);
         when(repository.findInspections(any(), anyInt(), anyInt())).thenReturn(List.of(
                 new InspectionItem("5", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "ABNORMAL",
-                        List.of("12", "15"), 2)));
+                        List.of("12", "15"), 2, 2)));
 
         mvc.perform(get("/api/v1/inspections"))
                 .andExpect(status().isOk())
@@ -72,7 +72,7 @@ class InspectionApiTest {
     void detailReturnsRecordedContentAndVersion() throws Exception {
         when(repository.findInspection(5L)).thenReturn(new InspectionDetail(
                 "5", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "检查结晶轮、牵引速度", "ABNORMAL",
-                "牵引速度波动偏大", List.of("12"), INSPECTED_AT.plusMinutes(3), 2));
+                "牵引速度波动偏大", List.of("12"), 2, INSPECTED_AT.plusMinutes(3), 2));
 
         mvc.perform(get("/api/v1/inspections/5"))
                 .andExpect(status().isOk())

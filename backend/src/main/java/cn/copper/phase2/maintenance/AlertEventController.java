@@ -36,10 +36,11 @@ public class AlertEventController {
             @RequestParam(required = false) String handlingState,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) String sort,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer pageSize) {
         AlertEventQuery query = new AlertEventQuery(
-                equipmentId, sensorId, parameterId, eventState, handlingState, from, to);
+                equipmentId, sensorId, parameterId, eventState, handlingState, from, to, sort);
         return ApiResponse.success(service.events(query, page, pageSize));
     }
 

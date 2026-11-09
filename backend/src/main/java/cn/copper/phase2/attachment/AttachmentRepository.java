@@ -44,11 +44,12 @@ public class AttachmentRepository {
             CASE WHEN a.equipment_id IS NOT NULL THEN 'EQUIPMENT'
                  WHEN a.contract_id IS NOT NULL THEN 'MAINTENANCE_CONTRACT'
                  WHEN a.article_id IS NOT NULL THEN 'KNOWLEDGE_ARTICLE'
-                 ELSE 'REPAIR_ORDER' END
+                 WHEN a.repair_order_id IS NOT NULL THEN 'REPAIR_ORDER'
+                 ELSE 'INSPECTION' END
             """;
 
     static final String OWNER_ID_EXPR =
-            "COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id)";
+            "COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id, a.inspection_id)";
 
     static String summaryTemplate(String ownerTypeExpr, String ownerIdExpr) {
         return "SELECT a.attachment_id, " + ownerTypeExpr + " AS owner_type, " + ownerIdExpr
@@ -61,8 +62,10 @@ public class AttachmentRepository {
                    CASE WHEN a.equipment_id IS NOT NULL THEN 'EQUIPMENT'
                         WHEN a.contract_id IS NOT NULL THEN 'MAINTENANCE_CONTRACT'
                         WHEN a.article_id IS NOT NULL THEN 'KNOWLEDGE_ARTICLE'
-                        ELSE 'REPAIR_ORDER' END AS owner_type,
-                   COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id) AS owner_id,
+                        WHEN a.repair_order_id IS NOT NULL THEN 'REPAIR_ORDER'
+                        ELSE 'INSPECTION' END AS owner_type,
+                   COALESCE(a.equipment_id, a.contract_id, a.article_id, a.repair_order_id,
+                            a.inspection_id) AS owner_id,
                    a.file_kind, a.original_name, a.media_type, a.size_bytes, a.storage_key,
                    a.version, a.updated_at
             FROM p2_attachment a WHERE a.attachment_id = ?
@@ -135,6 +138,9 @@ public class AttachmentRepository {
         if (AttachmentModels.OWNER_REPAIR.equals(ownerType)) {
             return "repair_order_id";
         }
+        if (AttachmentModels.OWNER_INSPECTION.equals(ownerType)) {
+            return "inspection_id";
+        }
         throw BusinessException.invalid("ownerType",
                 "附件归属类型只能是 " + String.join("、", AttachmentModels.OWNER_TYPES) + " 之一。");
     }
@@ -152,6 +158,9 @@ public class AttachmentRepository {
         }
         if (AttachmentModels.OWNER_REPAIR.equals(ownerType)) {
             return "p2_repair_order";
+        }
+        if (AttachmentModels.OWNER_INSPECTION.equals(ownerType)) {
+            return "p2_inspection";
         }
         throw BusinessException.invalid("ownerType",
                 "附件归属类型只能是 " + String.join("、", AttachmentModels.OWNER_TYPES) + " 之一。");

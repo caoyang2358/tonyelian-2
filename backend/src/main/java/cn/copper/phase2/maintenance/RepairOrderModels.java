@@ -18,6 +18,8 @@ public final class RepairOrderModels {
             String equipmentName,
             String sourceType,
             String sourceId,
+            /** 故障类别：MECHANICAL / ELECTRICAL / INSTRUMENT / PROCESS / OTHER；历史数据可能为空。 */
+            String faultCategory,
             String status,
             OffsetDateTime createdAt,
             OffsetDateTime firstSubmittedAt,
@@ -69,6 +71,7 @@ public final class RepairOrderModels {
             String sourceType,
             String sourceId,
             Object sourceSnapshot,
+            String faultCategory,
             String status,
             String description,
             String supplement,
@@ -82,13 +85,16 @@ public final class RepairOrderModels {
             OffsetDateTime completedAt,
             int version) {}
 
-    /** S1-R01 建单命令：有来源时传 sourceId，手工来源传 equipmentId。 */
+    /** S1-R01 建单命令：有来源时传 sourceId，手工来源传 equipmentId；故障类别与故障描述可同时带入。 */
     public record RepairOrderCreateCommand(
             String requestId,
             String operatorName,
             String sourceType,
             String sourceId,
-            String equipmentId) {}
+            String equipmentId,
+            String faultCategory,
+            String description,
+            String reporterName) {}
 
     /** S1-R01 响应：doc 拟定字段 repairOrderId / status / sourceSnapshot / editableFields / version。 */
     public record RepairOrderCreated(
@@ -108,6 +114,7 @@ public final class RepairOrderModels {
             String description,
             String supplement,
             String reporterName,
+            String faultCategory,
             List<String> photoAttachmentIds) {}
 
     /** S1-R04 响应：同一工单详情、新版本与必要审计依据。 */

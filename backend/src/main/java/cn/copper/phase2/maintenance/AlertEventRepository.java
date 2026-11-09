@@ -43,12 +43,29 @@ public class AlertEventRepository {
             + " ORDER BY h.recorded_at DESC, h.handling_record_id DESC LIMIT 1), '"
             + AlertEventStates.PENDING + "')";
 
+    /**
+     * 处理优先级推导：还坏着没人管最急，还坏着已受理次之，自己好了没人确认再次，其余最低。
+     * 与两个状态列同源，排序和展示不会互相打架。
+     */
+    static final String PRIORITY_COLUMN = "CASE WHEN e.ended_at IS NULL AND "
+            + HANDLING_STATE_COLUMN + " = '" + AlertEventStates.PENDING + "' THEN '"
+            + AlertEventStates.PRIORITY_URGENT + "'"
+            + " WHEN e.ended_at IS NULL THEN '" + AlertEventStates.PRIORITY_HIGH + "'"
+            + " WHEN e.recovered_at IS NOT NULL AND " + HANDLING_STATE_COLUMN + " = '"
+            + AlertEventStates.PENDING + "' THEN '" + AlertEventStates.PRIORITY_NORMAL + "'"
+            + " ELSE '" + AlertEventStates.PRIORITY_LOW + "' END";
+
+    /** 优先级从急到缓的固定次序，供 ORDER BY 使用。 */
+    static final String PRIORITY_ORDER = "FIELD(" + PRIORITY_COLUMN + ", '"
+            + AlertEventStates.PRIORITY_URGENT + "', '" + AlertEventStates.PRIORITY_HIGH + "', '"
+            + AlertEventStates.PRIORITY_NORMAL + "', '" + AlertEventStates.PRIORITY_LOW + "')";
+
     static final String EVENT_SELECT = """
             SELECT e.event_id, e.equipment_id, eq.equipment_name,
                    e.sensor_id, s.sensor_code,
                    e.parameter_id, p.parameter_code,
                    e.started_at, e.triggered_at, e.recovered_at, e.ended_at, e.end_reason,
-                   %s AS event_state, %s AS handling_state,
+                   %s AS event_state, %s AS handling_state, %s AS priority,
                    (SELECT GROUP_CONCAT(r.repair_order_id ORDER BY r.repair_order_id)
                       FROM p2_repair_order r
                      WHERE r.source_alert_event_id = e.event_id) AS repair_order_ids,
@@ -57,7 +74,7 @@ public class AlertEventRepository {
             JOIN dim_equipment eq ON eq.equipment_id = e.equipment_id
             JOIN dim_sensor s ON s.sensor_id = e.sensor_id
             JOIN dim_sensor_parameter p ON p.parameter_id = e.parameter_id
-            """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN);
+            """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, PRIORITY_COLUMN);
 
     static final RowMapper<AlertEventItem> EVENT_ITEM_MAPPER = (rs, row) -> new AlertEventItem(
             rs.getString("event_id"),
@@ -74,6 +91,7 @@ public class AlertEventRepository {
             rs.getString("end_reason"),
             rs.getString("event_state"),
             rs.getString("handling_state"),
+            rs.getString("priority"),
             splitIds(rs.getString("repair_order_ids")),
             rs.getInt("version"));
 
@@ -85,11 +103,13 @@ public class AlertEventRepository {
         this.objectMapper = objectMapper;
     }
 
-    /** 按触发时刻、ID 倒序稳定分页（文档 S1-A01 指定的展示顺序）。 */
+    /** 默认按触发时刻倒序（文档 S1-A01 的展示顺序）；按优先级时先急后缓，同级别仍按时间倒序。 */
     public List<AlertEventItem> findEvents(AlertEventQuery query, int offset, int limit) {
         List<Object> args = new ArrayList<>();
-        String sql = EVENT_SELECT + whereClause(query, args)
-                + " ORDER BY e.triggered_at DESC, e.event_id DESC LIMIT ? OFFSET ?";
+        String order = AlertEventStates.SORT_PRIORITY.equals(query.sort())
+                ? " ORDER BY " + PRIORITY_ORDER + ", e.triggered_at DESC, e.event_id DESC"
+                : " ORDER BY e.triggered_at DESC, e.event_id DESC";
+        String sql = EVENT_SELECT + whereClause(query, args) + order + " LIMIT ? OFFSET ?";
         args.add(limit);
         args.add(offset);
         return jdbc.query(sql, EVENT_ITEM_MAPPER, args.toArray());
@@ -109,7 +129,7 @@ public class AlertEventRepository {
                        e.sensor_id, s.sensor_code,
                        e.parameter_id, p.parameter_code,
                        e.started_at, e.triggered_at, e.recovered_at, e.ended_at, e.end_reason,
-                       %s AS event_state, %s AS handling_state,
+                       %s AS event_state, %s AS handling_state, %s AS priority,
                        e.trigger_value, e.unit_code, e.source_reference,
                        e.rule_version_id, e.version
                 FROM p2_alert_event e
@@ -117,7 +137,7 @@ public class AlertEventRepository {
                 JOIN dim_sensor s ON s.sensor_id = e.sensor_id
                 JOIN dim_sensor_parameter p ON p.parameter_id = e.parameter_id
                 WHERE e.event_id = ?
-                """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN);
+                """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, PRIORITY_COLUMN);
         List<EventRow> rows = jdbc.query(sql, EventRow::map, eventId);
         if (rows.isEmpty()) {
             return null;
@@ -127,7 +147,7 @@ public class AlertEventRepository {
                 row.eventId(), row.equipmentId(), row.equipmentName(),
                 row.sensorId(), row.sensorCode(), row.parameterId(), row.parameterCode(),
                 row.startedAt(), row.triggeredAt(), row.recoveredAt(), row.endedAt(), row.endReason(),
-                row.eventState(), row.handlingState(),
+                row.eventState(), row.handlingState(), row.priority(),
                 row.triggerValue(), row.unitCode(), readJson(row.sourceReferenceJson()),
                 String.valueOf(row.ruleVersionId()),
                 findRuleSnapshot(row.ruleVersionId()),
@@ -151,6 +171,7 @@ public class AlertEventRepository {
             String endReason,
             String eventState,
             String handlingState,
+            String priority,
             String triggerValue,
             String unitCode,
             String sourceReferenceJson,
@@ -173,6 +194,7 @@ public class AlertEventRepository {
                     rs.getString("end_reason"),
                     rs.getString("event_state"),
                     rs.getString("handling_state"),
+                    rs.getString("priority"),
                     decimal(rs, "trigger_value"),
                     rs.getString("unit_code"),
                     rs.getString("source_reference"),

@@ -12,7 +12,7 @@ import java.util.List;
 public final class AlertEventModels {
     private AlertEventModels() {}
 
-    /** 列表行：设备测点身份、时间线、推导出的两个状态及关联工单。 */
+    /** 列表行：设备测点身份、时间线、推导出的两个状态、处理优先级及关联工单。 */
     public record AlertEventItem(
             String eventId,
             String equipmentId,
@@ -28,6 +28,8 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
+            /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
+            String priority,
             List<String> repairOrderIds,
             int version) {}
 
@@ -63,6 +65,7 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
+            String priority,
             String triggerValue,
             String unitCode,
             Object sourceReference,
@@ -81,7 +84,9 @@ public final class AlertEventModels {
             String eventState,
             String handlingState,
             String from,
-            String to) {}
+            String to,
+            /** time（默认，触发时间倒序）或 priority（优先级优先）。 */
+            String sort) {}
 
     /** 单条人工处理记录；只记人工动作，不改异常事实。 */
     public record HandlingRecordItem(

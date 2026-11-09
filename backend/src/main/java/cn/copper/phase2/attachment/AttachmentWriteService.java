@@ -185,6 +185,7 @@ public class AttachmentWriteService {
             case AttachmentModels.OWNER_EQUIPMENT -> "设备";
             case AttachmentModels.OWNER_CONTRACT -> "维保合同";
             case AttachmentModels.OWNER_ARTICLE -> "知识条目";
+            case AttachmentModels.OWNER_INSPECTION -> "巡检记录";
             default -> "维修单";
         };
     }

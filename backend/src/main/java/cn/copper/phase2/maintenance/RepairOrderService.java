@@ -50,6 +50,9 @@ public class RepairOrderService {
     static final Set<String> REPAIR_SOURCE_TYPES = Set.of("ALERT_EVENT", "INSPECTION", "MANUAL");
     static final Set<String> REVIEW_RESULTS = Set.of("APPROVE", "RETURN_FOR_INFO", "NO_REPAIR", "DUPLICATE");
     static final Set<String> ACCEPTANCE_RESULTS = Set.of("PASS", "FAIL");
+    /** 故障类别：机械、电气、仪表、工艺、其他。历史工单可能为空，界面显示"未分类"。 */
+    static final Set<String> FAULT_CATEGORIES =
+            Set.of("MECHANICAL", "ELECTRICAL", "INSTRUMENT", "PROCESS", "OTHER");
 
     static final String OPERATION_CREATE = "REPAIR_ORDER_CREATE";
     static final String OPERATION_SAVE = "REPAIR_ORDER_SAVE";
@@ -165,7 +168,8 @@ public class RepairOrderService {
 
         LocalDateTime now = LocalDateTime.now(MaintenanceTimes.ZONE);
         long repairOrderId = repository.insertOrder("PENDING-" + request.requestId(), equipmentId,
-                request.sourceType(), alertEventId, inspectionId, snapshotJson, now);
+                request.sourceType(), alertEventId, inspectionId, snapshotJson, request.faultCategory(),
+                request.description(), request.reporterName(), now);
         repository.updateOrderNo(repairOrderId, orderNo(now, repairOrderId));
         repository.insertAction(repairOrderId, "CREATE", null, null, RepairOrderWorkflow.DRAFT,
                 now, now, request.operatorName(), null, null);
@@ -211,7 +215,7 @@ public class RepairOrderService {
 
         RepairOrderDetail before = detailOf(id);
         repository.saveContent(id, request.description(), request.supplement(), request.reporterName(),
-                LocalDateTime.now(MaintenanceTimes.ZONE));
+                request.faultCategory(), LocalDateTime.now(MaintenanceTimes.ZONE));
         repository.replacePhotos(id, attachmentIds);
         RepairOrderDetail after = detailOf(id);
 
@@ -371,6 +375,7 @@ public class RepairOrderService {
                 row.sourceType(),
                 row.sourceId(),
                 parseSnapshot(row.sourceSnapshotJson()),
+                row.faultCategory(),
                 row.status(),
                 row.description(),
                 row.supplement(),
@@ -502,12 +507,23 @@ public class RepairOrderService {
         } else {
             requiredDigits("sourceId", sourceId);
         }
+        String faultCategory = optionalText("faultCategory", command.faultCategory(), 32);
+        if (faultCategory != null) {
+            faultCategory = faultCategory.toUpperCase(java.util.Locale.ROOT);
+            if (!FAULT_CATEGORIES.contains(faultCategory)) {
+                throw new InvalidRequestException("faultCategory",
+                        "故障类别取值无效，应为 MECHANICAL / ELECTRICAL / INSTRUMENT / PROCESS / OTHER。");
+            }
+        }
         return new RepairOrderCreateCommand(
                 requestId(command.requestId()),
                 operatorName(command.operatorName()),
                 sourceType,
                 "MANUAL".equals(sourceType) ? null : sourceId,
-                "MANUAL".equals(sourceType) ? equipmentId : null);
+                "MANUAL".equals(sourceType) ? equipmentId : null,
+                faultCategory,
+                optionalText("description", command.description(), 5000),
+                optionalText("reporterName", command.reporterName(), 100));
     }
 
     private static RepairOrderSaveCommand validate(RepairOrderSaveCommand command) {
@@ -522,6 +538,7 @@ public class RepairOrderService {
                 optionalText("description", command.description(), 5000),
                 optionalText("supplement", command.supplement(), 5000),
                 optionalText("reporterName", command.reporterName(), 100),
+                optionalText("faultCategory", command.faultCategory(), 32),
                 command.photoAttachmentIds());
     }
 

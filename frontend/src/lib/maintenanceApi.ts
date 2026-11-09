@@ -58,6 +58,8 @@ export interface AlertEventItem {
   sensorId: string; sensorCode: string; parameterId: string; parameterCode: string;
   startedAt: string; triggeredAt: string; recoveredAt: string | null; endedAt: string | null;
   endReason: string | null; eventState: string; handlingState: string;
+  /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
+  priority: string;
   repairOrderIds: string[]; version: number;
 }
 export interface AlertEventPage { items: AlertEventItem[]; page: number; pageSize: number; total: number }
@@ -76,7 +78,12 @@ export interface HandlingRecordItem { handlingRecordId: string; action: string; 
 export interface HandlingRecordPage { items: HandlingRecordItem[]; page: number; pageSize: number; total: number }
 export interface HandlingResult { handlingRecordId: string; handlingState: string; version: number; updatedAt: string }
 
-export interface AlertEventFilter { eventState?: string; handlingState?: string; equipmentId?: string; from?: string; to?: string }
+/** 列表排序：TIME = 触发时间倒序（默认），PRIORITY = 未恢复且未处理的事件优先。 */
+export type AlertEventSort = 'TIME' | 'PRIORITY';
+
+export interface AlertEventFilter {
+  eventState?: string; handlingState?: string; equipmentId?: string; from?: string; to?: string; sort?: AlertEventSort;
+}
 
 function queryOf(filter: Record<string, string | number | undefined>): string {
   const query = new URLSearchParams();
@@ -100,7 +107,10 @@ export const maintenanceApi = {
 export interface InspectionItem {
   inspectionId: string; equipmentId: string; equipmentName: string;
   inspectedAt: string; inspectorName: string; content: string; result: string;
-  repairOrderIds: string[]; version: number;
+  repairOrderIds: string[];
+  /** 现场照片张数；照片本身走共用附件接口按需拉取。 */
+  photoCount: number;
+  version: number;
 }
 export interface InspectionPage { items: InspectionItem[]; page: number; pageSize: number; total: number }
 export interface InspectionDetail extends InspectionItem { description: string | null; operatorName: string; recordedAt: string }
@@ -134,7 +144,10 @@ export const inspectionApi = {
 
 export interface RepairOrderItem {
   repairOrderId: string; orderNo: string; equipmentId: string; equipmentName: string;
-  sourceType: string; sourceId: string | null; status: string;
+  sourceType: string; sourceId: string | null;
+  /** 故障类别：MECHANICAL / ELECTRICAL / INSTRUMENT / PROCESS / OTHER；历史工单可能为空。 */
+  faultCategory: string | null;
+  status: string;
   createdAt: string; firstSubmittedAt: string | null; completedAt: string | null; version: number;
 }
 export interface RepairOrderPage { items: RepairOrderItem[]; page: number; pageSize: number; total: number }
@@ -144,8 +157,10 @@ export interface RepairActionItem {
 }
 export interface RepairOrderDetail {
   repairOrderId: string; orderNo: string; equipmentId: string; equipmentName: string;
-  sourceType: string; sourceId: string | null; sourceSnapshot: unknown; status: string;
+  sourceType: string; sourceId: string | null; sourceSnapshot: unknown;
+  faultCategory: string | null; status: string;
   description: string | null; supplement: string | null; reporterName: string | null;
+  photoAttachmentIds: string[];
   availableActions: string[]; actions: RepairActionItem[];
   createdAt: string; updatedAt: string; firstSubmittedAt: string | null; completedAt: string | null; version: number;
 }
@@ -162,15 +177,23 @@ export const repairOrderApi = {
   actions: (repairOrderId: string, page = 1, pageSize = 50) =>
     request<{items: RepairActionItem[]; page: number; pageSize: number; total: number}>('GET',
       `/repair-orders/${encodeURIComponent(repairOrderId)}/actions${queryOf({page, pageSize})}`),
-  create: (body: {sourceType: string; sourceId?: string; equipmentId?: string; operatorName: string}) =>
-    request<RepairOrderCreated>('POST', '/repair-orders', {requestId: newRequestId(), ...body}),
-  save: (repairOrderId: string, body: {operatorName: string; expectedVersion: number; reason: string; description: string; supplement: string; reporterName: string}) =>
-    request<{repairOrder: RepairOrderDetail}>('PUT', `/repair-orders/${encodeURIComponent(repairOrderId)}`, {requestId: newRequestId(), ...body}),
+  create: (body: {
+    sourceType: string; sourceId?: string; equipmentId?: string; operatorName: string;
+    faultCategory?: string | null; description?: string | null; reporterName?: string | null;
+  }) => request<RepairOrderCreated>('POST', '/repair-orders', {requestId: newRequestId(), ...body}),
+  save: (repairOrderId: string, body: {
+    operatorName: string; expectedVersion: number; reason: string;
+    description: string; supplement: string; reporterName: string;
+    faultCategory?: string | null; photoAttachmentIds?: string[];
+  }) => request<{repairOrder: RepairOrderDetail}>('PUT', `/repair-orders/${encodeURIComponent(repairOrderId)}`,
+    {requestId: newRequestId(), ...body}),
   submit: (repairOrderId: string, body: {operatorName: string; expectedVersion: number}) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/submissions`, {requestId: newRequestId(), ...body}),
   review: (repairOrderId: string, body: {operatorName: string; expectedVersion: number; result: string; reason: string}) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/reviews`, {requestId: newRequestId(), ...body}),
-  recordRepairResult: (repairOrderId: string, body: {operatorName: string; expectedVersion: number; performedAt: string; description: string}) =>
+  recordRepairResult: (repairOrderId: string, body: {
+    operatorName: string; expectedVersion: number; performedAt: string; description: string; attachmentIds?: string[];
+  }) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/repair-results`, {requestId: newRequestId(), ...body}),
   accept: (repairOrderId: string, body: {operatorName: string; expectedVersion: number; result: string; acceptedAt: string; reason: string}) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/acceptances`, {requestId: newRequestId(), ...body}),

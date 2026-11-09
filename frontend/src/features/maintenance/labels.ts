@@ -6,8 +6,16 @@ export const eventStateLabels: Record<string, string> = {
 export const handlingStateLabels: Record<string, string> = {
   PENDING: '待处理', ACKNOWLEDGED: '已知悉', DEFER_REPAIR: '暂不报修',
 };
+/** 处理优先级：后端按"是否恢复 + 是否已人工处理"推导，前端只负责翻译。 */
+export const priorityLabels: Record<string, string> = {
+  URGENT: '紧急', HIGH: '高', NORMAL: '一般', LOW: '低',
+};
+/** 故障类别：与库里的 chk_p2_repair_fault_category 取值一一对应。 */
+export const faultCategoryLabels: Record<string, string> = {
+  MECHANICAL: '机械', ELECTRICAL: '电气', INSTRUMENT: '仪表', PROCESS: '工艺', OTHER: '其他',
+};
 export const orderStatusLabels: Record<string, string> = {
-  DRAFT: '草稿', REVIEW_PENDING: '待审核', RETURNED_FOR_INFO: '待补充',
+  DRAFT: '待提交', REVIEW_PENDING: '待审核', RETURNED_FOR_INFO: '待补充',
   IN_REPAIR: '维修中', ACCEPTANCE_PENDING: '待验收', COMPLETED: '已完成', CLOSED: '已关闭',
 };
 export const sourceTypeLabels: Record<string, string> = {

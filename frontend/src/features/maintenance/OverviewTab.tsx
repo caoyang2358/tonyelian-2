@@ -2,14 +2,14 @@ import { useCallback, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, overviewApi } from '../../lib/maintenanceApi';
 import type { MaintenanceOverview } from '../../lib/maintenanceApi';
-import { label, localInputValue } from './labels';
+import { localInputValue } from './labels';
 import { EquipmentSelect, useWorkshopOptions } from './shared';
 
-const caliberLabels: Record<string, string> = {
-  inspectionCount: '巡检数', alertEventCount: '异常事件数', pendingRepairCount: '待办工单',
-  completedRepairCount: '完成工单', averageHandlingSeconds: '平均处理时长', handlingSampleCount: '均值样本量',
-  equipmentReportCounts: '设备报修统计', deadlineReminderCount: '期限提醒',
-};
+/** 口径说明只在悬停/聚焦时出现：列表里铺十行小字，反而没人看。 */
+function Tip({text}: {text: string | undefined}) {
+  if (!text) return null;
+  return <span className="ops-tip" tabIndex={0} role="note" aria-label={text} data-tip={text}>?</span>;
+}
 
 export function OverviewTab() {
   const [from, setFrom] = useState(() => localInputValue(-24 * 60));
@@ -39,11 +39,12 @@ export function OverviewTab() {
     }
   }, [from, to, workshopId, equipmentId]);
 
-  const metric = (text: string, caption: string) => ({text, caption});
+  const caliber = data?.caliber ?? {};
+  const maxReport = Math.max(1, ...(data?.equipmentReportCounts.map(row => row.reportCount) ?? [1]));
 
   return <>
     <section className="panel" aria-label="运维概览查询">
-      <div className="panel-heading"><div><h2>运维概览<span className="panel-count">S1-M01</span></h2><p>每个统计数字都附带口径说明，不把缺项假装成零</p></div></div>
+      <div className="panel-heading"><div><h2>运维概览</h2><p>数字旁的小问号悬停即看统计口径；未正式提交的工单不计入</p></div></div>
       <div className="filters">
         <label className="select-field"><span>开始时间</span>
           <input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
@@ -62,28 +63,68 @@ export function OverviewTab() {
       {error && <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法完成统计</h3><p>{error}</p></div></div>}
       {data && <>
         <div className="ops-metrics">
-          {[metric(String(data.inspectionCount), '巡检次数'), metric(String(data.alertEventCount), '异常事件'),
-            metric(String(data.pendingRepairCount), '维修待办'), metric(String(data.completedRepairCount), '完成工单'),
-            metric(data.averageHandlingSeconds ? `${data.averageHandlingSeconds} 秒` : '—', `平均处理时长（样本 ${data.handlingSampleCount}）`)].map(item =>
-            <div className="ops-metric" key={item.caption}><strong>{item.text}</strong><span>{item.caption}</span></div>)}
+          <div className="ops-metric">
+            <strong>{data.inspectionCount}</strong>
+            <span>巡检次数 <Tip text={caliber.inspectionCount} /></span>
+          </div>
+          <div className="ops-metric">
+            <strong>{data.alertEventCount}</strong>
+            <span>异常事件 <Tip text={caliber.alertEventCount} /></span>
+          </div>
+          <div className="ops-metric">
+            <strong>{data.pendingRepairCount}</strong>
+            <span>维修待办 <Tip text={caliber.pendingRepairCount} /></span>
+          </div>
+          <div className="ops-metric">
+            <strong>{data.completedRepairCount}</strong>
+            <span>完成工单 <Tip text={caliber.completedRepairCount} /></span>
+          </div>
+          <div className="ops-metric">
+            <strong>{data.averageHandlingSeconds ? `${data.averageHandlingSeconds} 秒` : '—'}</strong>
+            <span>平均处理时长（样本 {data.handlingSampleCount}）<Tip text={caliber.averageHandlingSeconds} /></span>
+          </div>
         </div>
+
         <div className="ops-detail ops-detail-padded">
-          <h3 className="ops-section-title">按设备报修统计</h3>
-          {data.equipmentReportCounts.length === 0 ? <p className="missing-value">统计范围内没有正式提交的报修工单。</p> :
-            <div className="table-region"><table>
-              <thead><tr><th className="number-column">设备编号</th><th>设备</th><th>报修次数</th><th>完成次数</th></tr></thead>
-              <tbody>{data.equipmentReportCounts.map(row => <tr key={row.equipmentId}>
-                <td className="row-number">{row.equipmentId}</td><td>{row.equipmentName}</td><td>{row.reportCount}</td><td>{row.completedCount}</td>
-              </tr>)}</tbody>
-            </table></div>}
-          <h3 className="ops-section-title">期限提醒</h3>
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">按设备报修统计</h3>
+            <div className="ops-chart-legend">
+              <span><i className="ops-legend-report" />报修次数</span>
+              <span><i className="ops-legend-done" />完成次数</span>
+              <Tip text={caliber.equipmentReportCounts} />
+            </div>
+          </div>
+          {data.equipmentReportCounts.length === 0
+            ? <p className="missing-value">统计范围内没有正式提交的报修工单。</p>
+            : <div className="ops-bars" role="img" aria-label="按设备的报修与完成次数柱状图">
+              {data.equipmentReportCounts.map(row => <div className="ops-bar-row" key={row.equipmentId}>
+                <span className="ops-bar-name" title={row.equipmentName}>{row.equipmentName}</span>
+                <div className="ops-bar-group">
+                  <div className="ops-bar-line" title={`${row.equipmentName} 报修 ${row.reportCount} 次`}>
+                    <span className="ops-bar ops-bar-report" style={{width: `${Math.max(4, row.reportCount / maxReport * 100)}%`}} />
+                    <b>{row.reportCount}</b>
+                  </div>
+                  <div className="ops-bar-line" title={`${row.equipmentName} 完成 ${row.completedCount} 次`}>
+                    <span className="ops-bar ops-bar-done" style={{width: `${row.completedCount ? Math.max(4, row.completedCount / maxReport * 100) : 0}%`}} />
+                    <b>{row.completedCount}</b>
+                  </div>
+                </div>
+              </div>)}
+            </div>}
+
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">期限提醒</h3>
+            <Tip text={caliber.deadlineReminderCount} />
+          </div>
           {data.deadlineReminderCount == null
-            ? <p className="ops-note-block">{data.deadlineReminderNote ?? '期限提醒口径未就绪，返回 null 表示缺项而不是没有提醒。'}</p>
-            : <p className="ops-note-block">当前 {data.deadlineReminderCount} 条期限提醒。</p>}
-          <h3 className="ops-section-title">统计口径说明</h3>
-          <dl className="ops-caliber">
-            {Object.entries(data.caliber).map(([key, text]) => <div key={key}><dt>{label(caliberLabels, key, key)}</dt><dd>{text}</dd></div>)}
-          </dl>
+            ? <p className="ops-note-block">{data.deadlineReminderNote ?? '期限提醒口径未就绪：此处返回"缺项"而不是"没有提醒"。'}</p>
+            : <div className={`ops-reminder ${data.deadlineReminderCount > 0 ? 'ops-reminder-warn' : ''}`}>
+                <strong>{data.deadlineReminderCount}</strong>
+                <div>
+                  <span>{data.deadlineReminderCount > 0 ? '条期限即将到期或已超期' : '当前没有需要处理的期限提醒'}</span>
+                  <small>{data.deadlineReminderNote ?? '口径：统计范围内质保、维保与预计寿命的临期/超期条数。'}</small>
+                </div>
+              </div>}
           <p className="missing-value">统计生成时间：{formatGeneratedAt(data.generatedAt)}</p>
         </div>
       </>}

@@ -44,7 +44,7 @@ class RepairOrderApiTest {
         when(repository.countRepairOrders(any())).thenReturn(1L);
         when(repository.findRepairOrders(any(), anyInt(), anyInt())).thenReturn(List.of(
                 new RepairOrderItem("12", "RO-20261103-001", "3", "1#结晶牵引机", "INSPECTION", "7",
-                        "REVIEW_PENDING", created, created.plusHours(1), null, 3)));
+                        "MECHANICAL", "REVIEW_PENDING", created, created.plusHours(1), null, 3)));
 
         mvc.perform(get("/api/v1/repair-orders"))
                 .andExpect(status().isOk())

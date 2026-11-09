@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, maintenanceApi, newRequestId } from '../../lib/maintenanceApi';
-import type { AlertEventDetail, AlertEventItem, HandlingRecordItem, RuleSnapshot } from '../../lib/maintenanceApi';
-import { endReasonLabels, eventStateLabels, formatTime, handlingStateLabels, label, orderStatusLabels, triggerModeLabels } from './labels';
+import type {
+  AlertEventDetail, AlertEventItem, AlertEventSort, HandlingRecordItem, RuleSnapshot,
+} from '../../lib/maintenanceApi';
+import {
+  endReasonLabels, eventStateLabels, formatTime, handlingStateLabels, label, orderStatusLabels,
+  priorityLabels, triggerModeLabels,
+} from './labels';
 import { EquipmentSelect, Pager, useOperatorName } from './shared';
 import type { RepairHandoff } from './shared';
 
@@ -17,6 +22,13 @@ function stateTagClass(state: string): string {
 }
 function Tag({value, map}: {value: string; map: Record<string, string>}) {
   return <span className={`ops-tag ${stateTagClass(value)}`}>{label(map, value)}</span>;
+}
+/** 优先级单独配色：紧急必须是红的，一般的不能再抢眼。 */
+function priorityTagClass(priority: string): string {
+  if (priority === 'URGENT') return 'ops-tag-red';
+  if (priority === 'HIGH') return 'ops-tag-amber';
+  if (priority === 'NORMAL') return 'ops-tag-blue';
+  return 'ops-tag-gray';
 }
 
 /** 把结构化规则快照翻成业务能读的句子，避免直接抛 [0, 80] 这种数学区间。 */
@@ -34,10 +46,48 @@ function ruleText(snapshot: RuleSnapshot): string {
   return parts.length ? `${parts.join('，')}。` : '规则快照无阈值字段。';
 }
 
+/** 阈值单列一行，和"触发数值"左右对照，看到事件时不用自己比对区间。 */
+function thresholdText(snapshot: RuleSnapshot | null, unitCode: string | null): string {
+  if (!snapshot) return '规则快照缺失';
+  const unit = snapshot.unitCode ?? unitCode ?? '';
+  const bounds: string[] = [];
+  if (snapshot.alarmUpper !== null) bounds.push(`上限 ${snapshot.alarmUpper}${unit}`);
+  if (snapshot.alarmLower !== null) bounds.push(`下限 ${snapshot.alarmLower}${unit}`);
+  return bounds.length ? `${bounds.join('，')}（超出即报警）` : '该规则未设置报警阈值';
+}
+
+/** PT1M → 1 分钟。ISO-8601 时长直接显示给业务人员没有意义。 */
+function durationText(value: unknown): string {
+  if (typeof value !== 'string') return '—';
+  const match = /^PT(\d+)([SMH])$/.exec(value);
+  if (!match) return value;
+  const unit = match[2] === 'S' ? '秒' : match[2] === 'M' ? '分钟' : '小时';
+  return `${match[1]} ${unit}`;
+}
+
+const referenceKeyLabels: Record<string, string> = {
+  type: '采集方式', window: '统计窗口', sampleCount: '参与计算采样点数',
+};
+const referenceTypeLabels: Record<string, string> = {REALTIME: '实时采集', HISTORY: '历史回放', MANUAL: '人工录入'};
+
+/** 来源引用由后端原样保存，前端翻成人话；未知字段原样保留，不丢信息。 */
+function referenceText(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '—';
+  const parts: string[] = [];
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const name = referenceKeyLabels[key] ?? key;
+    const text = key === 'type' ? label(referenceTypeLabels, String(raw), String(raw))
+      : key === 'window' ? durationText(raw) : String(raw);
+    parts.push(`${name} ${text}`);
+  }
+  return parts.length ? parts.join('，') : '—';
+}
+
 export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: RepairHandoff) => void}) {
   const [eventState, setEventState] = useState('');
   const [handlingState, setHandlingState] = useState('');
   const [equipmentId, setEquipmentId] = useState('');
+  const [sort, setSort] = useState<AlertEventSort>('TIME');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [items, setItems] = useState<AlertEventItem[] | null>(null);
@@ -66,6 +116,7 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
         eventState: eventState || undefined,
         handlingState: handlingState || undefined,
         equipmentId: equipmentId || undefined,
+        sort,
       }, targetPage, targetSize);
       // 页码越界（例如筛掉后当前页空了）时回到最后一页，避免空白列表
       if (data.items.length === 0 && targetPage > 1 && data.total > 0) {
@@ -80,7 +131,7 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
     } finally {
       setListLoading(false);
     }
-  }, [eventState, handlingState, equipmentId, page, pageSize]);
+  }, [eventState, handlingState, equipmentId, sort, page, pageSize]);
 
   useEffect(() => { void loadList(); }, [loadList]);
 
@@ -123,7 +174,7 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
         action,
         reason: reason.trim(),
       });
-      setFeedback({kind: 'ok', text: `处理记录已保存（记录 ${result.handlingRecordId}），事件处理状态更新为「${label(handlingStateLabels, result.handlingState)}」，当前版本 ${result.version}。`});
+      setFeedback({kind: 'ok', text: `处理记录已保存（记录 ${result.handlingRecordId}），处理状态更新为「${label(handlingStateLabels, result.handlingState)}」，当前版本 ${result.version}。`});
       setReason('');
       await Promise.all([loadList(), openDetail(detail.eventId)]);
       void loadHistory(detail.eventId);
@@ -139,11 +190,11 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
     }
   }, [detail, reason, operator, action, loadList, openDetail, loadHistory]);
 
-  const resetFilters = () => { setEventState(''); setHandlingState(''); setEquipmentId(''); setPage(1); };
+  const resetFilters = () => { setEventState(''); setHandlingState(''); setEquipmentId(''); setSort('TIME'); setPage(1); };
 
   return <>
     <section className="panel" aria-label="异常事件列表">
-      <div className="panel-heading"><div><h2>异常事件提醒<span className="panel-count">{items ? `${total} 条` : '等待读取'}</span></h2><p>持续异常过程只产生一条事件；状态由恢复与结束事实推导</p></div><span className="read-only-label"><Icon name="check" size={14} />S1-A01</span></div>
+      <div className="panel-heading"><div><h2>异常事件提醒<span className="panel-count">{items ? `${total} 条` : '等待读取'}</span></h2><p>一次持续异常只记一条；优先级由"是否恢复 + 是否已处理"自动判定</p></div></div>
       <div className="filters">
         <label className="select-field"><span>事件状态</span>
           <select value={eventState} onChange={event => {setEventState(event.target.value); setPage(1);}}>
@@ -156,6 +207,11 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
             {Object.entries(handlingStateLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
           </select></label>
         <EquipmentSelect label="设备" value={equipmentId} onChange={next => {setEquipmentId(next); setPage(1);}} allowEmpty emptyLabel="全部设备" />
+        <label className="select-field"><span>排序</span>
+          <select value={sort} onChange={event => {setSort(event.target.value as AlertEventSort); setPage(1);}}>
+            <option value="TIME">按触发时间</option>
+            <option value="PRIORITY">按处理优先级</option>
+          </select></label>
         <button className="reset-filter" type="button" onClick={resetFilters}>清除筛选</button>
         <button className="button" type="button" onClick={() => void loadList(page, pageSize)} disabled={listLoading}>{listLoading ? '刷新中…' : '刷新'}</button>
       </div>
@@ -163,9 +219,10 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
         : listLoading && !items ? <div className="loading-state" role="status"><span className="spinner" /><span>正在读取异常事件…</span></div>
         : items && items.length === 0 ? <div className="empty-state" role="status"><div className="empty-icon"><Icon name="operations" size={30} /></div><h3>当前没有异常事件</h3><p>该筛选条件下未查询到事件记录。</p></div>
         : items && <div className="table-region" role="region" aria-label="异常事件表" tabIndex={0}><table>
-          <thead><tr><th className="number-column">编号</th><th>设备</th><th>测点 / 参数</th><th>触发时间</th><th>事件状态</th><th>处理状态</th><th>关联工单</th></tr></thead>
+          <thead><tr><th className="number-column">编号</th><th>优先级</th><th>设备</th><th>测点 / 参数</th><th>触发时间</th><th>事件状态</th><th>处理状态</th><th>关联工单</th></tr></thead>
           <tbody>{items.map(item => <tr key={item.eventId} className={detail?.eventId === item.eventId ? 'ops-selected' : ''} onClick={() => void openDetail(item.eventId)}>
             <td className="row-number">{item.eventId}</td>
+            <td><span className={`ops-tag ${priorityTagClass(item.priority)}`}>{label(priorityLabels, item.priority)}</span></td>
             <td>{item.equipmentName}</td>
             <td>{item.sensorCode} / {item.parameterCode}</td>
             <td>{formatTime(item.triggeredAt)}</td>
@@ -181,20 +238,27 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
 
     <div className="ops-two-column">
       <section className="panel" aria-label="事件详情">
-        <div className="panel-heading"><div><h2>事件详情<span className="panel-count">S1-A02</span></h2><p>触发证据与规则快照</p></div></div>
+        <div className="panel-heading"><div><h2>事件详情</h2><p>设备、测点、读数、阈值与时间一并给出，判断轻重不必再翻别的页面</p></div></div>
         {detailLoading ? <div className="loading-state"><span className="spinner" /><span>正在读取详情…</span></div>
           : detailError ? <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法读取事件详情</h3><p>{detailError}</p></div></div>
           : detail ? <div className="ops-detail">
-            <div className="ops-detail-row"><dt>状态</dt><dd><Tag value={detail.eventState} map={eventStateLabels} /><Tag value={detail.handlingState} map={handlingStateLabels} /></dd></div>
+            <div className="ops-detail-row"><dt>当前状态</dt><dd>
+              <span className={`ops-tag ${priorityTagClass(detail.priority)}`}>优先级 {label(priorityLabels, detail.priority)}</span>
+              <Tag value={detail.eventState} map={eventStateLabels} />
+              <Tag value={detail.handlingState} map={handlingStateLabels} />
+            </dd></div>
             <dl>
-              <div><dt>设备</dt><dd>{detail.equipmentName}</dd></div>
-              <div><dt>测点 / 参数</dt><dd>{detail.sensorCode} / {detail.parameterCode}</dd></div>
-              <div><dt>触发值</dt><dd><strong>{detail.triggerValue ?? '—'} {detail.unitCode ?? ''}</strong></dd></div>
-              <div><dt>开始 / 触发</dt><dd>{formatTime(detail.startedAt)} / {formatTime(detail.triggeredAt)}</dd></div>
-              <div><dt>恢复 / 结束</dt><dd>{formatTime(detail.recoveredAt)} / {formatTime(detail.endedAt)}</dd></div>
+              <div><dt>设备</dt><dd><strong>{detail.equipmentName}</strong></dd></div>
+              <div><dt>测点</dt><dd>{detail.sensorCode}</dd></div>
+              <div><dt>参数</dt><dd>{detail.parameterCode}</dd></div>
+              <div><dt>触发数值</dt><dd><strong className="ops-value-alert">{detail.triggerValue ?? '—'} {detail.unitCode ?? ''}</strong></dd></div>
+              <div><dt>报警阈值</dt><dd>{thresholdText(detail.ruleSnapshot, detail.unitCode)}</dd></div>
+              <div><dt>触发时间</dt><dd>{formatTime(detail.triggeredAt)}</dd></div>
+              <div><dt>开始 / 恢复 / 结束</dt><dd>{formatTime(detail.startedAt)} / {formatTime(detail.recoveredAt)} / {formatTime(detail.endedAt)}</dd></div>
               <div><dt>结束原因</dt><dd>{label(endReasonLabels, detail.endReason)}</dd></div>
-              {detail.ruleSnapshot && <div><dt>命中规则（版本 {detail.ruleSnapshot.ruleVersion}）</dt><dd>{ruleText(detail.ruleSnapshot)}</dd></div>}
-              {detail.ruleSnapshot?.reason && <div><dt>规则依据</dt><dd>{detail.ruleSnapshot.reason}</dd></div>}
+              <div><dt>命中规则（第 {detail.ruleSnapshot?.ruleVersion ?? '—'} 版）</dt><dd>{detail.ruleSnapshot ? ruleText(detail.ruleSnapshot) : '规则快照缺失'}</dd></div>
+              {detail.ruleSnapshot?.reason && <div><dt>规则调整依据</dt><dd>{detail.ruleSnapshot.reason}</dd></div>}
+              <div><dt>读数来源</dt><dd>{referenceText(detail.sourceReference)}</dd></div>
               <div><dt>关联工单</dt><dd>{detail.repairOrders.length
                 ? detail.repairOrders.map(order => `${order.orderNo}（${label(orderStatusLabels, order.status)}）`).join('、')
                 : <span className="missing-value">尚未报修</span>}</dd></div>
@@ -205,19 +269,18 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
                   sourceType: 'ALERT_EVENT', sourceId: detail.eventId, equipmentId: detail.equipmentId,
                   summary: `事件 #${detail.eventId}｜${detail.equipmentName}｜${detail.triggerValue ?? '—'}${detail.unitCode ?? ''}｜${formatTime(detail.triggeredAt)}`,
                 })}>
-                以此事件创建报修草稿
+                就此事件报修
               </button>}
               <button className="button" type="button" onClick={() => void loadHistory(detail.eventId)}>查看处理历史</button>
             </div>
-            <details className="ops-json"><summary>读数来源引用（sourceReference，原始结构）</summary><pre>{JSON.stringify(detail.sourceReference, null, 2)}</pre></details>
           </div>
           : <div className="empty-state"><div className="empty-icon"><Icon name="operations" size={30} /></div><h3>尚未选择事件</h3><p>在上方列表点击任意一行查看触发证据。</p></div>}
       </section>
 
       <section className="panel" aria-label="人工处理">
-        <div className="panel-heading"><div><h2>人工处理<span className="panel-count">S1-A03 / A04</span></h2><p>已知悉或暂不报修；处理记录只追加、不覆盖</p></div></div>
+        <div className="panel-heading"><div><h2>人工处理</h2><p>已知悉或暂不报修；处理记录只追加、不覆盖</p></div></div>
         {detail ? <div className="ops-form">
-          <p className="ops-form-context">事件 <strong>#{detail.eventId}</strong> · 当前版本 <strong>{detail.version}</strong></p>
+          <p className="ops-form-context">事件 <strong>#{detail.eventId}</strong> · {detail.equipmentName} · 当前版本 <strong>{detail.version}</strong></p>
           <div className="ops-form-row">
             <label className="select-field"><span>处理动作</span>
               <select value={action} onChange={event => setAction(event.target.value)}>
