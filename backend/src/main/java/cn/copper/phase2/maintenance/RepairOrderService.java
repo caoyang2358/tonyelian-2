@@ -92,6 +92,12 @@ public class RepairOrderService {
         return new RepairOrderPage(items, resolvedPage, resolvedSize, total);
     }
 
+    /** Called inside the knowledge write transaction; prevents a concurrent state change. */
+    public RepairOrderDetail knowledgeSource(String repairOrderId) {
+        long id = MaintenanceIds.parse("sourceRepairOrderId", repairOrderId);
+        if (repository.lockOrder(id) == null) throw new MaintenanceNotFoundException("来源工单不存在");
+        return detail(repairOrderId);
+    }
     public RepairOrderDetail detail(String repairOrderId) {
         return detailOf(parseId("repairOrderId", repairOrderId));
     }
