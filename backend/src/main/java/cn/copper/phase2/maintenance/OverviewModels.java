@@ -34,7 +34,7 @@ public final class OverviewModels {
             String averageHandlingSeconds,
             long handlingSampleCount,
             List<EquipmentReportCount> equipmentReportCounts,
-            Integer deadlineReminderCount,
+            long deadlineReminderCount,
             String deadlineReminderNote,
             Map<String, String> caliber) {}
 }

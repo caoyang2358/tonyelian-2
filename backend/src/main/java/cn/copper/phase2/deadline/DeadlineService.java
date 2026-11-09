@@ -59,8 +59,26 @@ public class DeadlineService {
         return PageResult.of(items, resolvedPage, resolvedSize, total);
     }
 
-    /** 空串按"不筛选"处理；大小写不敏感，但必须落在契约枚举内，拼错时直接 400 而不是静默返回空页。 */
-    static String normalize(String raw, List<String> allowed, String field) {
+    /**
+     * 当前处于「临期」或「已超期」的期限条数，供运维概览页签展示。
+     *
+     * <p>与统计时间范围无关：期限看的是"查询这一刻"的状态，不是某个窗口内的发生量，
+     * 因此不复用概览的 from/to——把期限塞进时间窗口会让"本月没有临期"这种结论失真。
+     * 设备与车间筛选与列表口径一致，同时给出时取交集。</p>
+     */
+    public long countAttention(Long equipmentId, Long workshopId) {
+        ReminderSetting setting = reminderSetting.current();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        long dueSoon = repository.count(
+                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_DUE_SOON, 1, 1),
+                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
+        long expired = repository.count(
+                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_EXPIRED, 1, 1),
+                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
+        return dueSoon + expired;
+    }
+
+    /** 空串按"不筛选"处理；大小写不敏感，但必须落在契约枚举内，拼错时直接 400 而不是静默返回空页。 */    static String normalize(String raw, List<String> allowed, String field) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
