@@ -90,6 +90,21 @@ class OverviewApiTest {
                 .andExpect(jsonPath("$.data.handlingSampleCount").value(0));
     }
 
+    /** 有设备算不出到期日时，说明里要带上待补条数，否则"0 条提醒"会被读成"没有风险"。 */
+    @Test
+    void deadlineNoteMentionsUnevaluableCount() throws Exception {
+        when(repository.handlingStats(any(), any(), isNull(), isNull()))
+                .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
+        when(deadlineService.countAttention(any(), any())).thenReturn(0L);
+        when(deadlineService.countMissingData(any(), any())).thenReturn(24L);
+
+        mvc.perform(ranged())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deadlineReminderCount").value(0))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("24 条")))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("暂无法评估")));
+    }
+
     /** 概览的筛选条件要与期限统计一致地传下去，否则"按设备查看"会被算成全厂。 */
     @Test
     void deadlineCountReceivesSameEquipmentAndWorkshopFilter() throws Exception {

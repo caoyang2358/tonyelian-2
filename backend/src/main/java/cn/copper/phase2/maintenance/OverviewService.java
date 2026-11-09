@@ -53,6 +53,8 @@ public class OverviewService {
         List<EquipmentReportCount> byEquipment =
                 repository.reportCountsByEquipment(start, end, workshopId, equipmentId);
         long deadlineReminderCount = deadlineService.countAttention(equipmentId, workshopId);
+        long deadlineMissingCount = deadlineService.countMissingData(equipmentId, workshopId);
+        String deadlineNote = deadlineNote(deadlineMissingCount);
 
         return new MaintenanceOverview(
                 from,
@@ -66,8 +68,22 @@ public class OverviewService {
                 stats.sampleCount(),
                 byEquipment,
                 deadlineReminderCount,
-                DEADLINE_NOTE,
-                caliber());
+                deadlineNote,
+                caliber(deadlineNote));
+    }
+
+    /**
+     * 期限提醒的说明文字：基础口径之外，把「算不出到期日」的条数一并讲清楚。
+     *
+     * <p>缺投用日期或质保年限的设备无法判断是否临期，若不提示，页面上会出现
+     * 「0 条提醒」而实际有一批设备从未被评估过，容易被当成「没有问题」。</p>
+     */
+    static String deadlineNote(long missingCount) {
+        if (missingCount <= 0) {
+            return DEADLINE_NOTE;
+        }
+        return DEADLINE_NOTE + "另有 " + missingCount
+                + " 条期限因缺少投用日期、质保年限或维保合同暂无法评估，可在期限列表中补齐资料后纳入统计。";
     }
 
     /** 均值保留一位小数；样本量为 0 时返回 null，避免把"没有样本"呈现成"平均 0 秒"。 */
@@ -80,7 +96,7 @@ public class OverviewService {
                 .toPlainString();
     }
 
-    private static Map<String, String> caliber() {
+    private static Map<String, String> caliber(String deadlineNote) {
         Map<String, String> caliber = new LinkedHashMap<>();
         caliber.put("inspectionCount", "按实际巡检时刻计数。");
         caliber.put("alertEventCount", "按事件触发时刻计数；同一持续过程只有一条事件，因此只计一次。");
@@ -89,7 +105,7 @@ public class OverviewService {
         caliber.put("averageHandlingSeconds", "同一批完成样本从首次正式提交到验收通过的秒数均值，保留一位小数；无样本时为 null。");
         caliber.put("handlingSampleCount", "参与均值计算的完成样本量，与 completedRepairCount 同口径。");
         caliber.put("equipmentReportCounts", "每台设备首次正式提交落入范围的工单数；补充后重提不重复计数。");
-        caliber.put("deadlineReminderCount", DEADLINE_NOTE);
+        caliber.put("deadlineReminderCount", deadlineNote);
         return caliber;
     }
 

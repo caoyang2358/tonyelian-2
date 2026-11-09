@@ -78,7 +78,23 @@ public class DeadlineService {
         return dueSoon + expired;
     }
 
-    /** 空串按"不筛选"处理；大小写不敏感，但必须落在契约枚举内，拼错时直接 400 而不是静默返回空页。 */    static String normalize(String raw, List<String> allowed, String field) {
+    /**
+     * 期限数据缺失（缺投用日期、质保年限或维保合同等）的条数，供概览提示「还剩多少条待补资料」。
+     *
+     * <p>这类设备算不出到期日，既不算临期也不算超期，但也不能被静默忽略：
+     * 把「算不出来」显示成「没有风险」会让使用者误判，因此单独给出条数，
+     * 由概览一并说明。筛选口径与 {@link #countAttention} 一致。</p>
+     */
+    public long countMissingData(Long equipmentId, Long workshopId) {
+        ReminderSetting setting = reminderSetting.current();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        return repository.count(
+                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_MISSING_DATA, 1, 1),
+                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
+    }
+
+    /** 空串按"不筛选"处理；大小写不敏感，但必须落在契约枚举内，拼错时直接 400 而不是静默返回空页。 */
+    static String normalize(String raw, List<String> allowed, String field) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
