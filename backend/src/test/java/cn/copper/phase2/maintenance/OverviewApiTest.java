@@ -1,6 +1,7 @@
 package cn.copper.phase2.maintenance;
 
 import cn.copper.phase2.common.ApiExceptionHandler;
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
 import cn.copper.phase2.deadline.DeadlineService;
 import cn.copper.phase2.maintenance.OverviewModels.EquipmentReportCount;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,7 @@ class OverviewApiTest {
         when(repository.reportCountsByEquipment(any(), any(), isNull(), isNull())).thenReturn(List.of(
                 new EquipmentReportCount("3", "1#结晶牵引机", 3, 2),
                 new EquipmentReportCount("1", "1#熔化炉", 1, 0)));
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 0L));
 
         mvc.perform(ranged())
                 .andExpect(status().isOk())
@@ -80,11 +82,14 @@ class OverviewApiTest {
     void deadlineCountComesFromDueSoonAndExpiredDeadlines() throws Exception {
         when(repository.handlingStats(any(), any(), isNull(), isNull()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
-        when(deadlineService.countAttention(any(), any())).thenReturn(2L);
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(1L, 1L, 0L));
 
         mvc.perform(ranged())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deadlineReminderCount").value(2))
+                .andExpect(jsonPath("$.data.deadlineBreakdown.dueSoon").value(1))
+                .andExpect(jsonPath("$.data.deadlineBreakdown.expired").value(1))
+                .andExpect(jsonPath("$.data.deadlineBreakdown.missing").value(0))
                 .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("临期")))
                 .andExpect(jsonPath("$.data.averageHandlingSeconds").value(nullValue()))
                 .andExpect(jsonPath("$.data.handlingSampleCount").value(0));
@@ -95,8 +100,7 @@ class OverviewApiTest {
     void deadlineNoteMentionsUnevaluableCount() throws Exception {
         when(repository.handlingStats(any(), any(), isNull(), isNull()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
-        when(deadlineService.countAttention(any(), any())).thenReturn(0L);
-        when(deadlineService.countMissingData(any(), any())).thenReturn(24L);
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 24L));
 
         mvc.perform(ranged())
                 .andExpect(status().isOk())
@@ -111,7 +115,7 @@ class OverviewApiTest {
         when(repository.handlingStats(any(), any(), any(), any()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
         when(repository.reportCountsByEquipment(any(), any(), any(), any())).thenReturn(List.of());
-        when(deadlineService.countAttention(any(), any())).thenReturn(1L);
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(1L, 0L, 0L));
 
         mvc.perform(get("/api/v1/maintenance-overview")
                         .param("from", FROM).param("to", TO)
@@ -121,7 +125,7 @@ class OverviewApiTest {
 
         ArgumentCaptor<Long> equipment = ArgumentCaptor.forClass(Long.class);
         ArgumentCaptor<Long> workshop = ArgumentCaptor.forClass(Long.class);
-        verify(deadlineService).countAttention(equipment.capture(), workshop.capture());
+        verify(deadlineService).breakdown(equipment.capture(), workshop.capture());
         assertThat(equipment.getValue()).isEqualTo(3L);
         assertThat(workshop.getValue()).isEqualTo(2L);
     }
@@ -131,17 +135,22 @@ class OverviewApiTest {
         when(repository.handlingStats(any(), any(), isNull(), isNull()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
         when(repository.reportCountsByEquipment(any(), any(), isNull(), isNull())).thenReturn(List.of());
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 0L));
 
         mvc.perform(ranged())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.inspectionCount").value(0))
-                .andExpect(jsonPath("$.data.equipmentReportCounts").isEmpty());
+                .andExpect(jsonPath("$.data.equipmentReportCounts").isEmpty())
+                .andExpect(jsonPath("$.data.deadlineBreakdown.dueSoon").value(0))
+                .andExpect(jsonPath("$.data.deadlineBreakdown.expired").value(0))
+                .andExpect(jsonPath("$.data.deadlineBreakdown.missing").value(0));
     }
 
     @Test
     void equipmentAndWorkshopScopesArePassedToRepository() throws Exception {
         when(repository.handlingStats(any(), any(), any(), any()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 0L));
 
         mvc.perform(ranged().param("workshopId", "2").param("equipmentId", "3"))
                 .andExpect(status().isOk());

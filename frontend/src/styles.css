@@ -225,3 +225,40 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-reminder small{font-size:10px;color:#96a291}
 @media(max-width:1150px){.ops-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-snapshot{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.ops-flow{grid-template-columns:1fr}.ops-bar-name{flex-basis:88px}}
+
+/* ===== 概览可视化（2026-11 评审：指标图、时长条、期限分段条） ===== */
+.ops-metric-mini{display:block;height:3px;margin-top:9px;border-radius:2px;background:#edf1e7;overflow:hidden}
+.ops-metric-mini b{display:block;height:100%;border-radius:2px;transition:width .25s}
+.ops-metric-mini-good{background:#5b8f6f}
+.ops-metric-mini-warn{background:#c2a04a}
+.ops-metric-mini-bad{background:#b5694a}
+/* 竖直柱状图 */
+.ops-columns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;height:192px;padding:14px 20px 12px;border:1px solid #e8ede2;border-radius:8px;background:#fbfcf7}
+.ops-column{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.ops-column-value{font-size:13px;font-weight:600;color:#3c5238;font-variant-numeric:tabular-nums}
+.ops-column-track{flex:1;width:100%;max-width:58px;display:flex;align-items:flex-end;background:#f2f5ec;border:1px solid #eef2e8;border-radius:5px;overflow:hidden}
+.ops-column-bar{width:100%;border-radius:4px 4px 0 0;transition:height .3s}
+.ops-column-label{font-size:10px;color:#7c8a76;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* 平均处理时长 */
+.ops-duration{border:1px solid #e8ede2;border-radius:8px;background:#fbfcf7;padding:14px 18px 12px;margin-bottom:4px}
+.ops-duration-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.ops-duration-head strong{font-size:20px;color:#344b35;font-variant-numeric:tabular-nums}
+.ops-duration-head span{font-size:10px;color:#93a08b}
+.ops-duration-track{position:relative;height:9px;border-radius:5px;background:#eef2e8;overflow:hidden}
+.ops-duration-fill{display:block;height:100%;border-radius:5px;transition:width .3s}
+.ops-duration-good .ops-duration-fill{background:#5b8f6f}
+.ops-duration-warn .ops-duration-fill{background:#c2a04a}
+.ops-duration-bad .ops-duration-fill{background:#b5694a}
+.ops-duration-track i{position:absolute;top:0;width:1px;height:100%;background:#d6ddd0}
+.ops-duration-scale{display:flex;justify-content:space-between;margin-top:6px;font-size:9px;color:#a3aea0}
+/* 期限分段条 */
+.ops-deadline{border:1px solid #e8ede2;border-radius:8px;background:#fbfcf7;padding:14px 18px;margin-bottom:4px}
+.ops-deadline-bar{display:flex;height:14px;border-radius:4px;overflow:hidden;background:#f2f5ec}
+.ops-deadline-bar span{display:block;min-width:6px;height:100%}
+.ops-deadline-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:10px;color:#7c8a76}
+.ops-deadline-legend span{display:inline-flex;align-items:center;gap:6px}
+.ops-deadline-legend i{width:9px;height:9px;border-radius:2px}
+.ops-deadline-legend b{font-weight:600;color:#3c5238;font-variant-numeric:tabular-nums;margin-left:1px}
+.ops-chart-hint{font-size:10px;color:#8a9684;display:inline-flex;align-items:center}
+@media(max-width:900px){.ops-columns{grid-template-columns:repeat(2,minmax(0,1fr));height:auto}.ops-column-track{height:96px;flex:none}}
+.ops-chart-empty{margin:0 0 8px;padding:9px 13px;border:1px dashed #e2e8d9;border-radius:6px;background:#fbfcf6;font-size:10px;color:#8d9a86}

@@ -1,5 +1,6 @@
 package cn.copper.phase2.maintenance;
 
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
 import cn.copper.phase2.deadline.DeadlineService;
 import cn.copper.phase2.maintenance.OverviewModels.EquipmentReportCount;
 import cn.copper.phase2.maintenance.OverviewModels.MaintenanceOverview;
@@ -52,9 +53,9 @@ public class OverviewService {
         OverviewRepository.HandlingStats stats = repository.handlingStats(start, end, workshopId, equipmentId);
         List<EquipmentReportCount> byEquipment =
                 repository.reportCountsByEquipment(start, end, workshopId, equipmentId);
-        long deadlineReminderCount = deadlineService.countAttention(equipmentId, workshopId);
-        long deadlineMissingCount = deadlineService.countMissingData(equipmentId, workshopId);
-        String deadlineNote = deadlineNote(deadlineMissingCount);
+        DeadlineBreakdown deadline = deadlineService.breakdown(equipmentId, workshopId);
+        long deadlineReminderCount = deadline.attentionTotal();
+        String deadlineNote = deadlineNote(deadline.missing());
 
         return new MaintenanceOverview(
                 from,
@@ -68,6 +69,7 @@ public class OverviewService {
                 stats.sampleCount(),
                 byEquipment,
                 deadlineReminderCount,
+                deadline,
                 deadlineNote,
                 caliber(deadlineNote));
     }

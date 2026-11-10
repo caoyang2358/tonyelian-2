@@ -36,6 +36,19 @@ public final class DeadlineModels {
             List.of(STATE_MISSING_DATA, STATE_NORMAL, STATE_DUE_SOON, STATE_EXPIRED);
 
     /**
+     * 期限状态的分项计数，供概览画分段图：临期、超期、缺资料各多少条。
+     *
+     * <p>三者之和通常小于期限总条数——剩下的是状态正常的设备，图里不必画，
+     * 否则正常项会把真正需要注意的两段压得看不见。</p>
+     */
+    public record DeadlineBreakdown(long dueSoon, long expired, long missing) {
+        /** 需要处理的条数：临期 + 超期。缺资料单列，不算"已提醒"。 */
+        public long attentionTotal() {
+            return dueSoon + expired;
+        }
+    }
+
+    /**
      * 寿命到期前不足一年提示评估。
      *
      * <p>该阈值是固定的，<b>不</b>复用质保或维保的提前量——文档明确要求

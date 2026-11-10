@@ -208,7 +208,10 @@ export interface MaintenanceOverview {
   pendingRepairCount: number; completedRepairCount: number;
   averageHandlingSeconds: string | null; handlingSampleCount: number;
   equipmentReportCounts: EquipmentReportCount[];
-  deadlineReminderCount: number | null; deadlineReminderNote: string | null;
+  deadlineReminderCount: number | null;
+  /** 期限构成：临期 / 超期 / 缺资料；三者之和通常小于总条数（剩下为状态正常）。 */
+  deadlineBreakdown?: {dueSoon: number; expired: number; missing: number};
+  deadlineReminderNote: string | null;
   caliber: Record<string, string>;
 }
 

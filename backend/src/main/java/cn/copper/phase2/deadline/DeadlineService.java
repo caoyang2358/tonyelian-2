@@ -2,6 +2,7 @@ package cn.copper.phase2.deadline;
 
 import cn.copper.phase2.common.BusinessException;
 import cn.copper.phase2.common.PageResult;
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
 import cn.copper.phase2.deadline.DeadlineModels.DeadlineItem;
 import cn.copper.phase2.deadline.DeadlineRepository.DeadlineQuery;
 import cn.copper.phase2.reminder.ReminderSettingModels.ReminderSetting;
@@ -60,36 +61,28 @@ public class DeadlineService {
     }
 
     /**
-     * 当前处于「临期」或「已超期」的期限条数，供运维概览页签展示。
+     * 期限状态分项计数：临期、超期、缺资料各多少条，供运维概览画分段图。
      *
      * <p>与统计时间范围无关：期限看的是"查询这一刻"的状态，不是某个窗口内的发生量，
      * 因此不复用概览的 from/to——把期限塞进时间窗口会让"本月没有临期"这种结论失真。
      * 设备与车间筛选与列表口径一致，同时给出时取交集。</p>
+     *
+     * <p>一次取全三项而不是让调用方分别调三个方法：概览要同时展示总量与构成，
+     * 分开调会重复算同一套 CTE，且两次查询之间状态可能变化，图与数字对不上。</p>
      */
-    public long countAttention(Long equipmentId, Long workshopId) {
+    public DeadlineBreakdown breakdown(Long equipmentId, Long workshopId) {
         ReminderSetting setting = reminderSetting.current();
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
-        long dueSoon = repository.count(
-                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_DUE_SOON, 1, 1),
-                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
-        long expired = repository.count(
-                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_EXPIRED, 1, 1),
-                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
-        return dueSoon + expired;
+        return new DeadlineBreakdown(
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_DUE_SOON, setting, today),
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_EXPIRED, setting, today),
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_MISSING_DATA, setting, today));
     }
 
-    /**
-     * 期限数据缺失（缺投用日期、质保年限或维保合同等）的条数，供概览提示「还剩多少条待补资料」。
-     *
-     * <p>这类设备算不出到期日，既不算临期也不算超期，但也不能被静默忽略：
-     * 把「算不出来」显示成「没有风险」会让使用者误判，因此单独给出条数，
-     * 由概览一并说明。筛选口径与 {@link #countAttention} 一致。</p>
-     */
-    public long countMissingData(Long equipmentId, Long workshopId) {
-        ReminderSetting setting = reminderSetting.current();
-        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+    private long countByState(Long equipmentId, Long workshopId, String state,
+                              ReminderSetting setting, LocalDate today) {
         return repository.count(
-                new DeadlineQuery(equipmentId, workshopId, null, DeadlineModels.STATE_MISSING_DATA, 1, 1),
+                new DeadlineQuery(equipmentId, workshopId, null, state, 1, 1),
                 setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
     }
 
