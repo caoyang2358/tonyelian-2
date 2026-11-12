@@ -93,4 +93,32 @@ JOIN (
   UNION ALL SELECT 'TENSION-005', 'tension', '拉丝张力', 'N', 1
 ) x ON x.sensor_code = s.sensor_code;
 
+-- 参数 ID 在新库按上方顺序生成 1~16。初始规则与演示库同口径，限值均为演示值，
+-- 现场核实后应新建版本覆盖，不要直接修改历史版本。炉压等未列出参数不预置规则，
+-- 首次人工补录事件时后端会自动创建第 1 版。
+INSERT INTO p2_alert_rule_version
+  (parameter_id, rule_version, normal_lower, normal_upper, alarm_lower, alarm_upper,
+   unit_code, trigger_mode, enabled, effective_at, reason, operator_name)
+VALUES
+  (1, 1, 0, 80, NULL, 95, 'C', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：熔化炉上部温度 0~80℃，报警上限 95℃，待现场核实', '系统管理员'),
+  (2, 1, 0, 80, NULL, 95, 'C', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：熔化炉中部温度 0~80℃，报警上限 95℃，待现场核实', '系统管理员'),
+  (3, 1, 0, 80, NULL, 95, 'C', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：熔化炉底部温度 0~80℃，报警上限 95℃，待现场核实', '系统管理员'),
+  (4, 1, 0, 15, NULL, 20, 'Pa', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：炉压 0~15Pa，报警上限 20Pa，待现场核实', '系统管理员'),
+  (11, 1, 0, 80, NULL, 95, 'C', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：保温温度 0~80℃，报警上限 95℃，待现场核实', '系统管理员'),
+  (12, 1, 30, 80, 20, 90, 'PCT', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：铜液液位正常 30~80%，待现场核实', '系统管理员'),
+  (13, 1, 5, 25, 3, 30, 'M_PER_SEC', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：拉丝线速度 5~25 m/s，待现场核实', '系统管理员'),
+  (14, 1, 5, 40, 2, 50, 'N', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：拉丝张力 5~40N，待现场核实', '系统管理员'),
+  (15, 1, 5, 25, 3, 30, 'M_PER_SEC', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：拉丝线速度 5~25 m/s，待现场核实', '系统管理员'),
+  (16, 1, 5, 40, 2, 50, 'N', 'IMMEDIATE', 1, NOW(3),
+   '演示初始规则：拉丝张力 5~40N，待现场核实', '系统管理员');
+
 COMMIT;
