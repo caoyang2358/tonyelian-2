@@ -210,7 +210,7 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
           <button type="button" className="eq-sensor-head" aria-expanded={expanded === sensor.sensorId}
                   onClick={() => void toggle(sensor)}>
             <span className="eq-sensor-id">
-              <strong>{sensor.sensorCode}</strong>
+              <strong><span className="eq-id-tag">测点编号</span>{sensor.sensorCode}</strong>
               <small>{sensor.name} · {sensor.sensorType ?? '类型未填'}</small>
             </span>
             <span className="eq-sensor-meta">
@@ -255,7 +255,7 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
                     const latest = readings[parameter.parameterId];
                     return <li key={parameter.parameterId} className="eq-sensor-param">
                       <span className="eq-sensor-param-name">
-                        <strong>{parameter.parameterCode}</strong>
+                        <strong><span className="eq-id-tag">参数编码</span>{parameter.parameterCode}</strong>
                         <small>{parameter.name} · {parameter.dataType}{parameter.unitCode ? ` · ${parameter.unitCode}` : ' · 单位未配'}</small>
                       </span>
                       <span className="eq-sensor-value">
@@ -297,7 +297,7 @@ export function SensorsTab({equipmentId, refreshToken}: {equipmentId: string; re
 
     {reading && <SensorReadingsDialog
       parameterId={reading.parameterId}
-      title={`${reading.sensor.sensorCode} · ${reading.parameterName}`}
+      title={`测点编号 ${reading.sensor.sensorCode} · 参数 ${reading.parameterName}`}
       unitCode={reading.unitCode}
       decimalPlaces={reading.decimalPlaces}
       onClose={() => setReading(null)} />}
