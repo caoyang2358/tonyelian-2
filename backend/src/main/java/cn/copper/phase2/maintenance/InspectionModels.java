@@ -9,7 +9,12 @@ import java.util.List;
 public final class InspectionModels {
     private InspectionModels() {}
 
-    /** 列表行：含设备、实际巡检时刻、巡检人、结果及关联报修单。 */
+    /**
+     * 列表行：含设备、实际巡检时刻、巡检人、结果及关联报修单。
+     *
+     * <p>{@code repairOrderStatuses} 与 {@code repairOrderIds} 同序，供列表展示"报修到哪一步"；
+     * 页面只渲染状态标签，不渲染主键，主键留给详情定位用。</p>
+     */
     public record InspectionItem(
             String inspectionId,
             String equipmentId,
@@ -18,11 +23,16 @@ public final class InspectionModels {
             String inspectorName,
             String result,
             List<String> repairOrderIds,
+            List<String> repairOrderStatuses,
             int photoCount,
             int version) {}
 
     /**
      * 详情：在列表行基础上补巡检内容、情况说明与录入时间。
+     *
+     * <p>{@code inspectorName} 是实际巡检人，{@code operatorName} 是登记这条记录的人；
+     * 两者可以不同（见《系统一-运维管理页面接口文档》§3 说明），更正后原登记人保持不变，
+     * 更正人只记在 p2_change_log 里。</p>
      *
      * <p>{@code photoCount} 只是"有没有现场照片"的提示，照片本身走共用附件接口
      * （ownerType=INSPECTION、ownerId=巡检编号）按需拉取，避免详情体里塞一堆二进制地址。</p>
@@ -33,6 +43,7 @@ public final class InspectionModels {
             String equipmentName,
             OffsetDateTime inspectedAt,
             String inspectorName,
+            String operatorName,
             String content,
             String result,
             String description,

@@ -113,8 +113,7 @@ public class InspectionService {
         InspectionDetail before = repository.findInspection(id);
         repository.updateInspection(id,
                 MaintenanceTimes.toLocal(MaintenanceTimes.parseMoment("inspectedAt", request.inspectedAt())),
-                request.inspectorName(), request.content(), request.result(), request.description(),
-                request.operatorName());
+                request.inspectorName(), request.content(), request.result(), request.description());
         InspectionDetail after = repository.findInspection(id);
 
         long changeLogId = repository.insertChangeLog("INSPECTION", String.valueOf(id), OPERATION_UPDATE,

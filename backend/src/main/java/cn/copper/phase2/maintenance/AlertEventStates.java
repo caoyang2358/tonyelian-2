@@ -54,5 +54,15 @@ final class AlertEventStates {
     static final String SORT_PRIORITY = "PRIORITY";
     static final Set<String> SORTS = Set.of(SORT_TIME, SORT_PRIORITY);
 
+    /**
+     * 事件来源：采集判定还是人工补录。
+     *
+     * <p>存在 {@code source_reference.type} 里，列表用标签区分两者——补录事件同样是事实记录，
+     * 但来源必须一眼可见，不能让补录冒充自动判定。</p>
+     */
+    static final String SOURCE_REALTIME = "REALTIME";
+    static final String SOURCE_HISTORY = "HISTORY";
+    static final String SOURCE_MANUAL = "MANUAL";
+
     private AlertEventStates() {}
 }

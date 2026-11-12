@@ -61,7 +61,7 @@ class InspectionWriteApiTest {
     @MockitoBean private IdempotencyRepository idempotencyRepository;
 
     private InspectionDetail detail(int version) {
-        return new InspectionDetail("7", "3", "1#结晶牵引机", INSPECTED_AT, "李四",
+        return new InspectionDetail("7", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "张顺",
                 "检查结晶轮与牵引速度", "ABNORMAL", "牵引速度波动偏大", List.of(), 0,
                 INSPECTED_AT.plusMinutes(3), version);
     }
@@ -182,7 +182,7 @@ class InspectionWriteApiTest {
 
         verify(repository).updateInspection(7L,
                 java.time.LocalDateTime.of(2026, 11, 3, 9, 15), "李四四",
-                "检查结晶轮与牵引速度", "NORMAL", "复核后确认无异常", "张顺");
+                "检查结晶轮与牵引速度", "NORMAL", "复核后确认无异常");
     }
 
     @Test
@@ -208,7 +208,7 @@ class InspectionWriteApiTest {
                 .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"))
                 .andExpect(jsonPath("$.data.currentVersion").value(2));
 
-        verify(repository, never()).updateInspection(anyLong(), any(), anyString(), anyString(), anyString(), any(), anyString());
+        verify(repository, never()).updateInspection(anyLong(), any(), anyString(), anyString(), anyString(), any());
     }
 
     @Test
