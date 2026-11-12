@@ -3,8 +3,8 @@ import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, repairOrderApi, toOffsetIso } from '../../lib/maintenanceApi';
 import type { RepairActionItem, RepairOrderDetail, RepairOrderItem } from '../../lib/maintenanceApi';
 import {
-  acceptanceResultLabels, actionTypeLabels, faultCategoryLabels, formatTime,
-  label, localInputValue, orderStatusLabels, reviewResultLabels, sourceTypeLabels,
+  acceptanceResultLabels, actionTypeLabels, endReasonLabels, faultCategoryLabels, formatReading, formatTime,
+  formatUnit, label, localInputValue, orderStatusLabels, parameterText, reviewResultLabels, sourceTypeLabels,
 } from './labels';
 import { EquipmentSelect, Pager, PhotoPicker, PhotoSection, uploadPhotos, useOperatorName } from './shared';
 import type { RepairHandoff } from './shared';
@@ -51,26 +51,34 @@ const snapshotLabels: Record<string, string> = {
   triggerValue: '触发数值', unitCode: '单位', triggeredAt: '触发时间', startedAt: '开始时间',
   recoveredAt: '恢复时间', endedAt: '结束时间', endReason: '结束原因',
   inspectedAt: '巡检时间', inspectorName: '巡检人', content: '巡检内容', description: '情况说明',
-  result: '巡检结果', eventVersion: '事件版本', inspectionVersion: '巡检版本',
+  result: '巡检结果',
 };
 const snapshotOrder = [
-  'eventId', 'inspectionId', 'equipmentName', 'sensorCode', 'parameterCode', 'triggerValue', 'unitCode',
+  'eventId', 'inspectionId', 'equipmentName', 'sensorCode', 'parameterCode', 'parameterName',
+  'triggerValue', 'unitCode',
   'triggeredAt', 'startedAt', 'recoveredAt', 'endedAt', 'endReason',
   'inspectedAt', 'inspectorName', 'result', 'content', 'description',
 ];
 
-/** 来源快照翻成业务字段；不再把 JSON 原样抛给使用者。 */
+/** 来源快照翻成业务字段；不再把 JSON 原样抛给使用者，枚举码也一并翻成中文。 */
 function snapshotRows(snapshot: unknown): {label: string; text: string}[] {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return [];
   const source = snapshot as Record<string, unknown>;
+  const hasParameterName = typeof source.parameterName === 'string' && source.parameterName !== '';
   const rows: {label: string; text: string}[] = [];
   for (const key of snapshotOrder) {
+    // 有中文参数名时不再单列英文编码，避免同一件事出现两行。
+    if (key === 'parameterCode' && hasParameterName) continue;
     const raw = source[key];
     if (raw === undefined || raw === null || raw === '') continue;
     const name = snapshotLabels[key] ?? key;
-    const text = key === 'result'
-      ? label({NORMAL: '正常', ABNORMAL: '异常'}, String(raw))
-      : /At$/.test(key) ? formatTime(String(raw)) : String(raw);
+    const value = String(raw);
+    const text = key === 'result' ? label({NORMAL: '正常', ABNORMAL: '异常'}, value)
+      : key === 'triggerValue' ? formatReading(value)
+      : key === 'unitCode' ? formatUnit(value)
+      : key === 'endReason' ? label(endReasonLabels, value)
+      : key === 'parameterCode' ? parameterText(value)
+      : /At$/.test(key) ? formatTime(value) : value;
     rows.push({label: name, text});
   }
   return rows;
@@ -187,11 +195,11 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
           reporterName: saveReporter.trim() || who,
           faultCategory: saveFault || null, photoAttachmentIds: photoIds,
         });
-        await refreshAfterAction(detail.repairOrderId, `报修资料已保存，新版本 ${data.repairOrder.version}，状态「${label(orderStatusLabels, data.repairOrder.status)}」。`);
+        await refreshAfterAction(detail.repairOrderId, `报修资料已保存，状态「${label(orderStatusLabels, data.repairOrder.status)}」。`);
       } else if (kind === 'submit') {
         if (!saveDescription.trim()) { setFeedback({kind: 'error', text: '正式提交前必须填写故障描述。'}); return; }
         const data = await repairOrderApi.submit(detail.repairOrderId, {operatorName: who, expectedVersion: version});
-        await refreshAfterAction(detail.repairOrderId, `已提交，进入「${label(orderStatusLabels, data.status)}」，新版本 ${data.version}。`);
+        await refreshAfterAction(detail.repairOrderId, `已提交，进入「${label(orderStatusLabels, data.status)}」。`);
       } else if (kind === 'review') {
         if (!reviewReason.trim()) { setFeedback({kind: 'error', text: '审核必须填写意见。'}); return; }
         if (reviewResult === 'APPROVE' && !reviewHandler.trim()) { setFeedback({kind: 'error', text: '通过审核时必须指定维修人（派工对象）。'}); return; }
@@ -200,25 +208,25 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
         const data = await repairOrderApi.review(detail.repairOrderId, {
           operatorName: who, expectedVersion: version, result: reviewResult, reason,
         });
-        await refreshAfterAction(detail.repairOrderId, `${label(reviewResultLabels, reviewResult)}已提交，状态「${label(orderStatusLabels, data.status)}」，新版本 ${data.version}。`);
+        await refreshAfterAction(detail.repairOrderId, `${label(reviewResultLabels, reviewResult)}已提交，状态「${label(orderStatusLabels, data.status)}」。`);
       } else if (kind === 'repair') {
         if (!repairDescription.trim()) { setFeedback({kind: 'error', text: '请填写维修内容。'}); return; }
         const data = await repairOrderApi.recordRepairResult(detail.repairOrderId, {
           operatorName: who, expectedVersion: version, performedAt: toOffsetIso(localInputValue()) ?? '',
           description: repairDescription.trim(), attachmentIds: photoIds,
         });
-        await refreshAfterAction(detail.repairOrderId, `维修结果已登记，进入「${label(orderStatusLabels, data.status)}」，新版本 ${data.version}。`);
+        await refreshAfterAction(detail.repairOrderId, `维修结果已登记，进入「${label(orderStatusLabels, data.status)}」。`);
       } else {
         if (acceptResult === 'FAIL' && !acceptReason.trim()) { setFeedback({kind: 'error', text: '验收不通过必须填写原因。'}); return; }
         const data = await repairOrderApi.accept(detail.repairOrderId, {
           operatorName: who, expectedVersion: version, result: acceptResult,
           acceptedAt: toOffsetIso(localInputValue()) ?? '', reason: acceptReason.trim(),
         });
-        await refreshAfterAction(detail.repairOrderId, `验收完成（${label(acceptanceResultLabels, acceptResult)}），状态「${label(orderStatusLabels, data.status)}」，新版本 ${data.version}。`);
+        await refreshAfterAction(detail.repairOrderId, `验收完成（${label(acceptanceResultLabels, acceptResult)}），状态「${label(orderStatusLabels, data.status)}」。`);
       }
     } catch (error) {
       if (error instanceof MaintenanceApiError && error.code === 'VERSION_CONFLICT') {
-        setFeedback({kind: 'error', text: `${error.message} 请重新点击该工单获取最新版本后再操作。`});
+        setFeedback({kind: 'error', text: `${error.message} 这张工单刚被别人处理过，请重新点开后再试。`});
         await loadList();
       } else {
         setFeedback({kind: 'error', text: error instanceof MaintenanceApiError ? error.message : '操作失败，请重试。'});
@@ -305,7 +313,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
 
   return <>
     <section className="panel" aria-label="新建报修工单">
-      <div className="panel-heading"><div><h2>新建报修工单</h2><p>选设备、填现象、归类故障即可；未提交的工单不计入任何统计</p></div></div>
+      <div className="panel-heading"><div><h2>新建报修工单</h2><p>未正式提交的工单不计入统计</p></div></div>
       <div className="ops-form">
         <div className="ops-form-row">
           <label className="select-field"><span>来源</span>
@@ -340,7 +348,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
     </section>
 
     <section className="panel" aria-label="工单列表">
-      <div className="panel-heading"><div><h2>维修工单<span className="panel-count">{items ? `${total} 张` : '等待读取'}</span></h2><p>报修提交 → 审核派工 → 维修处理 → 验收关闭</p></div></div>
+      <div className="panel-heading"><div><h2>维修工单<span className="panel-count">{items ? `${total} 张` : '等待读取'}</span></h2></div></div>
       <div className="filters">
         <label className="select-field"><span>工单状态</span>
           <select value={status} onChange={event => {setStatus(event.target.value); setPage(1);}}>
@@ -425,12 +433,12 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
     </section>}
 
     {detail && <section className="panel" aria-label="当前环节操作">
-      <div className="panel-heading"><div><h2>{current >= 4 ? '流程已结束' : `当前环节：${flowSteps[current].title}`}</h2><p>只显示当前状态下可做的操作；并发冲突时后端返回 409 并提示刷新</p></div></div>
+      <div className="panel-heading"><div><h2>{current >= 4 ? '流程已结束' : `当前环节：${flowSteps[current].title}`}</h2></div></div>
       <div className="ops-form">
         <div className="ops-form-row">
           <label className="select-field"><span>经办人</span>
             <input value={operator} onChange={event => setOperator(event.target.value)} size={8} placeholder="请填写姓名" /></label>
-          <span className="ops-form-context ops-inline-context">当前版本 <strong>{version}</strong></span>
+          <span className="ops-form-context ops-inline-context">同一张工单多人同时操作时，后提交的会被拒绝，重新点开再试即可</span>
         </div>
 
         {editable && <>

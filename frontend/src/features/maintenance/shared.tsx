@@ -2,6 +2,29 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { AttachmentItem, Equipment } from '../../lib/api';
 import { newRequestId } from '../../lib/maintenanceApi';
+import { label } from './labels';
+
+/* ================= 状态标签 =================
+ * 事件、巡检、工单三张表共用一套配色：进行中蓝、已完结绿、待办黄、异常红、其余灰。
+ * 放在 shared 里，避免各处重复定义导致同一状态两种颜色。 */
+export function stateTagClass(state: string): string {
+  if (state === 'ONGOING' || state === 'IN_REPAIR') return 'ops-tag-blue';
+  if (state === 'RECOVERED' || state === 'ACKNOWLEDGED' || state === 'COMPLETED') return 'ops-tag-green';
+  if (state === 'PENDING' || state === 'DEFER_REPAIR' || state === 'RETURNED_FOR_INFO' || state === 'REVIEW_PENDING') return 'ops-tag-amber';
+  if (state === 'ABNORMAL') return 'ops-tag-red';
+  return 'ops-tag-gray';
+}
+
+export function Tag({value, map}: {value: string; map: Record<string, string>}) {
+  return <span className={`ops-tag ${stateTagClass(value)}`}>{label(map, value)}</span>;
+}
+
+/* ================= 口径/术语提示 =================
+ * 标题旁的小问号：悬停或键盘聚焦才展开说明，避免页面上铺满解释性文字。 */
+export function Tip({text}: {text: string | undefined}) {
+  if (!text) return null;
+  return <span className="ops-tip" tabIndex={0} role="note" aria-label={text} data-tip={text}>?</span>;
+}
 
 /* ================= 经办人记忆 =================
  * 项目暂无登录体系，经办人无法由会话带入；至少记住上次填写的值，
@@ -117,7 +140,8 @@ export function Pager({page, pageSize, total, unit, onPage, onPageSize}: PagerPr
 /* ================= 跨页签报修交接 ================= */
 
 export interface RepairHandoff {
-  sourceType: 'ALERT_EVENT' | 'INSPECTION';
+  /** MANUAL 用于设备没有测点、无法登记事件时直接建单，此时 sourceId 为空。 */
+  sourceType: 'ALERT_EVENT' | 'INSPECTION' | 'MANUAL';
   sourceId: string;
   equipmentId: string;
   summary: string;

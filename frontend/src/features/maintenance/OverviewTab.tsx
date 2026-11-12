@@ -3,13 +3,7 @@ import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, overviewApi } from '../../lib/maintenanceApi';
 import type { MaintenanceOverview } from '../../lib/maintenanceApi';
 import { localInputValue } from './labels';
-import { EquipmentSelect, useWorkshopOptions } from './shared';
-
-/** 口径说明只在悬停/聚焦时出现：列表里铺十行小字，反而没人看。 */
-function Tip({text}: {text: string | undefined}) {
-  if (!text) return null;
-  return <span className="ops-tip" tabIndex={0} role="note" aria-label={text} data-tip={text}>?</span>;
-}
+import { EquipmentSelect, Tip, useWorkshopOptions } from './shared';
 
 /** 时长条的满量程：超过 2 小时按满格显示，避免个别长单把其余指标压成一条线。 */
 const DURATION_FULL_SCALE = 2 * 60 * 60;
@@ -52,13 +46,18 @@ export function OverviewTab() {
   const [data, setData] = useState<MaintenanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 快捷范围选中值（分钟）；手改时间即视为自定义，清空高亮。
+  const [presetMinutes, setPresetMinutes] = useState<number | null>(30 * 24 * 60);
 
-  const load = useCallback(async () => {
+  /** range 用于快捷按钮：此时 state 还没更新，直接按新范围查，避免读到旧闭包。 */
+  const load = useCallback(async (range?: {from: string; to: string}) => {
+    const fromValue = range?.from ?? from;
+    const toValue = range?.to ?? to;
     setLoading(true);
     try {
       const result = await overviewApi.maintenanceOverview({
-        from: new Date(from).toISOString(),
-        to: new Date(to).toISOString(),
+        from: new Date(fromValue).toISOString(),
+        to: new Date(toValue).toISOString(),
         workshopId: workshopId.trim() || undefined,
         equipmentId: equipmentId.trim() || undefined,
       });
@@ -70,6 +69,16 @@ export function OverviewTab() {
       setLoading(false);
     }
   }, [from, to, workshopId, equipmentId]);
+
+  /** 快捷范围：点一下改时间并立即统计，按钮同时高亮，让人看得出生效了。 */
+  const applyPreset = (minutes: number) => {
+    const nextFrom = localInputValue(-minutes);
+    const nextTo = localInputValue();
+    setFrom(nextFrom);
+    setTo(nextTo);
+    setPresetMinutes(minutes);
+    void load({from: nextFrom, to: nextTo});
+  };
 
   // 进入页签先给一份默认区间的数据：让人先看见图，再决定要不要改筛选。
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -97,12 +106,12 @@ export function OverviewTab() {
 
   return <>
     <section className="panel" aria-label="运维概览查询">
-      <div className="panel-heading"><div><h2>运维概览</h2><p>数字旁的小问号悬停即看统计口径；未正式提交的工单不计入</p></div></div>
+      <div className="panel-heading"><div><h2>运维概览</h2></div></div>
       <div className="filters">
         <label className="select-field"><span>开始时间</span>
-          <input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
+          <input type="datetime-local" value={from} onChange={event => { setFrom(event.target.value); setPresetMinutes(null); }} /></label>
         <label className="select-field"><span>结束时间</span>
-          <input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
+          <input type="datetime-local" value={to} onChange={event => { setTo(event.target.value); setPresetMinutes(null); }} /></label>
         <label className="select-field"><span>车间</span>
           <select value={workshopId} onChange={event => setWorkshopId(event.target.value)}>
             <option value="">全部车间</option>
@@ -110,9 +119,13 @@ export function OverviewTab() {
           </select></label>
         <EquipmentSelect label="设备" value={equipmentId} onChange={setEquipmentId} allowEmpty emptyLabel="全部设备" />
         <button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>{loading ? '统计中…' : '统计'}</button>
-        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60)); setTo(localInputValue());}}>最近 24 小时</button>
-        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60 * 7)); setTo(localInputValue());}}>最近 7 天</button>
-        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60 * 30)); setTo(localInputValue());}}>最近 30 天</button>
+        {[{label: '最近 24 小时', minutes: 24 * 60}, {label: '最近 7 天', minutes: 7 * 24 * 60},
+          {label: '最近 30 天', minutes: 30 * 24 * 60}].map(item => (
+          <button key={item.minutes} type="button" disabled={loading}
+            className={presetMinutes === item.minutes ? 'reset-filter is-active' : 'reset-filter'}
+            aria-pressed={presetMinutes === item.minutes}
+            onClick={() => applyPreset(item.minutes)}>{item.label}</button>
+        ))}
       </div>
       {error && <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法完成统计</h3><p>{error}</p></div></div>}
       {data && <>

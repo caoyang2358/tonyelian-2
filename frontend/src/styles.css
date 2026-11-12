@@ -65,6 +65,14 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:3px}
 .ops-feedback-ok{font-size:11px;color:#527a3c;background:#eff6e3;border:1px solid #e0ecd0;border-radius:6px;padding:9px 12px;margin:12px 0 0;line-height:1.7}
 .ops-feedback-error{font-size:11px;color:#9c5a34;background:#fbf2e7;border:1px solid #f0e2cd;border-radius:6px;padding:9px 12px;margin:12px 0 0;line-height:1.7}
+.ops-feedback-hint{font-size:11px;color:#8a6a3a;background:#fdf8ee;border:1px solid #f0e5d0;border-radius:6px;padding:9px 12px;margin:12px 0;line-height:1.9}
+.ops-check-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#5a6b57;background:#f6f8f3;border:1px solid #e7eddf;border-radius:6px;padding:9px 12px;margin:0 0 12px}
+.ops-check{display:flex;align-items:center;gap:7px;cursor:pointer}
+.ops-check input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:#6f8f57;cursor:pointer}
+.ops-check-row select{border:1px solid #e1e7dc;border-radius:5px;background:#fff;color:#3a4d36;font-size:11px;height:30px;padding:0 8px}
+.ops-check-note{color:#8a9684}
+.link-button{border:0;background:none;padding:0;font:inherit;color:#5f7a4d;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.link-button:hover{color:#44603a}
 .ops-history{margin-top:16px;border-top:1px dashed #e4eae0;padding-top:13px}
 .ops-history h3{font-size:11px;font-weight:600;color:#4f6547;margin:0 0 9px}
 .ops-actions-available{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:10px;color:#8a9684;margin:4px 0 6px}
@@ -262,3 +270,6 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-chart-hint{font-size:10px;color:#8a9684;display:inline-flex;align-items:center}
 @media(max-width:900px){.ops-columns{grid-template-columns:repeat(2,minmax(0,1fr));height:auto}.ops-column-track{height:96px;flex:none}}
 .ops-chart-empty{margin:0 0 8px;padding:9px 13px;border:1px dashed #e2e8d9;border-radius:6px;background:#fbfcf6;font-size:10px;color:#8d9a86}
+
+.reset-filter.is-active{color:var(--brand);font-weight:600;text-decoration:underline;text-underline-offset:4px}
+.reset-filter:disabled{opacity:.55;cursor:progress}

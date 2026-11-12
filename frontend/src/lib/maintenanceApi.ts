@@ -56,11 +56,20 @@ export function toOffsetIso(value: string): string | null {
 export interface AlertEventItem {
   eventId: string; equipmentId: string; equipmentName: string;
   sensorId: string; sensorCode: string; parameterId: string; parameterCode: string;
+  /** 参数中文名：界面优先展示它，编码只在缺失时兜底。 */
+  parameterName?: string | null;
   startedAt: string; triggeredAt: string; recoveredAt: string | null; endedAt: string | null;
   endReason: string | null; eventState: string; handlingState: string;
   /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
   priority: string;
-  repairOrderIds: string[]; version: number;
+  /** 触发时的读数与单位：列表直接可见超限程度，不必逐条点开详情。 */
+  triggerValue: string | null; unitCode: string | null;
+  /** 事件来源：REALTIME/HISTORY 为采集判定，MANUAL 为人工补录；列表据此打标签。 */
+  sourceType?: string | null;
+  repairOrderIds: string[];
+  /** 与 repairOrderIds 同序；列表只展示状态（未报修 / 维修中 / 已完成…），单号在详情里看。 */
+  repairOrderStatuses?: string[];
+  version: number;
 }
 export interface AlertEventPage { items: AlertEventItem[]; page: number; pageSize: number; total: number }
 export interface RuleSnapshot {
@@ -77,6 +86,13 @@ export interface AlertEventDetail extends AlertEventItem {
 export interface HandlingRecordItem { handlingRecordId: string; action: string; reason: string; operatorName: string; recordedAt: string }
 export interface HandlingRecordPage { items: HandlingRecordItem[]; page: number; pageSize: number; total: number }
 export interface HandlingResult { handlingRecordId: string; handlingState: string; version: number; updatedAt: string }
+
+/** 人工补录请求体：设备与单位由后端按测点/参数补齐，这里只提交人工填写的部分。 */
+export interface ManualEventInput {
+  requestId: string; sensorId: string; parameterId: string;
+  triggerValue: string; startedAt: string; triggeredAt?: string | null;
+  reason: string; operatorName: string;
+}
 
 /** 列表排序：TIME = 触发时间倒序（默认），PRIORITY = 未恢复且未处理的事件优先。 */
 export type AlertEventSort = 'TIME' | 'PRIORITY';
@@ -98,6 +114,8 @@ export const maintenanceApi = {
   alertEvents: (filter: AlertEventFilter = {}, page = 1, pageSize = 20) =>
     request<AlertEventPage>('GET', `/alert-events${queryOf({...filter, page, pageSize})}`),
   alertEvent: (eventId: string) => request<AlertEventDetail>('GET', `/alert-events/${encodeURIComponent(eventId)}`),
+  /** S1-A05 人工补录：写事实，因此后端强制要求补录人与补录原因，并把来源标成 MANUAL。 */
+  createAlertEvent: (body: ManualEventInput) => request<AlertEventDetail>('POST', '/alert-events', body),
   handlingRecords: (eventId: string, page = 1, pageSize = 20) =>
     request<HandlingRecordPage>('GET', `/alert-events/${encodeURIComponent(eventId)}/handling-records${queryOf({page, pageSize})}`),
   addHandlingRecord: (eventId: string, body: {requestId: string; operatorName: string; expectedVersion: number; action: string; reason: string}) =>
@@ -108,11 +126,14 @@ export interface InspectionItem {
   inspectionId: string; equipmentId: string; equipmentName: string;
   inspectedAt: string; inspectorName: string; content: string; result: string;
   repairOrderIds: string[];
+  /** 与 repairOrderIds 同序的工单状态；列表只展示状态标签，不展示主键。 */
+  repairOrderStatuses?: string[];
   /** 现场照片张数；照片本身走共用附件接口按需拉取。 */
   photoCount: number;
   version: number;
 }
 export interface InspectionPage { items: InspectionItem[]; page: number; pageSize: number; total: number }
+/** 详情：inspectorName 为实际巡检人，operatorName 为原登记人（更正后不变，更正人另填经办人）。 */
 export interface InspectionDetail extends InspectionItem { description: string | null; operatorName: string; recordedAt: string }
 export interface InspectionFilter { equipmentId?: string; result?: string; from?: string; to?: string }
 
