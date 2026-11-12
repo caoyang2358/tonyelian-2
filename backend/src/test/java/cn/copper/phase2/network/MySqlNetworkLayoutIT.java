@@ -39,6 +39,7 @@ class MySqlNetworkLayoutIT {
         List<String> requests = new java.util.ArrayList<>();
         try {
             String equipment = equipment(first, "network-a-" + suffix);
+            String sameNameEquipment = equipment(first, "network-c-" + suffix);
             String foreign = equipment(second, "network-b-" + suffix);
             String sensorCode = "network-s-" + suffix;
             jdbc.update("INSERT INTO dim_sensor(sensor_code, sensor_name, equipment_id) VALUES (?, '测试测点', ?)",
@@ -60,9 +61,9 @@ class MySqlNetworkLayoutIT {
             Node a = new Node("device", "EQUIPMENT", equipment, "0", "100");
             Node b = new Node("sensor", "SENSOR", sensor, "20.123456", "32");
             Edge edge = new Edge("link", "device", "sensor", "示意连线");
-            Node repeatedDevice = new Node("z-device", "EQUIPMENT", equipment, "60", "50");
+            Node sameNameDevice = new Node("z-device", "EQUIPMENT", sameNameEquipment, "60", "50");
             Node repeatedSensor = new Node("z-sensor", "SENSOR", sensor, "70", "50");
-            Command prepared = command(requests, 0, List.of(a, b, repeatedDevice, repeatedSensor), List.of(edge));
+            Command prepared = command(requests, 0, List.of(a, b, sameNameDevice, repeatedSensor), List.of(edge));
             Command initial = new Command(prepared.requestId(), prepared.operatorName(), 0L, null,
                     prepared.nodes(), prepared.edges());
             JsonNode firstResult = send(first, initial, 200, "OK");
@@ -81,8 +82,13 @@ class MySqlNetworkLayoutIT {
 
             var saved = layout(first, true);
             assertEquals(4, saved.path("nodes").size());
-            assertEquals(equipment, saved.path("nodes").get(2).path("objectId").asText());
+            assertEquals(sameNameEquipment, saved.path("nodes").get(2).path("objectId").asText());
             assertEquals(sensor, saved.path("nodes").get(3).path("objectId").asText());
+            assertEquals(saved.path("sensorOwners"), firstResult.path("sensorOwners"));
+            assertEquals(1, saved.path("sensorOwners").size());
+            assertEquals(equipment, saved.path("sensorOwners").path(sensor).path("equipmentId").asText());
+            assertEquals(sensorCode, saved.path("sensorOwners").path(sensor).path("sensorCode").asText());
+            assertEquals("测试测点", saved.path("sensorOwners").path(sensor).path("name").asText());
             assertEquals(1, saved.path("latestBySensorId").size());
             assertEquals("20.123456", saved.path("nodes").get(1).path("xPercent").asText());
             assertEquals("示意连线", saved.path("edges").get(0).path("label").asText());
@@ -101,11 +107,20 @@ class MySqlNetworkLayoutIT {
             send(first, command(requests, 1, List.of(new Node("foreign", "EQUIPMENT", foreign, "10", "10")), List.of()),
                     409, "STATE_CONFLICT");
             send(first, command(requests, 1, List.of(a, a), List.of()), 400, "VALIDATION_ERROR");
+            Node repeatedDevice = new Node("repeated-device", "EQUIPMENT", "0" + equipment, "60", "50");
+            send(first, command(requests, 1, List.of(a, repeatedDevice), List.of()), 400, "VALIDATION_ERROR");
+            send(first, command(requests, 1, List.of(sameNameDevice, b), List.of()), 400, "VALIDATION_ERROR");
             assertEquals(saved, layout(first, true));
             assertEquals(1, auditCount(first));
 
+            jdbc.update("""
+                    INSERT INTO p2_network_node(workshop_id, node_id, equipment_id, x_percent, y_percent)
+                    VALUES (?, 'legacy-duplicate', ?, 50, 50)
+                    """, Long.parseLong(first), Long.parseLong(equipment));
+            assertEquals(5, layout(first, false).path("nodes").size());
+
             Command left = command(requests, 1, List.of(a), List.of());
-            Command right = command(requests, 1, List.of(b), List.of());
+            Command right = command(requests, 1, List.of(a, b), List.of());
             var start = new CyclicBarrier(2);
             var pool = Executors.newFixedThreadPool(2);
             try {
