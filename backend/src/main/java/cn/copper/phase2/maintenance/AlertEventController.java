@@ -7,12 +7,15 @@ import cn.copper.phase2.maintenance.AlertEventModels.AlertEventQuery;
 import cn.copper.phase2.maintenance.AlertEventModels.HandlingCommand;
 import cn.copper.phase2.maintenance.AlertEventModels.HandlingRecordPage;
 import cn.copper.phase2.maintenance.AlertEventModels.HandlingResult;
+import cn.copper.phase2.maintenance.AlertEventModels.ManualEventCommand;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -36,10 +39,11 @@ public class AlertEventController {
             @RequestParam(required = false) String handlingState,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) String sort,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer pageSize) {
         AlertEventQuery query = new AlertEventQuery(
-                equipmentId, sensorId, parameterId, eventState, handlingState, from, to);
+                equipmentId, sensorId, parameterId, eventState, handlingState, from, to, sort);
         return ApiResponse.success(service.events(query, page, pageSize));
     }
 
@@ -60,5 +64,17 @@ public class AlertEventController {
     public ApiResponse<HandlingResult> handle(@PathVariable String eventId,
                                               @RequestBody HandlingCommand command) {
         return ApiResponse.success(service.handle(eventId, command));
+    }
+
+    /**
+     * S1-A05 人工补录异常事件。
+     *
+     * <p>与 S1-A03 的方向相反：那个只记人工动作、不动事实；这个写事实，因此必须带补录人与
+     * 补录原因，并在 source_reference 里标成 MANUAL，列表上用标签与采集判定分开。</p>
+     */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<AlertEventDetail> createManualEvent(@RequestBody ManualEventCommand command) {
+        return ApiResponse.success(service.createManual(command));
     }
 }

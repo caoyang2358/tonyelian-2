@@ -12,7 +12,7 @@ import java.util.List;
 public final class AlertEventModels {
     private AlertEventModels() {}
 
-    /** 列表行：设备测点身份、时间线、推导出的两个状态及关联工单。 */
+    /** 列表行：设备测点身份、时间线、推导出的两个状态、处理优先级、超限数值及关联工单。 */
     public record AlertEventItem(
             String eventId,
             String equipmentId,
@@ -21,6 +21,8 @@ public final class AlertEventModels {
             String sensorCode,
             String parameterId,
             String parameterCode,
+            /** 参数中文名（如「熔化温度」）：界面只展示这个，编码仅供内部比对。 */
+            String parameterName,
             OffsetDateTime startedAt,
             OffsetDateTime triggeredAt,
             OffsetDateTime recoveredAt,
@@ -28,7 +30,22 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
+            /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
+            String priority,
+            /** 触发时的读数与单位：列表直接可见超限程度，不必逐条点开详情。 */
+            String triggerValue,
+            String unitCode,
+            /** 事件来源：REALTIME / HISTORY 为采集判定，MANUAL 为人工补录。列表用标签区分两者。 */
+            String sourceType,
             List<String> repairOrderIds,
+            /**
+             * 该事件派生的工单状态（与 repairOrderIds 同序）。
+             *
+             * <p>列表只给状态不给单号：值班人扫列表要回答的是"这条异常有人接了没、修到哪了"，
+             * 单号属于详情里的定位信息。早期列表直接拼工单主键，页面上会出现孤零零的「3」，
+             * 既看不懂也点不进去。</p>
+             */
+            List<String> repairOrderStatuses,
             int version) {}
 
     /** 触发时生效的规则快照：事件发生后规则再改，也不影响这里的历史依据。 */
@@ -56,6 +73,8 @@ public final class AlertEventModels {
             String sensorCode,
             String parameterId,
             String parameterCode,
+            /** 参数中文名（如「熔化温度」）：界面只展示这个，编码仅供内部比对。 */
+            String parameterName,
             OffsetDateTime startedAt,
             OffsetDateTime triggeredAt,
             OffsetDateTime recoveredAt,
@@ -63,6 +82,7 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
+            String priority,
             String triggerValue,
             String unitCode,
             Object sourceReference,
@@ -81,7 +101,9 @@ public final class AlertEventModels {
             String eventState,
             String handlingState,
             String from,
-            String to) {}
+            String to,
+            /** time（默认，触发时间倒序）或 priority（优先级优先）。 */
+            String sort) {}
 
     /** 单条人工处理记录；只记人工动作，不改异常事实。 */
     public record HandlingRecordItem(
@@ -110,4 +132,24 @@ public final class AlertEventModels {
             String handlingState,
             int version,
             OffsetDateTime updatedAt) {}
+
+    /**
+     * 人工补录异常事件（S1-A05）。
+     *
+     * <p>补录不等于伪造采集：{@code sourceReference} 会写成 MANUAL 并带上补录人与补录原因，
+     * 列表用「人工补录」标签与采集判定区分开。触发值、起始时间由补录人填，
+     * 设备取测点归属，单位与阈值取参数定义与规则版本，避免前后端各算一遍。</p>
+     */
+    public record ManualEventCommand(
+            String requestId,
+            String sensorId,
+            String parameterId,
+            /** 现场看到的超限数值；与单位一起决定"超限多少"，不参与阈值判定。 */
+            String triggerValue,
+            /** 异常起始时间（ISO 8601）；触发时间缺省同起始时间。 */
+            String startedAt,
+            String triggeredAt,
+            /** 补录原因：为什么这条异常不是采集出来的，必须写清。 */
+            String reason,
+            String operatorName) {}
 }

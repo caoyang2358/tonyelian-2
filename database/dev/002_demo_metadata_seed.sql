@@ -57,6 +57,15 @@ JOIN (
   UNION ALL SELECT 'DRAW-03', 'SPEED-003', '拉丝线速度', '速度'
   UNION ALL SELECT 'DRAW-03', 'TENSION-003', '拉丝张力', '张力'
   UNION ALL SELECT 'GAUGE-02', 'DIAM-WIRE-002', '出线线径', '线径'
+  -- 补齐保温炉与 1#/2# 拉丝机的测点：原先三台设备一个测点都没有，
+  -- 事件必须挂在参数上，导致这三台设备既报不了参数异常、也补录不了事件。
+  -- 测点按同类设备同构配置（保温炉比照熔化炉的温度/液位，拉丝机比照 3# 拉丝机）。
+  UNION ALL SELECT 'HOLD-FUR-01', 'TEMP-004', '保温温度', '温度'
+  UNION ALL SELECT 'HOLD-FUR-01', 'LEVEL-002', '铜液液位', '液位'
+  UNION ALL SELECT 'DRAW-01', 'SPEED-004', '拉丝线速度', '速度'
+  UNION ALL SELECT 'DRAW-01', 'TENSION-004', '拉丝张力', '张力'
+  UNION ALL SELECT 'DRAW-02', 'SPEED-005', '拉丝线速度', '速度'
+  UNION ALL SELECT 'DRAW-02', 'TENSION-005', '拉丝张力', '张力'
 ) x ON x.equipment_code = e.equipment_code;
 
 -- Known parameter identifiers/units/precision are reused. Industrial limits, sampling,
@@ -76,6 +85,12 @@ JOIN (
   UNION ALL SELECT 'SPEED-003', 'speed', '拉丝线速度', 'M_PER_SEC', 1
   UNION ALL SELECT 'TENSION-003', 'tension', '拉丝张力', 'N', 1
   UNION ALL SELECT 'DIAM-WIRE-002', 'diameter', '出线线径', 'MM', 3
+  UNION ALL SELECT 'TEMP-004', 'temperature', '保温温度', 'C', 0
+  UNION ALL SELECT 'LEVEL-002', 'level', '铜液液位', 'PCT', 1
+  UNION ALL SELECT 'SPEED-004', 'speed', '拉丝线速度', 'M_PER_SEC', 1
+  UNION ALL SELECT 'TENSION-004', 'tension', '拉丝张力', 'N', 1
+  UNION ALL SELECT 'SPEED-005', 'speed', '拉丝线速度', 'M_PER_SEC', 1
+  UNION ALL SELECT 'TENSION-005', 'tension', '拉丝张力', 'N', 1
 ) x ON x.sensor_code = s.sensor_code;
 
 COMMIT;

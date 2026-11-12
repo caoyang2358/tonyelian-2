@@ -1,18 +1,44 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { MaintenanceApiError, overviewApi } from '../../lib/maintenanceApi';
 import type { MaintenanceOverview } from '../../lib/maintenanceApi';
-import { label, localInputValue } from './labels';
-import { EquipmentSelect, useWorkshopOptions } from './shared';
+import { localInputValue } from './labels';
+import { EquipmentSelect, Tip, useWorkshopOptions } from './shared';
 
-const caliberLabels: Record<string, string> = {
-  inspectionCount: '巡检数', alertEventCount: '异常事件数', pendingRepairCount: '待办工单',
-  completedRepairCount: '完成工单', averageHandlingSeconds: '平均处理时长', handlingSampleCount: '均值样本量',
-  equipmentReportCounts: '设备报修统计', deadlineReminderCount: '期限提醒',
-};
+/** 时长条的满量程：超过 2 小时按满格显示，避免个别长单把其余指标压成一条线。 */
+const DURATION_FULL_SCALE = 2 * 60 * 60;
+
+const volumeMeta = [
+  {key: 'inspection', label: '巡检次数', color: '#6f9f8a', caliberKey: 'inspectionCount'},
+  {key: 'alert', label: '异常事件', color: '#b5694a', caliberKey: 'alertEventCount'},
+  {key: 'pending', label: '维修待办', color: '#c2a04a', caliberKey: 'pendingRepairCount'},
+  {key: 'completed', label: '完成工单', color: '#9fbd6f', caliberKey: 'completedRepairCount'},
+] as const;
+
+const deadlineMeta = [
+  {key: 'dueSoon', label: '临期', color: '#c2a04a'},
+  {key: 'expired', label: '已超期', color: '#b5694a'},
+  {key: 'missing', label: '待补资料', color: '#9aa79a'},
+] as const;
+
+function formatDuration(raw: string | null): string | null {
+  if (raw == null || raw === '') return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds)) return null;
+  if (seconds < 60) return `${seconds.toFixed(0)} 秒`;
+  if (seconds < 3600) return `${(seconds / 60).toFixed(1)} 分钟`;
+  return `${(seconds / 3600).toFixed(1)} 小时`;
+}
+
+function durationTone(seconds: number): 'good' | 'warn' | 'bad' {
+  if (seconds <= 30 * 60) return 'good';
+  if (seconds <= DURATION_FULL_SCALE) return 'warn';
+  return 'bad';
+}
 
 export function OverviewTab() {
-  const [from, setFrom] = useState(() => localInputValue(-24 * 60));
+  // 默认看最近 30 天：演示数据与真实使用都更容易落在窗口内，避免一进来全是 0。
+  const [from, setFrom] = useState(() => localInputValue(-24 * 60 * 30));
   const [to, setTo] = useState(() => localInputValue());
   const [workshopId, setWorkshopId] = useState('');
   const [equipmentId, setEquipmentId] = useState('');
@@ -20,13 +46,18 @@ export function OverviewTab() {
   const [data, setData] = useState<MaintenanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 快捷范围选中值（分钟）；手改时间即视为自定义，清空高亮。
+  const [presetMinutes, setPresetMinutes] = useState<number | null>(30 * 24 * 60);
 
-  const load = useCallback(async () => {
+  /** range 用于快捷按钮：此时 state 还没更新，直接按新范围查，避免读到旧闭包。 */
+  const load = useCallback(async (range?: {from: string; to: string}) => {
+    const fromValue = range?.from ?? from;
+    const toValue = range?.to ?? to;
     setLoading(true);
     try {
       const result = await overviewApi.maintenanceOverview({
-        from: new Date(from).toISOString(),
-        to: new Date(to).toISOString(),
+        from: new Date(fromValue).toISOString(),
+        to: new Date(toValue).toISOString(),
         workshopId: workshopId.trim() || undefined,
         equipmentId: equipmentId.trim() || undefined,
       });
@@ -39,16 +70,48 @@ export function OverviewTab() {
     }
   }, [from, to, workshopId, equipmentId]);
 
-  const metric = (text: string, caption: string) => ({text, caption});
+  /** 快捷范围：点一下改时间并立即统计，按钮同时高亮，让人看得出生效了。 */
+  const applyPreset = (minutes: number) => {
+    const nextFrom = localInputValue(-minutes);
+    const nextTo = localInputValue();
+    setFrom(nextFrom);
+    setTo(nextTo);
+    setPresetMinutes(minutes);
+    void load({from: nextFrom, to: nextTo});
+  };
+
+  // 进入页签先给一份默认区间的数据：让人先看见图，再决定要不要改筛选。
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const caliber = data?.caliber ?? {};
+  const volumeValues: Record<(typeof volumeMeta)[number]['key'], number> = {
+    inspection: data?.inspectionCount ?? 0,
+    alert: data?.alertEventCount ?? 0,
+    pending: data?.pendingRepairCount ?? 0,
+    completed: data?.completedRepairCount ?? 0,
+  };
+  const volumeMax = Math.max(1, ...Object.values(volumeValues));
+  const volumeTotal = Object.values(volumeValues).reduce((sum, value) => sum + value, 0);
+  const seconds = data?.averageHandlingSeconds == null ? null : Number(data.averageHandlingSeconds);
+  const durationPercent = seconds == null || !Number.isFinite(seconds)
+    ? 0
+    : Math.min(100, Math.max(seconds > 0 ? 2 : 0, seconds / DURATION_FULL_SCALE * 100));
+  const breakdown = data?.deadlineBreakdown;
+  const deadlineSegments = deadlineMeta.map(meta => ({
+    ...meta,
+    value: breakdown ? breakdown[meta.key] : 0,
+  }));
+  const deadlineSum = deadlineSegments.reduce((sum, item) => sum + item.value, 0);
+  const maxReport = Math.max(1, ...(data?.equipmentReportCounts.map(row => row.reportCount) ?? [1]));
 
   return <>
     <section className="panel" aria-label="运维概览查询">
-      <div className="panel-heading"><div><h2>运维概览<span className="panel-count">S1-M01</span></h2><p>每个统计数字都附带口径说明，不把缺项假装成零</p></div></div>
+      <div className="panel-heading"><div><h2>运维概览</h2></div></div>
       <div className="filters">
         <label className="select-field"><span>开始时间</span>
-          <input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
+          <input type="datetime-local" value={from} onChange={event => { setFrom(event.target.value); setPresetMinutes(null); }} /></label>
         <label className="select-field"><span>结束时间</span>
-          <input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
+          <input type="datetime-local" value={to} onChange={event => { setTo(event.target.value); setPresetMinutes(null); }} /></label>
         <label className="select-field"><span>车间</span>
           <select value={workshopId} onChange={event => setWorkshopId(event.target.value)}>
             <option value="">全部车间</option>
@@ -56,38 +119,131 @@ export function OverviewTab() {
           </select></label>
         <EquipmentSelect label="设备" value={equipmentId} onChange={setEquipmentId} allowEmpty emptyLabel="全部设备" />
         <button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>{loading ? '统计中…' : '统计'}</button>
-        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60)); setTo(localInputValue());}}>最近 24 小时</button>
-        <button className="reset-filter" type="button" onClick={() => {setFrom(localInputValue(-24 * 60 * 7)); setTo(localInputValue());}}>最近 7 天</button>
+        {[{label: '最近 24 小时', minutes: 24 * 60}, {label: '最近 7 天', minutes: 7 * 24 * 60},
+          {label: '最近 30 天', minutes: 30 * 24 * 60}].map(item => (
+          <button key={item.minutes} type="button" disabled={loading}
+            className={presetMinutes === item.minutes ? 'reset-filter is-active' : 'reset-filter'}
+            aria-pressed={presetMinutes === item.minutes}
+            onClick={() => applyPreset(item.minutes)}>{item.label}</button>
+        ))}
       </div>
       {error && <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法完成统计</h3><p>{error}</p></div></div>}
       {data && <>
         <div className="ops-metrics">
-          {[metric(String(data.inspectionCount), '巡检次数'), metric(String(data.alertEventCount), '异常事件'),
-            metric(String(data.pendingRepairCount), '维修待办'), metric(String(data.completedRepairCount), '完成工单'),
-            metric(data.averageHandlingSeconds ? `${data.averageHandlingSeconds} 秒` : '—', `平均处理时长（样本 ${data.handlingSampleCount}）`)].map(item =>
-            <div className="ops-metric" key={item.caption}><strong>{item.text}</strong><span>{item.caption}</span></div>)}
+          {volumeMeta.map(meta => <div className="ops-metric" key={meta.key}>
+            <strong>{volumeValues[meta.key]}</strong>
+            <span>{meta.label}<Tip text={caliber[meta.caliberKey]} /></span>
+            <i className="ops-metric-mini">
+              <b style={{
+                width: `${Math.max(volumeValues[meta.key] > 0 ? 4 : 0, volumeValues[meta.key] / volumeMax * 100)}%`,
+                background: meta.color,
+              }} />
+            </i>
+          </div>)}
+          <div className="ops-metric">
+            <strong>{formatDuration(data.averageHandlingSeconds) ?? '—'}</strong>
+            <span>平均处理时长（{data.handlingSampleCount} 单）<Tip text={caliber.averageHandlingSeconds} /></span>
+            <i className="ops-metric-mini">
+              <b className={`ops-metric-mini-${seconds == null ? 'good' : durationTone(seconds)}`}
+                 style={{width: `${durationPercent}%`}} />
+            </i>
+          </div>
         </div>
+
         <div className="ops-detail ops-detail-padded">
-          <h3 className="ops-section-title">按设备报修统计</h3>
-          {data.equipmentReportCounts.length === 0 ? <p className="missing-value">统计范围内没有正式提交的报修工单。</p> :
-            <div className="table-region"><table>
-              <thead><tr><th className="number-column">设备编号</th><th>设备</th><th>报修次数</th><th>完成次数</th></tr></thead>
-              <tbody>{data.equipmentReportCounts.map(row => <tr key={row.equipmentId}>
-                <td className="row-number">{row.equipmentId}</td><td>{row.equipmentName}</td><td>{row.reportCount}</td><td>{row.completedCount}</td>
-              </tr>)}</tbody>
-            </table></div>}
-          <h3 className="ops-section-title">期限提醒</h3>
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">业务量对比</h3>
+            <div className="ops-chart-legend">
+              {volumeMeta.map(meta => <span key={meta.key}><i style={{background: meta.color}} />{meta.label}</span>)}
+            </div>
+          </div>
+          {volumeTotal === 0
+            && <p className="ops-chart-empty">该时间范围内没有业务数据，可把范围放宽到「最近 30 天」再看。</p>}
+          <div className="ops-columns" role="img" aria-label="巡检、异常事件、维修待办与完成工单的数量对比">
+            {volumeMeta.map(meta => {
+              const value = volumeValues[meta.key];
+              return <div className="ops-column" key={meta.key}>
+                <span className="ops-column-value">{value}</span>
+                <div className="ops-column-track">
+                  <span className="ops-column-bar"
+                        style={{height: `${Math.max(value > 0 ? 4 : 0, value / volumeMax * 100)}%`, background: meta.color}}
+                        title={`${meta.label} ${value} 次`} />
+                </div>
+                <span className="ops-column-label">{meta.label}</span>
+              </div>;
+            })}
+          </div>
+
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">平均处理时长</h3>
+            <span className="ops-chart-hint">满量程 2 小时 · 30 分钟内为健康区间<Tip text={caliber.averageHandlingSeconds} /></span>
+          </div>
+          {seconds == null
+            ? <p className="missing-value">统计范围内没有验收通过的工单，暂无可计算的时长。</p>
+            : <div className={`ops-duration ops-duration-${durationTone(seconds)}`}>
+                <div className="ops-duration-head">
+                  <strong>{formatDuration(data.averageHandlingSeconds)}</strong>
+                  <span>样本 {data.handlingSampleCount} 单</span>
+                </div>
+                <div className="ops-duration-track">
+                  <span className="ops-duration-fill" style={{width: `${durationPercent}%`}} />
+                  <i style={{left: '25%'}} title="30 分钟" />
+                  <i style={{left: '50%'}} title="1 小时" />
+                </div>
+                <div className="ops-duration-scale"><span>0</span><span>30 分钟</span><span>1 小时</span><span>2 小时</span></div>
+              </div>}
+
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">期限提醒</h3>
+            <span className="ops-chart-hint">{data.deadlineReminderCount ?? 0} 条需处理<Tip text={caliber.deadlineReminderCount} /></span>
+          </div>
           {data.deadlineReminderCount == null
-            ? <p className="ops-note-block">{data.deadlineReminderNote ?? '期限提醒口径未就绪，返回 null 表示缺项而不是没有提醒。'}</p>
-            : <p className="ops-note-block">当前 {data.deadlineReminderCount} 条期限提醒。</p>}
-          <h3 className="ops-section-title">统计口径说明</h3>
-          <dl className="ops-caliber">
-            {Object.entries(data.caliber).map(([key, text]) => <div key={key}><dt>{label(caliberLabels, key, key)}</dt><dd>{text}</dd></div>)}
-          </dl>
+            ? <p className="ops-note-block">{data.deadlineReminderNote ?? '期限提醒口径未就绪：此处返回"缺项"而不是"没有提醒"。'}</p>
+            : deadlineSum === 0
+              ? <div className="ops-reminder"><strong>0</strong><div><span>当前没有需要处理的期限提醒</span></div></div>
+              : <div className="ops-deadline">
+                  <div className="ops-deadline-bar" role="img" aria-label="期限构成：临期、已超期与待补资料">
+                    {deadlineSegments.filter(item => item.value > 0).map(item =>
+                      <span key={item.key} style={{flexGrow: item.value, background: item.color}}
+                            title={`${item.label} ${item.value} 条`} />)}
+                  </div>
+                  <div className="ops-deadline-legend">
+                    {deadlineSegments.map(item => <span key={item.key}>
+                      <i style={{background: item.color}} />{item.label}<b>{item.value}</b>
+                    </span>)}
+                  </div>
+                </div>}
+
+          <div className="ops-chart-head">
+            <h3 className="ops-section-title">按设备报修统计</h3>
+            <div className="ops-chart-legend">
+              <span><i className="ops-legend-report" />报修次数</span>
+              <span><i className="ops-legend-done" />完成次数</span>
+              <Tip text={caliber.equipmentReportCounts} />
+            </div>
+          </div>
+          {data.equipmentReportCounts.length === 0
+            ? <p className="missing-value">统计范围内没有正式提交的报修工单。</p>
+            : <div className="ops-bars" role="img" aria-label="按设备的报修与完成次数柱状图">
+              {data.equipmentReportCounts.map(row => <div className="ops-bar-row" key={row.equipmentId}>
+                <span className="ops-bar-name" title={row.equipmentName}>{row.equipmentName}</span>
+                <div className="ops-bar-group">
+                  <div className="ops-bar-line" title={`${row.equipmentName} 报修 ${row.reportCount} 次`}>
+                    <span className="ops-bar ops-bar-report" style={{width: `${Math.max(4, row.reportCount / maxReport * 100)}%`}} />
+                    <b>{row.reportCount}</b>
+                  </div>
+                  <div className="ops-bar-line" title={`${row.equipmentName} 完成 ${row.completedCount} 次`}>
+                    <span className="ops-bar ops-bar-done" style={{width: `${row.completedCount ? Math.max(4, row.completedCount / maxReport * 100) : 0}%`}} />
+                    <b>{row.completedCount}</b>
+                  </div>
+                </div>
+              </div>)}
+            </div>}
+
           <p className="missing-value">统计生成时间：{formatGeneratedAt(data.generatedAt)}</p>
         </div>
       </>}
-      {!data && !error && <div className="empty-state"><div className="empty-icon"><Icon name="statistics" size={30} /></div><h3>选择时间范围后点击统计</h3><p>默认统计最近 24 小时；时间按实际业务时刻计数。</p></div>}
+      {!data && !error && !loading && <div className="empty-state"><div className="empty-icon"><Icon name="statistics" size={30} /></div><h3>正在准备统计数据</h3><p>默认统计最近 30 天；时间按实际业务时刻计数。</p></div>}
     </section>
   </>;
 }

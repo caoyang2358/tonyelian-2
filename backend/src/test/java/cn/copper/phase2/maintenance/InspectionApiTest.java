@@ -41,7 +41,7 @@ class InspectionApiTest {
         when(repository.countInspections(any())).thenReturn(1L);
         when(repository.findInspections(any(), anyInt(), anyInt())).thenReturn(List.of(
                 new InspectionItem("5", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "ABNORMAL",
-                        List.of("12", "15"), 2)));
+                        List.of("12", "15"), List.of("IN_REPAIR", "COMPLETED"), 2, 2)));
 
         mvc.perform(get("/api/v1/inspections"))
                 .andExpect(status().isOk())
@@ -71,14 +71,16 @@ class InspectionApiTest {
     @Test
     void detailReturnsRecordedContentAndVersion() throws Exception {
         when(repository.findInspection(5L)).thenReturn(new InspectionDetail(
-                "5", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "检查结晶轮、牵引速度", "ABNORMAL",
-                "牵引速度波动偏大", List.of("12"), INSPECTED_AT.plusMinutes(3), 2));
+                "5", "3", "1#结晶牵引机", INSPECTED_AT, "李四", "张顺", "检查结晶轮、牵引速度", "ABNORMAL",
+                "牵引速度波动偏大", List.of("12"), 2, INSPECTED_AT.plusMinutes(3), 2));
 
         mvc.perform(get("/api/v1/inspections/5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.inspectionId").value("5"))
                 .andExpect(jsonPath("$.data.content").value("检查结晶轮、牵引速度"))
                 .andExpect(jsonPath("$.data.description").value("牵引速度波动偏大"))
+                .andExpect(jsonPath("$.data.inspectorName").value("李四"))
+                .andExpect(jsonPath("$.data.operatorName").value("张顺"))
                 .andExpect(jsonPath("$.data.recordedAt").value(endsWith("+08:00")))
                 .andExpect(jsonPath("$.data.version").value(2));
     }

@@ -30,7 +30,7 @@ public class RepairOrderRepository {
                        WHEN 'INSPECTION' THEN r.source_inspection_id
                        ELSE NULL
                    END AS source_id,
-                   r.status, r.created_at, r.first_submitted_at, r.completed_at, r.version
+                   r.fault_category, r.status, r.created_at, r.first_submitted_at, r.completed_at, r.version
             FROM p2_repair_order r
             JOIN dim_equipment e ON e.equipment_id = r.equipment_id
             """;
@@ -42,6 +42,7 @@ public class RepairOrderRepository {
             rs.getString("equipment_name"),
             rs.getString("source_type"),
             rs.getString("source_id"),
+            rs.getString("fault_category"),
             rs.getString("status"),
             MaintenanceTimes.toOffset(rs, "created_at"),
             MaintenanceTimes.toOffset(rs, "first_submitted_at"),
@@ -55,7 +56,7 @@ public class RepairOrderRepository {
                        WHEN 'INSPECTION' THEN r.source_inspection_id
                        ELSE NULL
                    END AS source_id,
-                   r.source_snapshot, r.status, r.description, r.supplement, r.reporter_name,
+                   r.source_snapshot, r.fault_category, r.status, r.description, r.supplement, r.reporter_name,
                    r.created_at, r.updated_at, r.first_submitted_at, r.completed_at, r.version
             FROM p2_repair_order r
             JOIN dim_equipment e ON e.equipment_id = r.equipment_id
@@ -94,6 +95,7 @@ public class RepairOrderRepository {
             String sourceType,
             String sourceId,
             String sourceSnapshotJson,
+            String faultCategory,
             String status,
             String description,
             String supplement,
@@ -183,6 +185,7 @@ public class RepairOrderRepository {
                 rs.getString("source_type"),
                 rs.getString("source_id"),
                 rs.getString("source_snapshot"),
+                rs.getString("fault_category"),
                 rs.getString("status"),
                 rs.getString("description"),
                 rs.getString("supplement"),
@@ -212,14 +215,16 @@ public class RepairOrderRepository {
      */
     public long insertOrder(String placeholderOrderNo, long equipmentId, String sourceType,
                             Long sourceAlertEventId, Long sourceInspectionId, String sourceSnapshotJson,
+                            String faultCategory, String description, String reporterName,
                             LocalDateTime now) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement("""
                     INSERT INTO p2_repair_order
                         (order_no, equipment_id, source_type, source_alert_event_id, source_inspection_id,
-                         source_snapshot, status, created_at, updated_at, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                         source_snapshot, fault_category, description, reporter_name,
+                         status, created_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, placeholderOrderNo);
             ps.setLong(2, equipmentId);
@@ -227,9 +232,12 @@ public class RepairOrderRepository {
             ps.setObject(4, sourceAlertEventId);
             ps.setObject(5, sourceInspectionId);
             ps.setString(6, sourceSnapshotJson);
-            ps.setString(7, RepairOrderWorkflow.DRAFT);
-            ps.setObject(8, now);
-            ps.setObject(9, now);
+            ps.setString(7, faultCategory);
+            ps.setString(8, description);
+            ps.setString(9, reporterName);
+            ps.setString(10, RepairOrderWorkflow.DRAFT);
+            ps.setObject(11, now);
+            ps.setObject(12, now);
             return ps;
         }, keys);
         Number key = keys.getKey();
@@ -245,12 +253,13 @@ public class RepairOrderRepository {
 
     /** S1-R04 保存资料：不改状态，只推进版本与更新时间。 */
     public void saveContent(long repairOrderId, String description, String supplement, String reporterName,
-                            LocalDateTime now) {
+                            String faultCategory, LocalDateTime now) {
         jdbc.update("""
                 UPDATE p2_repair_order
-                   SET description = ?, supplement = ?, reporter_name = ?, updated_at = ?, version = version + 1
+                   SET description = ?, supplement = ?, reporter_name = ?, fault_category = ?,
+                       updated_at = ?, version = version + 1
                  WHERE repair_order_id = ?
-                """, description, supplement, reporterName, now, repairOrderId);
+                """, description, supplement, reporterName, faultCategory, now, repairOrderId);
     }
 
     /**

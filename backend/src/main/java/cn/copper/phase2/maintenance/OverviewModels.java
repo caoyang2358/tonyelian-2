@@ -1,5 +1,7 @@
 package cn.copper.phase2.maintenance;
 
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +36,8 @@ public final class OverviewModels {
             String averageHandlingSeconds,
             long handlingSampleCount,
             List<EquipmentReportCount> equipmentReportCounts,
-            Integer deadlineReminderCount,
+            long deadlineReminderCount,
+            DeadlineBreakdown deadlineBreakdown,
             String deadlineReminderNote,
             Map<String, String> caliber) {}
 }

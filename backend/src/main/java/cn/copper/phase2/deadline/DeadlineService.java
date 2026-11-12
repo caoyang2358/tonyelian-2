@@ -2,6 +2,7 @@ package cn.copper.phase2.deadline;
 
 import cn.copper.phase2.common.BusinessException;
 import cn.copper.phase2.common.PageResult;
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
 import cn.copper.phase2.deadline.DeadlineModels.DeadlineItem;
 import cn.copper.phase2.deadline.DeadlineRepository.DeadlineQuery;
 import cn.copper.phase2.reminder.ReminderSettingModels.ReminderSetting;
@@ -57,6 +58,32 @@ public class DeadlineService {
         long total = repository.count(query, setting.warrantyLeadDays(),
                 setting.maintenanceLeadDays(), today);
         return PageResult.of(items, resolvedPage, resolvedSize, total);
+    }
+
+    /**
+     * 期限状态分项计数：临期、超期、缺资料各多少条，供运维概览画分段图。
+     *
+     * <p>与统计时间范围无关：期限看的是"查询这一刻"的状态，不是某个窗口内的发生量，
+     * 因此不复用概览的 from/to——把期限塞进时间窗口会让"本月没有临期"这种结论失真。
+     * 设备与车间筛选与列表口径一致，同时给出时取交集。</p>
+     *
+     * <p>一次取全三项而不是让调用方分别调三个方法：概览要同时展示总量与构成，
+     * 分开调会重复算同一套 CTE，且两次查询之间状态可能变化，图与数字对不上。</p>
+     */
+    public DeadlineBreakdown breakdown(Long equipmentId, Long workshopId) {
+        ReminderSetting setting = reminderSetting.current();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        return new DeadlineBreakdown(
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_DUE_SOON, setting, today),
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_EXPIRED, setting, today),
+                countByState(equipmentId, workshopId, DeadlineModels.STATE_MISSING_DATA, setting, today));
+    }
+
+    private long countByState(Long equipmentId, Long workshopId, String state,
+                              ReminderSetting setting, LocalDate today) {
+        return repository.count(
+                new DeadlineQuery(equipmentId, workshopId, null, state, 1, 1),
+                setting.warrantyLeadDays(), setting.maintenanceLeadDays(), today);
     }
 
     /** 空串按"不筛选"处理；大小写不敏感，但必须落在契约枚举内，拼错时直接 400 而不是静默返回空页。 */

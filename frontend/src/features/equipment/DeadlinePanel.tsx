@@ -217,7 +217,7 @@ export function DeadlinePanel({ onClose }: { onClose: () => void }) {
     <aside className="eq-drawer eq-dl-drawer" role="dialog" aria-modal="true"
       aria-labelledby="eq-deadline-title">
       <div className="eq-drawer-head">
-        <span className="eq-code">S1-T01 · 质保 / 维保 / 预计寿命</span>
+        <span className="eq-code">质保 / 维保 / 预计寿命</span>
         <h2 id="eq-deadline-title">期限提醒</h2>
         <button ref={closeRef} type="button" className="eq-drawer-close" onClick={onClose}
           aria-label="关闭期限提醒">×</button>

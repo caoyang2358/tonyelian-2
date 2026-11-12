@@ -49,7 +49,7 @@ class RepairOrderWriteApiTest {
 
     private static OrderRow order(String status, int version, String description, String reporterName) {
         return new OrderRow("7", "RO-20261103-000007", "3", "1#结晶牵引机", "MANUAL", null, null,
-                status, description, null, reporterName, NOW.minusDays(1), NOW,
+                "MECHANICAL", status, description, null, reporterName, NOW.minusDays(1), NOW,
                 "REVIEW_PENDING".equals(status) ? NOW.minusHours(1) : null, null, version);
     }
 
@@ -64,7 +64,8 @@ class RepairOrderWriteApiTest {
     @Test
     void manualCreateReturnsDraftWithEditableFields() throws Exception {
         when(repository.equipmentExists(3L)).thenReturn(true);
-        when(repository.insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null), any()))
+        when(repository.insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
+                eq(null), eq(null), eq(null), any()))
                 .thenReturn(7L);
         when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, null, null));
 
@@ -86,10 +87,46 @@ class RepairOrderWriteApiTest {
     }
 
     @Test
+    void createStoresFaultCategoryDescriptionAndReporter() throws Exception {
+        when(repository.equipmentExists(3L)).thenReturn(true);
+        when(repository.insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
+                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), any())).thenReturn(7L);
+        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, "控制柜跳闸", "张三"));
+
+        mvc.perform(post("/api/v1/repair-orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requestId":"%s","operatorName":"张三","sourceType":"MANUAL",
+                                 "equipmentId":"3","faultCategory":"ELECTRICAL",
+                                 "description":"控制柜跳闸","reporterName":"张三"}
+                                """.formatted(REQUEST_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+
+        verify(repository).insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
+                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), any());
+    }
+
+    @Test
+    void unknownFaultCategoryIsRejectedBeforeWriting() throws Exception {
+        mvc.perform(post("/api/v1/repair-orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requestId":"%s","operatorName":"张三","sourceType":"MANUAL",
+                                 "equipmentId":"3","faultCategory":"HYDRAULIC"}
+                                """.formatted(REQUEST_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.fieldErrors[0].field").value("faultCategory"));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void inspectionCreateTakesEquipmentFromSourceAndFreezesSnapshot() throws Exception {
         when(repository.findInspectionSource(5L)).thenReturn(new InspectionSource(
                 "5", "3", "1#结晶牵引机", NOW, "李四", "检查结晶轮", "ABNORMAL", "速度波动", 2));
-        when(repository.insertOrder(anyString(), eq(3L), eq("INSPECTION"), eq(null), eq(5L), anyString(), any()))
+        when(repository.insertOrder(anyString(), eq(3L), eq("INSPECTION"), eq(null), eq(5L), anyString(),
+                eq(null), eq(null), eq(null), any()))
                 .thenReturn(7L);
         when(repository.findOrder(7L)).thenReturn(
                 order("DRAFT", 1, null, null));
@@ -117,7 +154,7 @@ class RepairOrderWriteApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
 
-        verify(repository, never()).insertOrder(any(), anyLong(), any(), any(), any(), any(), any());
+        verify(repository, never()).insertOrder(any(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -164,7 +201,7 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.data.repairOrder.status").value("DRAFT"))
                 .andExpect(jsonPath("$.data.repairOrder.description").value("结晶轮异响"));
 
-        verify(repository).saveContent(eq(7L), eq("结晶轮异响"), eq(null), eq("张三"), any());
+        verify(repository).saveContent(eq(7L), eq("结晶轮异响"), eq(null), eq("张三"), eq(null), any());
         verify(repository).replacePhotos(eq(7L), eq(List.of()));
     }
 
@@ -179,7 +216,7 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.code").value("STATE_CONFLICT"))
                 .andExpect(jsonPath("$.data.status").value("REVIEW_PENDING"));
 
-        verify(repository, never()).saveContent(anyLong(), any(), any(), any(), any());
+        verify(repository, never()).saveContent(anyLong(), any(), any(), any(), any(), any());
     }
 
     @Test

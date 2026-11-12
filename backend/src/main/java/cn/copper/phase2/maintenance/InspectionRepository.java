@@ -24,10 +24,15 @@ import java.util.List;
 public class InspectionRepository {
     static final String INSPECTION_SELECT = """
             SELECT i.inspection_id, i.equipment_id, e.equipment_name, i.inspected_at, i.inspector_name,
-                   i.content, i.result, i.description, i.recorded_at, i.version,
+                   i.operator_name, i.content, i.result, i.description, i.recorded_at, i.version,
                    (SELECT GROUP_CONCAT(r.repair_order_id ORDER BY r.repair_order_id)
                       FROM p2_repair_order r
-                     WHERE r.source_inspection_id = i.inspection_id) AS repair_order_ids
+                     WHERE r.source_inspection_id = i.inspection_id) AS repair_order_ids,
+                   (SELECT GROUP_CONCAT(r.status ORDER BY r.repair_order_id)
+                      FROM p2_repair_order r
+                     WHERE r.source_inspection_id = i.inspection_id) AS repair_order_statuses,
+                   (SELECT COUNT(*) FROM p2_attachment a
+                     WHERE a.inspection_id = i.inspection_id) AS photo_count
             FROM p2_inspection i
             JOIN dim_equipment e ON e.equipment_id = i.equipment_id
             """;
@@ -40,6 +45,8 @@ public class InspectionRepository {
             rs.getString("inspector_name"),
             rs.getString("result"),
             splitIds(rs.getString("repair_order_ids")),
+            splitIds(rs.getString("repair_order_statuses")),
+            rs.getInt("photo_count"),
             rs.getInt("version"));
 
     static final RowMapper<InspectionDetail> INSPECTION_DETAIL_MAPPER = (rs, row) -> new InspectionDetail(
@@ -48,10 +55,12 @@ public class InspectionRepository {
             rs.getString("equipment_name"),
             MaintenanceTimes.toOffset(rs, "inspected_at"),
             rs.getString("inspector_name"),
+            rs.getString("operator_name"),
             rs.getString("content"),
             rs.getString("result"),
             rs.getString("description"),
             splitIds(rs.getString("repair_order_ids")),
+            rs.getInt("photo_count"),
             MaintenanceTimes.toOffset(rs, "recorded_at"),
             rs.getInt("version"));
 
@@ -125,16 +134,21 @@ public class InspectionRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    /** 更正巡检资料：设备身份不变，版本号递增。 */
+    /**
+     * 更正巡检资料：设备身份不变，版本号递增。
+     *
+     * <p>只改巡检事实字段，不动 {@code operator_name}：那一列表示"原登记人"，
+     * 更正人由调用方写进 p2_change_log，两者语义不同不能互相覆盖。</p>
+     */
     public void updateInspection(long inspectionId, LocalDateTime inspectedAt, String inspectorName,
-                                 String content, String result, String description, String operatorName) {
+                                 String content, String result, String description) {
         jdbc.update("""
                 UPDATE p2_inspection
                    SET inspected_at = ?, inspector_name = ?, content = ?, result = ?, description = ?,
-                       operator_name = ?, updated_at = CURRENT_TIMESTAMP(3), version = version + 1
+                       updated_at = CURRENT_TIMESTAMP(3), version = version + 1
                  WHERE inspection_id = ?
                 """, Timestamp.valueOf(inspectedAt), inspectorName, content, result, description,
-                operatorName, inspectionId);
+                inspectionId);
     }
 
     /** 重要更正留痕（p2_change_log），返回留痕编号供响应回显。 */
