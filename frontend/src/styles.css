@@ -115,7 +115,10 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .network-canvas line { stroke: #618172; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .network-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: .4rem; padding: 1rem; text-align: center; color: #385643; pointer-events: none; }
 .network-empty span { color: #5d6f61; font-size: .82rem; }
-.network-node { position: absolute; transform: translate(-50%, -50%); border: 1px solid #73977d; border-radius: 6px; padding: .38rem .55rem; background: #fff; color: #234832; font-size: .75rem; touch-action: none; cursor: pointer; box-shadow: 0 2px 5px #203e2920; }
+.network-device-group { position: absolute; transform: translate(-50%, -50%); }
+.network-device-group[data-selected="true"], .network-device-group:focus-within { z-index: 1; }
+.network-device-sensors { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: .2rem; padding-top: .25rem; }
+.network-node { border: 1px solid #73977d; border-radius: 6px; padding: .38rem .55rem; background: #fff; color: #234832; font-size: .75rem; touch-action: none; cursor: pointer; box-shadow: 0 2px 5px #203e2920; white-space: nowrap; }
 .network-node[data-kind="SENSOR"] { border-radius: 999px; background: #d8eee0; }
 .network-node[data-editing="true"] { cursor: grab; }
 .network-node[aria-pressed="true"] { outline: 2px solid #347554; outline-offset: 2px; z-index: 1; }
@@ -124,6 +127,8 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .network-inspector .network-node-type { display: inline-block; margin-top: .75rem; }
 .network-inspector .button { margin-block: .5rem; }
 .network-inspector .network-availability { border-top: 1px solid #dce6da; margin-top: .85rem; padding-top: .65rem; }
+.network-sensor-picker select { display: block; margin-top: .25rem; }
+.network-sensor-list { padding-left: 1.15rem; }
 .network-editor { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; padding: .85rem; border: 1px solid #d6e1d4; border-radius: 8px; }
 .network-editor legend { padding-inline: .4rem; font-weight: 600; }
 .network-edit-section { display: flex; flex-wrap: wrap; align-content: start; align-items: center; gap: .5rem; padding: .75rem; border-radius: 7px; background: #f5f8f4; }
