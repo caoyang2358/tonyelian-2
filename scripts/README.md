@@ -10,9 +10,33 @@
 | Check-Dev.ps1 | 实际请求前端、live、ready、overview及代理设备接口 |
 | Stop-Dev.ps1 | 仅停本工程进程，保留数据库文件；-KeepDatabase 保持数据库运行 |
 | Common.ps1 | 受限 .env 加载、MySQL客户端、进程归属、编码及端口检查工具 |
+| Add-AlertEvent.ps1 | 手工补一条异常事件（演示用）：自动补规则版本、校验"同一参数只能一条未结束事件" |
 | maven-settings.xml | 本次构建使用 Maven Central，不修改全局镜像设置 |
 
 完整前提、数据库连接、首次/重复启动和故障处理见[根说明](../README.md)。脚本支持 Windows PowerShell 5.1 / PowerShell 7；不能直接在 Linux shell 中执行。其他平台可按前后端说明手工启动，并提供独立 MySQL 开发库。
+
+## 新增异常事件
+
+两条路，优先用页面：
+
+1. **页面**（推荐，用户日常用法）：运维管理 → 异常事件提醒 → 「人工补录事件」。选设备/测点/参数、填超限数值与补录原因即可；来源固定记为「人工补录」，列表有「来源」列区分，详情里能看到补录人与原因。
+2. **脚本**（批量造演示数据或没开前端时）：`Add-AlertEvent.ps1`。
+
+```powershell
+# 补一条 97.2℃ 的进行中事件，报警阈值 95℃（默认记为「人工补录」）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Add-AlertEvent.ps1 -SensorCode TEMP-003 -Value 97.2 -AlarmUpper 95 -NormalUpper 80
+
+# 只看将要执行的 SQL，不写库
+.\scripts\Add-AlertEvent.ps1 -SensorCode TEMP-003 -Value 97.2 -AlarmUpper 95 -DryRun
+
+# 该参数已有一条未结束事件时，先按"自动恢复"结束旧的再写新的
+.\scripts\Add-AlertEvent.ps1 -SensorCode TEMP-001 -Value 99.1 -EndPrevious
+
+# 模拟采集判定（列表显示"自动采集"，用于演示自动报警）
+.\scripts\Add-AlertEvent.ps1 -SensorCode TEMP-002 -Value 98.6 -Source REALTIME
+```
+
+接口层面：`POST /api/v1/alert-events`（S1-A05）。同一参数同时只能有一条未结束事件，重复补录返回 409 `EVENT_ALREADY_ACTIVE`；参数从未配过规则时，会按参数定义里的阈值补一条第 1 版规则（事件表的 `rule_version_id` 是非空外键）。
 
 ## 验收脚本的数据库连接
 
