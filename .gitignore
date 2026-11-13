@@ -45,3 +45,6 @@ backups/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Agent workspace memory (local only)
+.workbuddy/

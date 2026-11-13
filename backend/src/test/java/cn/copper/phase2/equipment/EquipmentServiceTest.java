@@ -41,7 +41,7 @@ class EquipmentServiceTest {
         assertEquals("SMELT-FUR-01", detail.code());
         assertNull(detail.responsiblePerson());
         assertEquals(0L, detail.version());
-        assertEquals(List.of("profile.typeCode"), detail.missingFields());
+        assertEquals(List.of("profile.typeCode", "profile.managementStatus"), detail.missingFields());
         assertFalse(detail.deletion().allowed(), "存在关联时不允许返回可删除");
         assertEquals(1, detail.deletion().blockers().size());
         assertEquals("SENSOR", detail.deletion().blockers().get(0).type());

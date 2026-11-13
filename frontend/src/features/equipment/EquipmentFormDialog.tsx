@@ -66,7 +66,10 @@ function initialForm(detail: EquipmentDetail | null): FormState {
     responsiblePerson: detail?.responsiblePerson ?? '',
     enabled: detail?.enabled ?? true,
     typeCode: profile?.typeCode ?? '',
-    managementStatus: profile?.managementStatus ?? 'IN_USE',
+    // 已有设备必须原样带出当前值：空值就是空值，不能借默认值把它变成「在用」，
+    // 否则打开再保存一次就会凭空产生一条未经核实的业务事实。
+    // 新增设备也不预填「在用」——该值必须由录入人按核实结果选择，否则等于替现场下了结论。
+    managementStatus: detail ? (profile?.managementStatus ?? '') : '',
     model: profile?.model ?? '',
     processId: profile?.processId ?? '',
     installationLocation: profile?.installationLocation ?? '',
@@ -208,7 +211,7 @@ export function EquipmentFormDialog({detail, options, onClose, onSaved}: FormDia
         </div>}
 
         <h3 className="eq-section-title">设备身份</h3>
-        <div className="eq-form-row">
+        <div className="eq-form-row is-three">
           <label className="eq-form-field">
             <span>设备编码<em>*</em></span>
             <input value={form.code} onChange={event => set('code', event.target.value)} aria-invalid={marked('code')}
@@ -216,7 +219,7 @@ export function EquipmentFormDialog({detail, options, onClose, onSaved}: FormDia
             {errorFor('code') ? <small className="eq-form-error">{errorFor('code')}</small>
               : <small className="eq-form-hint">{mode === 'edit' ? '编码在更正时不可修改' : '编码唯一，最长 64 字符'}</small>}
           </label>
-          <label className="eq-form-field">
+          <label className="eq-form-field is-wide">
             <span>设备名称<em>*</em></span>
             <input value={form.name} onChange={event => set('name', event.target.value)} aria-invalid={marked('name')} maxLength={100} />
             {errorFor('name') && <small className="eq-form-error">{errorFor('name')}</small>}
@@ -243,6 +246,7 @@ export function EquipmentFormDialog({detail, options, onClose, onSaved}: FormDia
               <option value="true">已启用</option>
               <option value="false">已停用</option>
             </select>
+            <small className="eq-form-hint">是否参与业务，与档案中的管理状态相互独立。</small>
           </label>
         </div>
 
@@ -257,11 +261,14 @@ export function EquipmentFormDialog({detail, options, onClose, onSaved}: FormDia
             {errorFor('profile.typeCode') && <small className="eq-form-error">{errorFor('profile.typeCode')}</small>}
           </label>
           <label className="eq-form-field">
-            <span>管理状态</span>
-            <select value={form.managementStatus} onChange={event => set('managementStatus', event.target.value)}>
-              <option value="">未知</option>
+            <span>管理状态<em>*</em></span>
+            <select value={form.managementStatus} onChange={event => set('managementStatus', event.target.value)} aria-invalid={marked('profile.managementStatus')}>
+              <option value="">请选择状态</option>
               {(options?.equipmentManagementStatuses ?? []).map(item => <option value={item.code} key={item.code}>{item.name}</option>)}
             </select>
+            {errorFor('profile.managementStatus')
+              ? <small className="eq-form-error">{errorFor('profile.managementStatus')}</small>
+              : <small className="eq-form-hint">设备当前所处阶段，按实际核实填写，不从启用状态推定。</small>}
           </label>
           <label className="eq-form-field">
             <span>型号</span>
