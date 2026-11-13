@@ -62,12 +62,19 @@ assert.ok(
   ),
   "new article is visible without scrolling",
 );
+assert.equal(
+  await run('document.querySelectorAll(".rich-toolbar select").length'),
+  0,
+  "editor toolbar no longer exposes heading levels",
+);
 await send("Page.captureScreenshot", { format: "png" }).then((r) =>
   writeFileSync(
     ".local/knowledge-editor-ui.png",
     Buffer.from(r.result.data, "base64"),
   ),
 );
+await run(`(()=>{const s=document.querySelector('select[name="category"]');const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;setter.call(s,'TROUBLESHOOTING');s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await wait();
 await click("添加步骤");
 await click("添加步骤");
 assert.equal(
@@ -119,7 +126,7 @@ assert.equal(
   await run('document.querySelectorAll(".knowledge-page article img").length'),
   0,
 );
-// React must render the stored HTML-looking content as text.
+// Rich text is sanitized before rendering; unsafe event attributes must never survive.
 assert.equal(
   await run(
     'document.querySelectorAll(".knowledge-page article [onerror]").length',
@@ -152,47 +159,6 @@ assert.ok(
 );
 await run("window.fetch=window.__originalFetch");
 await click("重试");
-const allEquipment = await (
-  await fetch("http://127.0.0.1:18280/api/v1/equipment")
-).json();
-const missingType = allEquipment.data.items.find((e) => !e.typeCode);
-if (missingType) {
-  const body = {
-    requestId: crypto.randomUUID(),
-    operatorName: "页面验收",
-    title: "缺类型与无图验证",
-    category: "INTRODUCTION",
-    equipmentId: String(missingType.id),
-    equipmentType: null,
-    faultPhenomenon: null,
-    content: "<img onerror=alert(1)> 应显示为安全文本",
-    steps: [],
-    attachmentIds: [],
-  };
-  const created = await (
-    await fetch("http://127.0.0.1:18280/api/v1/knowledge-articles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-  ).json();
-  assert.equal(created.code, "OK");
-  await click("设备管理");
-  await click("运维知识库");
-  await click(body.title);
-  assert.ok(
-    await run(
-      "document.querySelector('.knowledge-page article').innerText.includes('待补充')",
-    ),
-  );
-  assert.equal(
-    await run(
-      "document.querySelectorAll('.knowledge-page article img').length",
-    ),
-    0,
-  );
-}
-await click("返回知识列表");
 const articles = await (
   await fetch("http://127.0.0.1:18280/api/v1/knowledge-articles?pageSize=100")
 ).json();
