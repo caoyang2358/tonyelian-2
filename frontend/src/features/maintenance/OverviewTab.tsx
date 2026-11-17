@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
+import { ApiError, api } from '../../lib/api';
+import type { DeadlineItem } from '../../lib/api';
 import { MaintenanceApiError, overviewApi } from '../../lib/maintenanceApi';
 import type { MaintenanceOverview } from '../../lib/maintenanceApi';
 import { localInputValue } from './labels';
@@ -27,6 +29,29 @@ const deadlineMeta = [
   {key: 'missing', label: '待补资料', color: '#9aa79a'},
 ] as const;
 
+/** 明细行最多展示几条，剩下的引导去设备档案的期限面板看全量。 */
+const DEADLINE_ROWS_SHOWN = 8;
+
+const DEADLINE_TYPE_LABEL: Record<string, string> = {
+  WARRANTY: '质保', MAINTENANCE: '维保', EXPECTED_LIFE: '预计寿命',
+};
+
+const DEADLINE_STATE_LABEL: Record<string, string> = {
+  DUE_SOON: '临期', EXPIRED: '已超期', MISSING_DATA: '待补资料',
+};
+
+const MISSING_FIELD_LABEL: Record<string, string> = {
+  warrantyExpiresOn: '质保到期日', commissionedOn: '投用日',
+  expectedLifeYears: '预计使用年限', contractId: '维保合同', endDate: '合同结束日期',
+};
+
+function remainingDaysText(days: number | null): string {
+  if (days == null) return '未填日期';
+  if (days === 0) return '今天到期';
+  if (days > 0) return `剩余 ${days} 天`;
+  return `已超期 ${Math.abs(days)} 天`;
+}
+
 function formatDuration(raw: string | null): string | null {
   if (raw == null || raw === '') return null;
   const seconds = Number(raw);
@@ -52,6 +77,9 @@ export function OverviewTab() {
   const [data, setData] = useState<MaintenanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 期限明细行：汇总条只给数量，具体是哪台设备的哪个期限在这里列出。
+  const [deadlineRows, setDeadlineRows] = useState<DeadlineItem[] | null>(null);
+  const [deadlineRowsNote, setDeadlineRowsNote] = useState<string | null>(null);
   // 快捷范围选中值（分钟）；手改时间即视为自定义，清空高亮。
   const [presetMinutes, setPresetMinutes] = useState<number | null>(30 * 24 * 60);
 
@@ -88,6 +116,30 @@ export function OverviewTab() {
 
   // 进入页签先给一份默认区间的数据：让人先看见图，再决定要不要改筛选。
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 有待处理期限时拉一份明细：复用设备档案的期限接口，筛掉 NORMAL 只留计入口径内的三种。 */
+  useEffect(() => {
+    const breakdown = data?.deadlineBreakdown;
+    const sum = breakdown ? breakdown.dueSoon + breakdown.expired + breakdown.missing : 0;
+    if (!data || sum === 0) { setDeadlineRows(null); setDeadlineRowsNote(null); return; }
+    let alive = true;
+    api.deadlines({page: 1, pageSize: 100})
+      .then(result => {
+        if (!alive) return;
+        const pending = result.data.items
+          .filter(row => row.expiryState !== 'NORMAL')
+          .sort((a, b) => (a.remainingDays ?? Number.MAX_SAFE_INTEGER) - (b.remainingDays ?? Number.MAX_SAFE_INTEGER));
+        setDeadlineRows(pending);
+        setDeadlineRowsNote(pending.length === 0
+          ? '明细与汇总暂未对上：期限清单此刻没有待处理行，请刷新重试。' : null);
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        setDeadlineRows(null);
+        setDeadlineRowsNote(err instanceof ApiError ? '明细加载失败，可到「设备档案 → 期限提醒」查看完整清单。' : null);
+      });
+    return () => { alive = false; };
+  }, [data]);
 
   const caliber = data?.caliber ?? {};
   const volumeValues: Record<(typeof volumeMeta)[number]['key'], number> = {
@@ -262,6 +314,39 @@ export function OverviewTab() {
                     <li>提醒方式：每次打开概览按当时的档案重新判定，临期阈值取提醒设置里的提前量（质保、维保），寿命固定提前一年；属于常驻待办，不是定时推送。</li>
                     <li>工单超时<strong>不在</strong>这张卡里，见下方「工单时效」。</li>
                   </ul>
+                  <div className="ops-deadline-detail">
+                    <p className="ops-deadline-detail-title">提醒的到底是啥：下面每一行就是一台设备的一类期限，一共 {deadlineSum} 行。</p>
+                    {deadlineRowsNote != null
+                      ? <p className="ops-deadline-detail-note">{deadlineRowsNote}</p>
+                      : deadlineRows == null
+                        ? <p className="ops-deadline-detail-note">明细加载中…</p>
+                        : <table className="ops-deadline-table">
+                            <thead><tr>
+                              <th>设备</th><th>期限类型</th><th>状态</th><th>到期日 / 缺什么</th><th>负责人</th>
+                            </tr></thead>
+                            <tbody>
+                              {deadlineRows.slice(0, DEADLINE_ROWS_SHOWN).map(row => {
+                                const missing = row.missingFields
+                                  .map(field => MISSING_FIELD_LABEL[field] ?? field).join('、');
+                                return <tr key={`${row.equipmentId}-${row.reminderType}-${row.contractId ?? 'none'}`}>
+                                  <td>{row.equipmentName}<span className="ops-deadline-code">{row.equipmentCode}</span></td>
+                                  <td>{DEADLINE_TYPE_LABEL[row.reminderType] ?? row.reminderType}
+                                    {row.contractNumber ? <span className="ops-deadline-code">{row.contractNumber}</span> : null}</td>
+                                  <td><span className={`ops-deadline-state state-${row.expiryState.toLowerCase()}`}>
+                                    {DEADLINE_STATE_LABEL[row.expiryState] ?? row.expiryState}</span></td>
+                                  <td>{row.expiryState === 'MISSING_DATA'
+                                    ? `缺 ${missing || '关键字段'}，算不出到期日`
+                                    : [row.dueDate, remainingDaysText(row.remainingDays)].filter(Boolean).join(' · ')}</td>
+                                  <td>{row.responsiblePerson ?? '—'}</td>
+                                </tr>;
+                              })}
+                            </tbody>
+                          </table>}
+                    {deadlineRows != null && deadlineRows.length > DEADLINE_ROWS_SHOWN
+                      && <p className="ops-deadline-detail-note">
+                        仅显示前 {DEADLINE_ROWS_SHOWN} 条，完整 {deadlineRows.length} 条见「设备档案 → 期限提醒」。
+                      </p>}
+                  </div>
                 </div>}
 
           <div className="ops-chart-head">
