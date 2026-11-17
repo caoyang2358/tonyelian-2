@@ -10,22 +10,37 @@ import cn.copper.phase2.equipment.EquipmentModels.EquipmentProfile;
 import cn.copper.phase2.equipment.EquipmentModels.EquipmentQuery;
 import cn.copper.phase2.equipment.EquipmentRepository.EquipmentRow;
 import cn.copper.phase2.reference.ReferenceDictionaries;
+import cn.copper.phase2.reminder.ReminderSettingService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+
+import static cn.copper.phase2.deadline.DeadlineModels.STATE_DUE_SOON;
+import static cn.copper.phase2.deadline.DeadlineModels.STATE_EXPIRED;
+import static cn.copper.phase2.deadline.DeadlineModels.STATE_MISSING_DATA;
+import static cn.copper.phase2.deadline.DeadlineModels.STATE_NORMAL;
 
 @Service
 public class EquipmentService {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
 
+    /** 业务日期按厂区时区取，与 S1-T01 期限列表一致，不跟随 JVM 或数据库服务器时区。 */
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+
     private final EquipmentRepository repository;
     private final EquipmentReferenceChecker referenceChecker;
+    private final ReminderSettingService reminderSetting;
 
-    public EquipmentService(EquipmentRepository repository, EquipmentReferenceChecker referenceChecker) {
+    public EquipmentService(EquipmentRepository repository, EquipmentReferenceChecker referenceChecker,
+                            ReminderSettingService reminderSetting) {
         this.repository = repository;
         this.referenceChecker = referenceChecker;
+        this.reminderSetting = reminderSetting;
     }
 
     /**
@@ -34,13 +49,58 @@ public class EquipmentService {
      */
     public EquipmentListResponse equipment(EquipmentQuery input) {
         EquipmentQuery query = normalize(input);
-        List<EquipmentItem> items = repository.search(query).stream()
+        List<EquipmentItem> items = withMaintenanceExpiry(repository.search(query).stream()
                 .map(EquipmentService::withTypeName)
-                .toList();
+                .toList());
         if (query.page() == null) {
             return EquipmentListResponse.all(items);
         }
         return EquipmentListResponse.paged(items, query.page(), query.pageSize(), repository.count(query));
+    }
+
+    /**
+     * 维保到期列：日期已由仓库层取到（最近一份合同的结束日），这里补剩余天数与状态。
+     *
+     * <p>判定口径与 S1-T01 的 {@code DeadlineRepository.withCte} 完全一致：到期日缺失为
+     * MISSING_DATA，已过为 EXPIRED，剩余天数不超过当前维保提前量为 DUE_SOON，其余 NORMAL。
+     * 两处必须同步，否则列表说"正常"、看板说"即将到期"。</p>
+     *
+     * <p>只有确实存在到期日时才去读提醒设置：整页都没有合同时（当前就是这种情况），
+     * 不该为了算一个用不上的状态去碰配置表，也避免只读页面产生写入。</p>
+     */
+    private List<EquipmentItem> withMaintenanceExpiry(List<EquipmentItem> items) {
+        boolean anyDated = items.stream().anyMatch(item -> item.maintenanceDueDate() != null);
+        if (!anyDated) {
+            return items.stream().map(item -> withExpiry(item, null, STATE_MISSING_DATA)).toList();
+        }
+        long leadDays = reminderSetting.current().maintenanceLeadDays();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        return items.stream().map(item -> {
+            LocalDate dueDate = item.maintenanceDueDate();
+            if (dueDate == null) {
+                return withExpiry(item, null, STATE_MISSING_DATA);
+            }
+            int remainingDays = (int) ChronoUnit.DAYS.between(today, dueDate);
+            String state = remainingDays < 0 ? STATE_EXPIRED
+                    : remainingDays <= leadDays ? STATE_DUE_SOON : STATE_NORMAL;
+            return withExpiry(item, remainingDays, state);
+        }).toList();
+    }
+
+    private static EquipmentItem withExpiry(EquipmentItem item, Integer remainingDays, String state) {
+        return new EquipmentItem(item.id(), item.code(), item.name(), item.workshopId(),
+                item.workshopName(), item.responsiblePerson(), item.enabled(),
+                item.typeCode(), item.typeName(), item.managementStatus(), item.version(),
+                item.maintenanceDueDate(), remainingDays, state);
+    }
+
+    /** 类型名称来自研发字典；历史设备类型为 null 时名称也为 null，不反推、不猜测。 */
+    private static EquipmentItem withTypeName(EquipmentItem item) {
+        return new EquipmentItem(item.id(), item.code(), item.name(), item.workshopId(),
+                item.workshopName(), item.responsiblePerson(), item.enabled(),
+                item.typeCode(), ReferenceDictionaries.equipmentTypeName(item.typeCode()),
+                item.managementStatus(), item.version(), item.maintenanceDueDate(),
+                item.maintenanceRemainingDays(), item.maintenanceExpiryState());
     }
 
     /**
@@ -56,14 +116,6 @@ public class EquipmentService {
                 row.profile(), row.version(),
                 missingFields(row.profile()),
                 deletion(id));
-    }
-
-    /** 类型名称来自研发字典；历史设备类型为 null 时名称也为 null，不反推、不猜测。 */
-    private static EquipmentItem withTypeName(EquipmentItem item) {
-        return new EquipmentItem(item.id(), item.code(), item.name(), item.workshopId(),
-                item.workshopName(), item.responsiblePerson(), item.enabled(),
-                item.typeCode(), ReferenceDictionaries.equipmentTypeName(item.typeCode()),
-                item.managementStatus(), item.version());
     }
 
     private static EquipmentQuery normalize(EquipmentQuery input) {

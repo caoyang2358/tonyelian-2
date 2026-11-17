@@ -14,11 +14,18 @@ public final class EquipmentModels {
      * S1-E01 列表项。保留首批的七个共享字段（ID 仍为 JSON 数字，现有调用方无需改动），
      * 并追加类型编码、类型名称、管理状态与聚合版本。
      * typeCode / managementStatus 对尚未补档的历史设备为 null，绝不用名称或图例反推。
+     *
+     * <p>维保到期三项供列表直接展示，语义与 S1-T01 期限列表的 MAINTENANCE 行一致：
+     * {@code maintenanceDueDate} 是这台设备所挂合同里最近一份的结束日，没有合同时为 null
+     * （此时状态固定为 MISSING_DATA），不用质保或寿命等其它来源的日期兜底。
+     * {@code maintenanceRemainingDays} 与 {@code maintenanceExpiryState} 都是查询时现算，
+     * 不落库，提前量取当前提醒设置。</p>
      */
     public record EquipmentItem(long id, String code, String name, long workshopId,
                                 String workshopName, String responsiblePerson, boolean enabled,
                                 String typeCode, String typeName, String managementStatus,
-                                long version) {}
+                                long version, LocalDate maintenanceDueDate,
+                                Integer maintenanceRemainingDays, String maintenanceExpiryState) {}
 
     public record EquipmentList(List<EquipmentItem> items) {}
 

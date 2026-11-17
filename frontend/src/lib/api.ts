@@ -6,10 +6,14 @@ export type EquipmentBase = {
   id: string; code: string; name: string; workshopId: string;
   workshopName: string; responsiblePerson: string | null; enabled: boolean;
 };
-/** S1-E01 列表项：共享字段 + 类型、管理状态与聚合版本。未补档设备后四项为 null / 0。 */
+/** S1-E01 列表项：共享字段 + 类型、管理状态、聚合版本与维保到期。未补档设备类型与状态为 null / 0。 */
 export type Equipment = EquipmentBase & {
   typeCode: string | null; typeName: string | null;
   managementStatus: string | null; version: number;
+  /** 最近一份维保合同的结束日；没有合同时为 null，状态固定 MISSING_DATA。 */
+  maintenanceDueDate: string | null;
+  maintenanceRemainingDays: number | null;
+  maintenanceExpiryState: DeadlineExpiryState | null;
 };
 export type EquipmentQuery = {
   keyword?: string; workshopId?: string; typeCode?: string;
@@ -148,6 +152,11 @@ export function mapEquipmentRows(source: unknown[]): Equipment[] {
       typeCode: optional(row.typeCode, '设备类型'), typeName: optional(row.typeName, '设备类型名称'),
       managementStatus: optional(row.managementStatus, '管理状态'),
       version: row.version == null ? 0 : integer(row.version, '设备版本'),
+      // 维保到期三项：无合同时日期为空，状态由后端给 MISSING_DATA，页面据此显示"待补"
+      maintenanceDueDate: optional(row.maintenanceDueDate, '维保到期日'),
+      maintenanceRemainingDays: wholeNumber(row.maintenanceRemainingDays, '维保剩余天数'),
+      maintenanceExpiryState: row.maintenanceExpiryState == null
+        ? null : deadlineExpiryState(row.maintenanceExpiryState),
     };
   });
 }
@@ -329,7 +338,7 @@ export type ContractExpiryState = 'ACTIVE' | 'EXPIRING_SOON' | 'EXPIRED' | 'UNKN
 /** 维保合同摘要（S1-C01）。remainingDays 为负表示已超期天数。 */
 export interface ContractSummary {
   contractId: string; serviceOrganization: string; contractNumber: string | null;
-  startDate: string | null; endDate: string | null;
+  startDate: string | null; endDate: string | null; remark: string | null;
   equipmentCount: number; expiryState: ContractExpiryState; remainingDays: number | null;
 }
 
@@ -365,6 +374,7 @@ export function mapContractPage(value: unknown): PageResult<ContractSummary> {
         serviceOrganization: str(row.serviceOrganization, '服务单位'),
         contractNumber: optional(row.contractNumber, '合同编号'),
         startDate: optional(row.startDate, '开始日期'), endDate: optional(row.endDate, '结束日期'),
+        remark: optional(row.remark, '备注'),
         equipmentCount: integer(row.equipmentCount, '覆盖设备数'),
         expiryState: expiryState(row.expiryState),
         remainingDays: wholeNumber(row.remainingDays, '剩余天数'),
