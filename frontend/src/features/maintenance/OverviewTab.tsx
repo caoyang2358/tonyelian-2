@@ -305,10 +305,9 @@ export function OverviewTab() {
                     </span>)}
                   </div>
                   {deadlineAbnormal > 0 && <p className="ops-deadline-type">
-                    临期与超期按来源：质保 <b>{deadlineTypes.warranty}</b> 条 · 维保 <b>{deadlineTypes.maintenance}</b> 条 · 预计寿命 <b>{deadlineTypes.expectedLife}</b> 条
+                    临期与超期按来源：质保 <b>{deadlineTypes.warranty}</b> 条 · 维保 <b>{deadlineTypes.maintenance}</b> 条{deadlineTypes.expectedLife > 0 && <> · 预计寿命 <b>{deadlineTypes.expectedLife}</b> 条</>}
                   </p>}
                   <div className="ops-deadline-detail">
-                    <p className="ops-deadline-detail-title">明细 · 每行 = 一台设备的一类期限，共 {deadlineSum} 行</p>
                     {deadlineRowsNote != null
                       ? <p className="ops-deadline-detail-note">{deadlineRowsNote}</p>
                       : deadlineRows == null

@@ -291,7 +291,6 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-chart-hint{font-size:10px;color:#8a9684;display:inline-flex;align-items:center}
 /* 期限明细表：把汇总条里的每一条落到"哪台设备、哪类期限、缺什么/还剩几天" */
 .ops-deadline-detail{margin-top:12px;border-top:1px dashed #e2e8d8;padding-top:9px}
-.ops-deadline-detail-title{margin:0 0 7px;font-size:10px;font-weight:600;color:#3c5238}
 .ops-deadline-detail-note{margin:4px 0 0;font-size:10px;color:#8a9684}
 .ops-deadline-table{width:100%;border-collapse:collapse;font-size:10px}
 .ops-deadline-table th{text-align:left;padding:3px 8px 5px 0;color:#8a9684;font-weight:500;border-bottom:1px solid #e8ede2;white-space:nowrap}
