@@ -437,3 +437,117 @@
 
 .en-row-gap td { background: #fdfaf3; }
 .en-row-gap .en-gap-list { margin: 0; }
+
+/* ------------------------------------------------------ 当日来源与分摊抽屉 */
+
+.en-drawer-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(24, 32, 28, 0.32);
+}
+
+.en-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 94vw);
+  height: 100%;
+  background: #fff;
+  box-shadow: -8px 0 28px rgba(24, 32, 28, 0.16);
+  animation: en-drawer-in 160ms ease-out;
+}
+
+@keyframes en-drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.en-drawer-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.en-drawer-head h3 { margin: 0 0 2px; color: #1d332c; font-size: 16px; font-weight: 600; }
+
+.en-drawer-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.en-drawer-close:hover { color: #1d332c; }
+
+.en-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px 28px;
+}
+
+.en-detail-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfa;
+}
+
+.en-detail-basis { color: #5a6a61; font-size: 12.5px; }
+
+.en-detail-note {
+  width: 100%;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.en-detail-block { margin-top: 20px; }
+
+.en-detail-block h4 {
+  margin: 0 0 10px;
+  color: #1d332c;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.en-detail-pairs {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.en-detail-pairs dt { color: var(--muted); }
+.en-detail-pairs dd { margin: 0; color: #33443c; }
+
+.en-table-compact { font-size: 12px; }
+.en-table-compact th, .en-table-compact td { padding: 7px 8px; vertical-align: top; }
+
+.en-detail-total {
+  margin: 10px 0 0;
+  color: #33443c;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.en-share-line {
+  display: block;
+  color: #33443c;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.7;
+}
+
+.en-ok { color: #24704f; }

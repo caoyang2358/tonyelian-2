@@ -85,6 +85,20 @@ public class EnergySourceRepository {
                AND record_type IN ('QUALIFIED_OUTPUT', 'NO_OUTPUT')
             """;
 
+    /**
+     * 当日订单归属量。关联路径是「成品分配 → 称重记录」，因为归属只记在分配上，
+     * 称重记录本身不带订单。{@code output_id IS NULL} 的分配行无法定位日期，不纳入。
+     */
+    private static final String SELECT_ORDER_ATTRIBUTIONS = """
+            SELECT fa.order_id, o.order_no, SUM(fa.allocated_quantity_ton) AS attributed_quantity_ton
+              FROM p2_finished_allocation fa
+              JOIN p2_output_record r ON r.output_id = fa.output_id
+              JOIN p2_customer_order o ON o.order_id = fa.order_id
+             WHERE r.workshop_id = ? AND r.actual_date = ?
+             GROUP BY fa.order_id, o.order_no
+             ORDER BY fa.order_id
+            """;
+
     private final JdbcTemplate jdbc;
 
     public EnergySourceRepository(JdbcTemplate jdbc) {
@@ -174,6 +188,27 @@ public class EnergySourceRepository {
                         rs.getBigDecimal("qualified_quantity_ton")),
                 workshopId, from, to);
     }
+
+    /**
+     * 当日该车间的订单归属量。
+     *
+     * <p>{@code p2_output_record} 本身没有订单字段——归属只写在成品分配上，所以这里的
+     * 口径是「按output_id 关联到当天的称重记录，再按订单汇总分配量」。没有这一层，
+     * 任何按订单分摊的权重都只能靠猜。{@code output_id} 为空的分配行无从判断属于哪一天，
+     * 本查询不纳入，避免把它们挪到某一天上凑数。</p>
+     */
+    public List<OrderAttribution> orderAttributions(long workshopId, LocalDate actualDate) {
+        return jdbc.query(SELECT_ORDER_ATTRIBUTIONS, (rs, row) -> new OrderAttribution(
+                        rs.getLong("order_id"),
+                        rs.getString("order_no"),
+                        rs.getBigDecimal("attributed_quantity_ton")),
+                workshopId, actualDate);
+    }
+
+    /**
+     * @param attributedQuantityTon 该订单当日归属的合格量合计（吨）
+     */
+    public record OrderAttribution(long orderId, String orderNo, BigDecimal attributedQuantityTon) {}
 
     private static String placeholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));

@@ -5,6 +5,7 @@ import type {
   EnergyQuantity, EnergyTotalsResult, WorkshopOption,
 } from '../../lib/api';
 import { localToday } from './energyPriceFormat';
+import { EnergyDayDetail } from './EnergyDayDetail';
 import './energy.css';
 
 /**
@@ -58,6 +59,8 @@ export function EnergyTotalsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [workshops, setWorkshops] = useState<WorkshopOption[]>([]);
+  // 点某一天进详情：分摊天然是「一个车间的一天」，所以只存这一对。
+  const [detail, setDetail] = useState<{workshopId: string; actualDate: string} | null>(null);
 
   const totalsController = useRef<AbortController | null>(null);
   const dailyController = useRef<AbortController | null>(null);
@@ -231,7 +234,8 @@ export function EnergyTotalsPanel() {
                 return (
                   <DailyRow key={key} rowKey={key} item={item}
                             expanded={expanded === key}
-                            onToggle={() => setExpanded(expanded === key ? null : key)} />
+                            onToggle={() => setExpanded(expanded === key ? null : key)}
+                            onOpen={() => setDetail({workshopId: item.workshopId, actualDate: item.actualDate})} />
                 );
               })}
             </tbody>
@@ -251,6 +255,11 @@ export function EnergyTotalsPanel() {
           </div>
         )}
       </section>
+
+      {detail && (
+        <EnergyDayDetail workshopId={detail.workshopId} actualDate={detail.actualDate}
+                         onClose={() => setDetail(null)} />
+      )}
     </div>
   );
 }
@@ -295,13 +304,19 @@ function QuantityCard({label, quantity}: {label: string; quantity: EnergyQuantit
   );
 }
 
-function DailyRow({item, rowKey, expanded, onToggle}: {
-  item: EnergyDailyConsumption; rowKey: string; expanded: boolean; onToggle: () => void;
+function DailyRow({item, rowKey, expanded, onToggle, onOpen}: {
+  item: EnergyDailyConsumption; rowKey: string; expanded: boolean;
+  onToggle: () => void; onOpen: () => void;
 }) {
   return (
     <>
       <tr>
-        <td className="en-mono">{item.actualDate}</td>
+        <td className="en-mono">
+          <button type="button" className="en-link" onClick={onOpen}
+                  title="查看当日来源与分摊">
+            {item.actualDate}
+          </button>
+        </td>
         <td>{item.workshopName ?? `车间 ${item.workshopId}`}</td>
         <td>{item.energyTypeName ?? item.energyType}</td>
         <td>

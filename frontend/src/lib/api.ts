@@ -1269,6 +1269,98 @@ export interface EnergyDailyConsumptionQuery {
   pageSize?: number;
 }
 
+/** 当时有效的价格快照。带上范围与版本，页面才能解释"为什么是这个价"。 */
+export interface EnergyPriceSnapshot {
+  priceId: string;
+  scope: string;
+  effectiveDate: string;
+  unitCode: string;
+  unitPriceYuanPerUnit: string;
+  version: number;
+}
+
+/** 当日一类能源的来源、价格与费用。consumption 为 null 时 amountYuan 必为 null。 */
+export interface EnergyDaySource {
+  energyType: EnergyType;
+  energyTypeName: string | null;
+  unit: string;
+  meter: EnergyMeterIdentity | null;
+  consumption: string | null;
+  knownConsumption: string | null;
+  completeness: EnergyCompleteness;
+  qualityStatus: string | null;
+  calculationMethod: string | null;
+  refreshTime: string | null;
+  price: EnergyPriceSnapshot | null;
+  amountYuan: string | null;
+  missingItems: EnergyMissingItem[];
+}
+
+export interface EnergyShareEnergy {
+  energyType: EnergyType;
+  unit: string;
+  allocatedConsumption: string | null;
+  amountYuan: string | null;
+}
+
+/** 一个分摊对象；订单与公共份额同构，靠 targetType 区分。 */
+export interface EnergyAllocationShare {
+  targetType: string;
+  orderId: string | null;
+  orderNo: string | null;
+  qualifiedQuantityTon: string | null;
+  ratio: string | null;
+  energies: EnergyShareEnergy[];
+  amountYuan: string | null;
+  missingItems: EnergyMissingItem[];
+}
+
+export interface EnergyReconciliation {
+  energyType: EnergyType;
+  unit: string;
+  sourceConsumption: string | null;
+  allocatedConsumption: string | null;
+  publicConsumption: string | null;
+  difference: string | null;
+}
+
+export interface EnergyDayConfirmation {
+  confirmed: boolean;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  invalidated: boolean;
+  note: string;
+}
+
+export interface EnergyDenominator {
+  quantityTon: string | null;
+  complete: boolean;
+  note: string;
+}
+
+/**
+ * S2-E03 当日来源与分摊。
+ * status 只说明"能不能分摊"，不能分摊的原因看 missingItems 与 statusNote。
+ */
+export interface EnergyWorkshopDayAllocation {
+  workshopId: string;
+  workshopName: string | null;
+  workshopType: string | null;
+  actualDate: string;
+  allocationBasis: string;
+  status: string;
+  statusNote: string;
+  dayConfirmation: EnergyDayConfirmation;
+  denominator: EnergyDenominator;
+  sources: EnergyDaySource[];
+  totalAmountYuan: string | null;
+  allocations: EnergyAllocationShare[];
+  publicShare: EnergyAllocationShare | null;
+  reconciliation: EnergyReconciliation[];
+  costRun: {costRunId: string | null; version: number | null; status: string | null};
+  missingItems: EnergyMissingItem[];
+}
+
 function completenessOf(value: unknown): EnergyCompleteness {
   const raw = str(value, '完整性');
   if (raw === 'COMPLETE' || raw === 'PARTIAL' || raw === 'MISSING') return raw;
@@ -1367,6 +1459,119 @@ export function mapEnergyDailyConsumptionPage(value: unknown): EnergyDailyConsum
       partialCount: integer(summary.partialCount, '部分已知数'),
       missingCount: integer(summary.missingCount, '缺测数'),
     },
+  };
+}
+
+function mapPriceSnapshot(value: unknown): EnergyPriceSnapshot | null {
+  if (value == null) return null;
+  const row = record(value, '价格快照');
+  return {
+    priceId: id(row.priceId, '价格ID'),
+    scope: str(row.scope, '价格范围'),
+    effectiveDate: str(row.effectiveDate, '生效日'),
+    unitCode: str(row.unitCode, '计价单位'),
+    unitPriceYuanPerUnit: str(row.unitPriceYuanPerUnit, '单价'),
+    version: integer(row.version, '价格版本'),
+  };
+}
+
+function mapDaySource(value: unknown): EnergyDaySource {
+  const row = record(value, '当日来源');
+  return {
+    energyType: energyTypeOf(row.energyType),
+    energyTypeName: nullableStr(row.energyTypeName, '能源名称'),
+    unit: str(row.unit, '单位'),
+    meter: row.meter == null ? null : (() => {
+      const meter = record(row.meter, '表计');
+      return {
+        sensorId: id(meter.sensorId, '表计ID'),
+        sensorCode: str(meter.sensorCode, '表计编码'),
+        sensorName: str(meter.sensorName, '表计名称'),
+      };
+    })(),
+    consumption: nullableStr(row.consumption, '消耗量'),
+    knownConsumption: nullableStr(row.knownConsumption, '已知消耗量'),
+    completeness: completenessOf(row.completeness),
+    qualityStatus: nullableStr(row.qualityStatus, '质量状态'),
+    calculationMethod: nullableStr(row.calculationMethod, '计算方式'),
+    refreshTime: nullableStr(row.refreshTime, '刷新时间'),
+    price: mapPriceSnapshot(row.price),
+    amountYuan: nullableStr(row.amountYuan, '费用'),
+    missingItems: mapMissingItems(row.missingItems),
+  };
+}
+
+function mapAllocationShare(value: unknown): EnergyAllocationShare {
+  const row = record(value, '分摊份额');
+  const energies = Array.isArray(row.energies) ? row.energies : [];
+  return {
+    targetType: str(row.targetType, '分摊对象类型'),
+    orderId: row.orderId == null ? null : id(row.orderId, '订单ID'),
+    orderNo: nullableStr(row.orderNo, '订单号'),
+    qualifiedQuantityTon: nullableStr(row.qualifiedQuantityTon, '归属合格量'),
+    ratio: nullableStr(row.ratio, '分摊比例'),
+    energies: energies.map((entry: unknown) => {
+      const energy = record(entry, '分摊能源');
+      return {
+        energyType: energyTypeOf(energy.energyType),
+        unit: str(energy.unit, '单位'),
+        allocatedConsumption: nullableStr(energy.allocatedConsumption, '分摊消耗'),
+        amountYuan: nullableStr(energy.amountYuan, '分摊费用'),
+      };
+    }),
+    amountYuan: nullableStr(row.amountYuan, '分摊费用合计'),
+    missingItems: mapMissingItems(row.missingItems),
+  };
+}
+
+/** S2-E03：分母、来源、份额、校验四块必须一起解析，缺任何一块都会让页面显示错的比例。 */
+export function mapWorkshopDayAllocation(value: unknown): EnergyWorkshopDayAllocation {
+  const data = record(value, '当日分摊');
+  const confirmation = record(data.dayConfirmation, '当日录全确认');
+  const denominator = record(data.denominator, '分摊分母');
+  const costRun = record(data.costRun, '核算运行');
+  const reconciliation = Array.isArray(data.reconciliation) ? data.reconciliation : [];
+  return {
+    workshopId: id(data.workshopId, '车间ID'),
+    workshopName: nullableStr(data.workshopName, '车间名称'),
+    workshopType: nullableStr(data.workshopType, '车间类型'),
+    actualDate: str(data.actualDate, '实际日'),
+    allocationBasis: str(data.allocationBasis, '分摊依据'),
+    status: str(data.status, '分摊状态'),
+    statusNote: str(data.statusNote, '状态说明'),
+    dayConfirmation: {
+      confirmed: confirmation.confirmed === true,
+      confirmedBy: nullableStr(confirmation.confirmedBy, '确认人'),
+      confirmedAt: nullableStr(confirmation.confirmedAt, '确认时间'),
+      invalidated: confirmation.invalidated === true,
+      note: str(confirmation.note, '确认说明'),
+    },
+    denominator: {
+      quantityTon: nullableStr(denominator.quantityTon, '分母吨数'),
+      complete: denominator.complete === true,
+      note: str(denominator.note, '分母说明'),
+    },
+    sources: Array.isArray(data.sources) ? data.sources.map(mapDaySource) : [],
+    totalAmountYuan: nullableStr(data.totalAmountYuan, '当日费用合计'),
+    allocations: Array.isArray(data.allocations) ? data.allocations.map(mapAllocationShare) : [],
+    publicShare: data.publicShare == null ? null : mapAllocationShare(data.publicShare),
+    reconciliation: reconciliation.map((entry: unknown) => {
+      const row = record(entry, '合计校验');
+      return {
+        energyType: energyTypeOf(row.energyType),
+        unit: str(row.unit, '单位'),
+        sourceConsumption: nullableStr(row.sourceConsumption, '源总量'),
+        allocatedConsumption: nullableStr(row.allocatedConsumption, '订单合计'),
+        publicConsumption: nullableStr(row.publicConsumption, '公共合计'),
+        difference: nullableStr(row.difference, '差额'),
+      };
+    }),
+    costRun: {
+      costRunId: costRun.costRunId == null ? null : id(costRun.costRunId, '核算运行ID'),
+      version: costRun.version == null ? null : count(costRun.version, '核算版本'),
+      status: nullableStr(costRun.status, '核算状态'),
+    },
+    missingItems: mapMissingItems(data.missingItems),
   };
 }
 
@@ -1580,6 +1785,10 @@ export const api = {
     return requestApi(`/api/v1/energy/daily-consumptions?${params.toString()}`,
       mapEnergyDailyConsumptionPage, {signal});
   },
+  /** S2-E03 车间某日的来源与分摊。分母不成立时只给缺项，不给比例。 */
+  energyDayAllocation: (workshopId: string, actualDate: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/energy/workshops/${encodeURIComponent(workshopId)}`
+      + `/days/${encodeURIComponent(actualDate)}/allocations`, mapWorkshopDayAllocation, {signal}),
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),
