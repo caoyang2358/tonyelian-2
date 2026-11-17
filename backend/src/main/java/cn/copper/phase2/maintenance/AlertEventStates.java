@@ -36,7 +36,8 @@ final class AlertEventStates {
      *
      * <ul>
      *   <li>{@link #REPAIR_WAITING}：存在未结束的工单（待审核/待维修/待验收），页面上叫「等待维修」。</li>
-     *   <li>{@link #REPAIR_HANDLED}：没有未结束工单，且存在已验收的工单，页面上叫「已处理」。</li>
+     *   <li>{@link #REPAIR_HANDLED}：没有未结束工单，且存在已结案的工单（验收通过，或审核判定无需维修/重复后关闭），
+     *       页面上叫「已处理」。</li>
      *   <li>{@link #REPAIR_NONE}：还没报修，展示人工处理状态即可。</li>
      * </ul>
      */

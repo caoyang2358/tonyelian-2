@@ -54,13 +54,19 @@ public class AlertEventRepository {
             + " AND r.status NOT IN ('COMPLETED', 'CLOSED'))";
 
     /**
-     * 维修联动状态推导：有未结工单 → 等待维修；没有未结但验收过 → 已处理；否则未报修。
-     * 与 {@link #OPEN_ORDER_EXISTS} 同源，列表标签与优先级判断不会打架。
+     * 维修联动状态推导：有未结工单 → 等待维修；没有未结但有已结案的工单 → 已处理；否则未报修。
+     *
+     * <p>「已结案」包含验收通过（COMPLETED）和审核判定无需维修/重复（CLOSED）两种：
+     * 前者是修完了，后者是已有明确结论。若只认 COMPLETED，无需维修关闭后事件会显示
+     * 「已处理状态缺失」，页面又出现「事件已结束、处理状态待处理」的矛盾。</p>
+     *
+     * <p>与 {@link #OPEN_ORDER_EXISTS} 同源，列表标签与优先级判断不会打架。</p>
      */
     static final String REPAIR_STATE_COLUMN = "CASE WHEN " + OPEN_ORDER_EXISTS + " THEN '"
             + AlertEventStates.REPAIR_WAITING + "'"
             + " WHEN EXISTS (SELECT 1 FROM p2_repair_order r"
-            + " WHERE r.source_alert_event_id = e.event_id AND r.status = 'COMPLETED') THEN '"
+            + " WHERE r.source_alert_event_id = e.event_id"
+            + " AND r.status IN ('COMPLETED', 'CLOSED')) THEN '"
             + AlertEventStates.REPAIR_HANDLED + "'"
             + " ELSE '" + AlertEventStates.REPAIR_NONE + "' END";
 
