@@ -122,7 +122,7 @@ public class AttachmentWriteService {
             throw BusinessException.versionConflict(request.expectedVersion(), current.version());
         }
         // 类别沿用原附件：照片位不能在这一步变成合同正文，否则列表按类别筛选会前后矛盾。
-        AttachmentStorage.assertAllowedType(current.fileKind(), request.mediaType());
+        AttachmentStorage.assertAllowedType(current.fileKind(), request.mediaType(), request.originalName());
 
         String newKey = storage.persist(file);
         if (repository.updateContent(attachmentId, request.originalName(), request.mediaType(),

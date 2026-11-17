@@ -19,12 +19,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 附件的本机文件存储。
@@ -66,6 +69,56 @@ public class AttachmentStorage {
             Map.entry("xls", "application/vnd.ms-excel"),
             Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
 
+    /**
+     * 可执行文件与脚本的扩展名。
+     *
+     * <p>放行本来就靠白名单，这张表不参与"是否允许"的判断，只负责把拒绝的理由说准：
+     * 用户传 {@code .exe} 时该看到"不能上传可执行文件"，而不是一串 MIME 类型。
+     * 没有列在这里的陌生扩展名仍会被白名单挡掉，只是报错措辞退化为"不收 .xxx 文件"。</p>
+     */
+    private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
+            "exe", "com", "bat", "cmd", "msi", "scr", "pif", "cpl", "dll", "sys",
+            "vbs", "vbe", "js", "jse", "wsf", "wsh", "ps1", "psm1", "sh", "jar", "apk");
+
+    /**
+     * 与上面那张表对应的媒体类型。
+     *
+     * <p>扩展名可以被改掉（{@code a.exe} 改名 {@code a.pdf}），此时只能靠客户端声明的
+     * Content-Type 兜底识别，避免可执行文件以"文档"的身份进入存储。</p>
+     */
+    private static final Set<String> BLOCKED_MEDIA_TYPES = Set.of(
+            "application/x-msdownload", "application/x-msdos-program",
+            "application/x-executable", "application/vnd.microsoft.portable-executable",
+            "application/x-bat", "application/x-sh", "application/java-archive",
+            "application/vnd.android.package-archive");
+
+    /**
+     * MIME → 报错文案里的叫法。
+     *
+     * <p>允许的格式由 {@link #ALLOWED_TYPES} 决定，这张表只负责翻译成人话；
+     * 图片项只写扩展名，由 {@link #describeAllowed} 聚合成"图片（JPG、PNG）"，
+     * 避免三类图片各自成串让提示变得又长又空。新增允许类型时必须同时补一条。</p>
+     */
+    private static final Map<String, String> FORMAT_LABELS = Map.ofEntries(
+            Map.entry("image/jpeg", "JPG"), Map.entry("image/png", "PNG"),
+            Map.entry("image/webp", "WebP"), Map.entry("image/gif", "GIF"),
+            Map.entry("image/bmp", "BMP"),
+            Map.entry("application/pdf", "PDF"),
+            Map.entry("text/plain", "纯文本（TXT）"), Map.entry("text/csv", "CSV 表格"),
+            Map.entry("application/msword", "Word 文档"),
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "Word 文档"),
+            Map.entry("application/vnd.ms-excel", "Excel 表格"),
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "Excel 表格"));
+
+    /** 报错时用页面上的类别名，不用 IMAGE / MANUAL 这类内部枚举值。 */
+    private static final Map<String, String> KIND_NAMES = Map.of(
+            AttachmentModels.KIND_IMAGE, "设备配图",
+            AttachmentModels.KIND_MANUAL, "设备手册",
+            AttachmentModels.KIND_DOCUMENT, "文档资料",
+            AttachmentModels.KIND_PHOTO, "报修照片");
+
     /** 服务端生成的相对路径形态；读取时先按这个形状校验，再做目录越界兜底。 */
     private static final Pattern STORAGE_KEY = Pattern.compile("^\\d{4}/\\d{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
@@ -98,7 +151,7 @@ public class AttachmentStorage {
      */
     public FileFacts inspect(MultipartFile file, String fileKind) {
         FileFacts facts = inspectAnyKind(file);
-        assertAllowedType(fileKind, facts.mediaType());
+        assertAllowedType(fileKind, facts.mediaType(), facts.originalName());
         return facts;
     }
 
@@ -117,10 +170,16 @@ public class AttachmentStorage {
                     "文件大小为 " + describeSize(file.getSize()) + "，超过上限 " + maxFileSizeText + "。");
         }
         String originalName = normalizeFileName(file.getOriginalFilename());
+        // 先按扩展名拦可执行文件：这类文件的 Content-Type 在不同浏览器里不一致，
+        // 等到白名单那一步再拒就只能说"类型不符"，说不出真正的原因。
+        String extension = extensionOf(originalName);
+        if (extension != null && BLOCKED_EXTENSIONS.contains(extension)) {
+            throw blockExecutable(extension, false);
+        }
         String mediaType = resolveMediaType(file.getContentType(), originalName);
         if (mediaType.isEmpty()) {
             throw BusinessException.invalid("file",
-                    "无法识别文件类型，请使用图片、PDF、Word、Excel 或纯文本文件。");
+                    "无法识别文件类型，请改用图片、PDF、Word、Excel 或纯文本文件。");
         }
         return new FileFacts(originalName, mediaType, file.getSize(), sha256(file));
     }
@@ -262,13 +321,100 @@ public class AttachmentStorage {
                 : type;
     }
 
-    /** 按 fileKind 校验媒体类型；不通过时报 400 并说明允许哪些类型，而不是静默存下来。 */
-    static void assertAllowedType(String fileKind, String mediaType) {
-        List<String> allowed = ALLOWED_TYPES.getOrDefault(fileKind, List.of());
-        if (!allowed.contains(mediaType)) {
-            throw BusinessException.invalid("file",
-                    "「" + fileKind + "」不接受该文件类型，允许：" + String.join("、", allowed) + "。");
+    /**
+     * 按 fileKind 校验媒体类型；不通过时报 400 并说清允许哪些格式，而不是静默存下来。
+     *
+     * <p>文案里不出现 MIME 与 IMAGE/MANUAL 这类内部值——用户不知道"MANUAL"是什么，
+     * 但看得懂"设备手册只收 PDF 和图片"。允许清单由 {@link #ALLOWED_TYPES} 生成，
+     * 不另外维护一份文案，避免改了一处忘了另一处。</p>
+     */
+    static void assertAllowedType(String fileKind, String mediaType, String originalName) {
+        if (BLOCKED_MEDIA_TYPES.contains(mediaType)) {
+            // 扩展名被改过的情况：文件名看着像 PDF，内容类型仍是可执行文件。
+            throw blockExecutable(extensionOf(originalName), true);
         }
+        List<String> allowed = ALLOWED_TYPES.getOrDefault(fileKind, List.of());
+        if (allowed.contains(mediaType)) {
+            return;
+        }
+        String extension = extensionOf(originalName);
+        StringBuilder message = new StringBuilder()
+                .append("「").append(KIND_NAMES.getOrDefault(fileKind, "该类别")).append("」不收")
+                .append(extension == null ? "这种文件" : " ." + extension + " 文件")
+                .append("。此类附件允许：").append(describeAllowed(fileKind)).append("。");
+        message.append(suggestionFor(fileKind, mediaType));
+        throw BusinessException.invalid("file", message.toString());
+    }
+
+    /**
+     * 选错类别时给出路。
+     *
+     * <p>多数"类型不符"其实不是格式不对，而是把 Word 传进了设备手册、把扫描图传进了文档资料。
+     * 只说"不收"用户会反复重试同一个文件，直接告诉他该改选哪一类更省事。</p>
+     */
+    private static String suggestionFor(String fileKind, String mediaType) {
+        if (!AttachmentModels.KIND_DOCUMENT.equals(fileKind)
+                && ALLOWED_TYPES.getOrDefault(AttachmentModels.KIND_DOCUMENT, List.of()).contains(mediaType)) {
+            return "这类文件请把类别改为「文档资料」再上传。";
+        }
+        if (!AttachmentModels.KIND_IMAGE.equals(fileKind)
+                && !AttachmentModels.KIND_PHOTO.equals(fileKind)
+                && ALLOWED_TYPES.getOrDefault(AttachmentModels.KIND_IMAGE, List.of()).contains(mediaType)) {
+            return "如果是图片，请把类别改为「设备配图」再上传。";
+        }
+        return "";
+    }
+
+    /**
+     * 把允许的 MIME 聚合成"PDF、图片（JPG、PNG、WebP）"的读法，与放行规则共用一份数据。
+     *
+     * <p>图片按首次出现的位置合并成一段：三类图片各列一遍会让提示读起来像清单堆砌，
+     * 合成"图片（...）"既短又保留了具体格式。</p>
+     */
+    static String describeAllowed(String fileKind) {
+        List<String> allowed = ALLOWED_TYPES.getOrDefault(fileKind, List.of());
+        List<String> parts = new ArrayList<>();
+        boolean imagesDone = false;
+        for (String type : allowed) {
+            if (type.startsWith("image/")) {
+                if (imagesDone) {
+                    continue;
+                }
+                imagesDone = true;
+                String names = allowed.stream()
+                        .filter(item -> item.startsWith("image/"))
+                        .map(item -> FORMAT_LABELS.getOrDefault(item, item))
+                        .distinct()
+                        .collect(Collectors.joining("、"));
+                parts.add("图片（" + names + "）");
+            } else {
+                // doc/docx 都叫"Word 文档"、xls/xlsx 都叫"Excel 表格"，不去重会同一个词念两遍。
+                String label = FORMAT_LABELS.getOrDefault(type, type);
+                if (!parts.contains(label)) {
+                    parts.add(label);
+                }
+            }
+        }
+        return String.join("、", parts);
+    }
+
+    /**
+     * 可执行文件的拒绝理由。
+     *
+     * <p>两种情形分开说：扩展名就是 .exe（直接说不能传这类文件）；
+     * 扩展名被改成了 .pdf 而内容仍是可执行程序（要说清"改扩展名也不行"，
+     * 否则用户会以为系统连 PDF 都不认）。</p>
+     */
+    private static BusinessException blockExecutable(String extension, boolean disguised) {
+        String advice = "请改用图片、PDF、Word、Excel 或纯文本文件。";
+        if (disguised && extension != null) {
+            return BusinessException.invalid("file",
+                    "这个文件的内容是可执行程序，只把扩展名改成了 ." + extension + "。"
+                            + "出于安全考虑不能上传，" + advice);
+        }
+        String what = extension == null ? "可执行文件" : " ." + extension + " 这类可执行文件";
+        return BusinessException.invalid("file",
+                "出于安全考虑，不能上传" + what + "。" + advice);
     }
 
     private static String extensionOf(String name) {
