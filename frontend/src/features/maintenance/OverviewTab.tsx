@@ -30,7 +30,7 @@ const deadlineMeta = [
 ] as const;
 
 /** 明细行最多展示几条，剩下的引导去设备档案的期限面板看全量。 */
-const DEADLINE_ROWS_SHOWN = 8;
+const DEADLINE_ROWS_SHOWN = 15;
 
 const DEADLINE_TYPE_LABEL: Record<string, string> = {
   WARRANTY: '质保', MAINTENANCE: '维保', EXPECTED_LIFE: '预计寿命',
@@ -309,20 +309,18 @@ export function OverviewTab() {
                     临期与超期按来源：质保 <b>{deadlineTypes.warranty}</b> 条 · 维保 <b>{deadlineTypes.maintenance}</b> 条 · 预计寿命 <b>{deadlineTypes.expectedLife}</b> 条
                   </p>}
                   <ul className="ops-deadline-notes">
-                    <li>计数单位是<strong>条</strong>不是台：一台设备的质保、维保、预计寿命各算一条，所以条数通常是台数的三倍（多份维保合同时更多）。</li>
-                    <li>「待补资料」指缺投用日期、质保年限或维保合同，算不出到期日；它<strong>不是</strong>"还没到期"，补齐后自动转入临期/超期评估，数字随之下降。</li>
-                    <li>提醒方式：每次打开概览按当时的档案重新判定，临期阈值取提醒设置里的提前量（质保、维保），寿命固定提前一年；属于常驻待办，不是定时推送。</li>
-                    <li>工单超时<strong>不在</strong>这张卡里，见下方「工单时效」。</li>
+                    <li>一条 = 一台设备的<strong>一类期限</strong>（质保、维保、预计寿命各算一条），所以条数通常是台数的 3 倍。</li>
+                    <li>「待补资料」= 档案缺日期、算不出到期日，<strong>不是</strong>还没到期；补齐后自动转入临期/超期评估。</li>
                   </ul>
                   <div className="ops-deadline-detail">
-                    <p className="ops-deadline-detail-title">提醒的到底是啥：下面每一行就是一台设备的一类期限，一共 {deadlineSum} 行。</p>
+                    <p className="ops-deadline-detail-title">明细 · 每行 = 一台设备的一类期限，共 {deadlineSum} 行</p>
                     {deadlineRowsNote != null
                       ? <p className="ops-deadline-detail-note">{deadlineRowsNote}</p>
                       : deadlineRows == null
                         ? <p className="ops-deadline-detail-note">明细加载中…</p>
                         : <table className="ops-deadline-table">
                             <thead><tr>
-                              <th>设备</th><th>期限类型</th><th>状态</th><th>到期日 / 缺什么</th><th>负责人</th>
+                              <th>设备</th><th>期限类型</th><th>状态</th><th>到期日 / 缺失项</th><th>负责人</th>
                             </tr></thead>
                             <tbody>
                               {deadlineRows.slice(0, DEADLINE_ROWS_SHOWN).map(row => {
