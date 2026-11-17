@@ -40,9 +40,8 @@ public class OverviewService {
      * 预计寿命三类期限，因此 8 台设备的档案全部缺失时是 24 条，不是 24 台。页面上
      * 台数另行给出，避免把"条"读成"台"。</p>
      */
-    static final String DEADLINE_NOTE = "期限提醒看设备档案的到期情况：质保到期、维保到期、预计寿命三类，"
-            + "按每台设备的每一类各算一条。数据显示的是查询这一刻的状态，与上方的时间范围无关。"
-            + "不含维修工单的处理时限——工单超时在时长卡下方单独统计。";
+    static final String DEADLINE_NOTE = "按设备档案实时计算：每台设备的质保、维保、预计寿命各算一条；"
+            + "工单超时另见「工单时效」。";
 
     /** 采集"待补资料"设备台数时的每页条数，取接口允许的上限。 */
     private static final int MISSING_SCAN_PAGE_SIZE = 100;
@@ -180,8 +179,7 @@ public class OverviewService {
         }
         String devices = missingEquipmentCount > 0 ? missingEquipmentCount + " 台设备共 " : "";
         return DEADLINE_NOTE + "当前 " + devices + missingCount
-                + " 条属于「待补资料」：这些设备缺投用日期、质保年限或维保合同，算不出到期日，"
-                + "因此单列而不是计入临期/超期；补齐后自动纳入到期评估，数字随之下降。";
+                + " 条待补资料：档案缺日期、算不出到期日，补齐后自动纳入评估。";
     }
 
     /** 均值保留一位小数；样本量为 0 时返回 null，避免把"没有样本"呈现成"平均 0 秒"。 */
@@ -197,17 +195,17 @@ public class OverviewService {
     private static Map<String, String> caliber(String deadlineNote) {
         Map<String, String> caliber = new LinkedHashMap<>();
         caliber.put("inspectionCount", "按实际巡检时刻计数。");
-        caliber.put("alertEventCount", "按事件触发时刻计数；同一持续过程只有一条事件，因此只计一次。");
-        caliber.put("pendingRepairCount", "当前处于待审核（含退回补充）、待维修、待验收的工单数，按首次提交时刻落入范围筛选。");
+        caliber.put("alertEventCount", "按事件触发时刻计数；同一持续过程只计一次。");
+        caliber.put("pendingRepairCount", "待审核（含退回补充）、待维修、待验收的在办工单数。");
         caliber.put("completedRepairCount", "按验收通过时刻统计范围内的完成量。");
-        caliber.put("averageHandlingSeconds", "维修工单平均处理时长：同一批已完成工单从首次提交（建单即提交）到验收通过的全流程秒数均值，保留一位小数；无样本时为 null。");
-        caliber.put("durationBuckets", "同一批完成样本按处理时长分档：30 分钟以内、30 分钟至 2 小时、超过 2 小时；三档之和等于处理时长样本量。");
-        caliber.put("handlingSampleCount", "参与均值计算的完成样本量，与 completedRepairCount 同口径。");
-        caliber.put("equipmentReportCounts", "每台设备首次正式提交落入范围的工单数；补充后重提不重复计数。");
+        caliber.put("averageHandlingSeconds", "已完成工单从首次提交到验收通过的平均用时。");
+        caliber.put("durationBuckets", "完成工单按时长分档：30 分钟内 / 30 分钟~2 小时 / 超 2 小时。");
+        caliber.put("handlingSampleCount", "参与均值计算的完成工单数。");
+        caliber.put("equipmentReportCounts", "每台设备首次提交落入范围的工单数；重提不重复计数。");
         caliber.put("deadlineReminderCount", deadlineNote);
-        caliber.put("deadlineTypeCounts", "临期与超期按期限来源拆分：质保、维保、预计寿命；待补资料不计入，因为它没有到期日。");
-        caliber.put("deadlineMissingEquipmentCount", "「待补资料」涉及的设备台数，按设备去重。条数是设备数乘以期限类型数，两者不相等。");
-        caliber.put("overdueRepairCount", "工单时效，与期限提醒无关：当前处于待审核（含退回补充）、待维修、待验收，且从首次提交到现在已超过 2 小时仍未结束的工单数。按查询时刻计算，不受上方时间范围影响。");
+        caliber.put("deadlineTypeCounts", "临期与超期按期限来源拆分：质保、维保、预计寿命。");
+        caliber.put("deadlineMissingEquipmentCount", "「待补资料」涉及的设备台数（按设备去重）。");
+        caliber.put("overdueRepairCount", "从首次提交至今超过 2 小时仍未结束的在办工单数，与期限提醒无关。");
         return caliber;
     }
 

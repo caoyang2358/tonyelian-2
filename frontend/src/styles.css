@@ -289,10 +289,6 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-deadline-legend i{width:9px;height:9px;border-radius:2px}
 .ops-deadline-legend b{font-weight:600;color:#3c5238;font-variant-numeric:tabular-nums;margin-left:1px}
 .ops-chart-hint{font-size:10px;color:#8a9684;display:inline-flex;align-items:center}
-/* 期限口径说明：解释"条"与"台"的区别、待补资料的含义、提醒方式 */
-.ops-deadline-notes{margin:11px 0 0;padding:0 0 0 15px;display:flex;flex-direction:column;gap:5px;font-size:10px;line-height:1.65;color:#7c8a76}
-.ops-deadline-notes li{list-style:disc}
-.ops-deadline-notes strong{color:#3c5238;font-weight:600}
 /* 期限明细表：把汇总条里的每一条落到"哪台设备、哪类期限、缺什么/还剩几天" */
 .ops-deadline-detail{margin-top:12px;border-top:1px dashed #e2e8d8;padding-top:9px}
 .ops-deadline-detail-title{margin:0 0 7px;font-size:10px;font-weight:600;color:#3c5238}
@@ -311,7 +307,6 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-overdue b{font-size:13px;font-weight:600;color:#5c6b57;font-variant-numeric:tabular-nums;margin:0 2px}
 .ops-overdue-active{border-color:#e8d6b0;background:#fdf9ee}
 .ops-overdue-active b{color:#8a6a1f}
-.ops-overdue-note{color:#9aa796}
 /* 统计范围：先讲清"这些数字算的是哪段时间" */
 .ops-scope{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:2px 0 10px;font-size:10px;color:#7c8a76}
 .ops-scope b{font-weight:600;color:#3c5238;font-variant-numeric:tabular-nums}

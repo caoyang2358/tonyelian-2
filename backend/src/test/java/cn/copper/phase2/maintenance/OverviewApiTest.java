@@ -100,7 +100,7 @@ class OverviewApiTest {
                 .andExpect(jsonPath("$.data.deadlineBreakdown.expired").value(1))
                 .andExpect(jsonPath("$.data.deadlineBreakdown.missing").value(0))
                 .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("设备档案")))
-                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("不含维修工单")))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("工单时效")))
                 .andExpect(jsonPath("$.data.averageHandlingSeconds").value(nullValue()))
                 .andExpect(jsonPath("$.data.handlingSampleCount").value(0));
     }

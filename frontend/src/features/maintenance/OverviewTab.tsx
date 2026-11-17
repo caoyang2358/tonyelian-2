@@ -279,7 +279,6 @@ export function OverviewTab() {
               </div>}
           <div className={`ops-overdue${overdueRepairCount > 0 ? ' ops-overdue-active' : ''}`}>
             <span>工单时效：当前在办工单中 <b>{overdueRepairCount}</b> 单已超过 2 小时未结束<Tip text={caliber.overdueRepairCount} /></span>
-            <span className="ops-overdue-note">与上面的期限提醒不是一回事：这里算的是工单从提交到现在的时长。</span>
           </div>
 
           <div className="ops-chart-head">
@@ -308,10 +307,6 @@ export function OverviewTab() {
                   {deadlineAbnormal > 0 && <p className="ops-deadline-type">
                     临期与超期按来源：质保 <b>{deadlineTypes.warranty}</b> 条 · 维保 <b>{deadlineTypes.maintenance}</b> 条 · 预计寿命 <b>{deadlineTypes.expectedLife}</b> 条
                   </p>}
-                  <ul className="ops-deadline-notes">
-                    <li>一条 = 一台设备的<strong>一类期限</strong>（质保、维保、预计寿命各算一条），所以条数通常是台数的 3 倍。</li>
-                    <li>「待补资料」= 档案缺日期、算不出到期日，<strong>不是</strong>还没到期；补齐后自动转入临期/超期评估。</li>
-                  </ul>
                   <div className="ops-deadline-detail">
                     <p className="ops-deadline-detail-title">明细 · 每行 = 一台设备的一类期限，共 {deadlineSum} 行</p>
                     {deadlineRowsNote != null
