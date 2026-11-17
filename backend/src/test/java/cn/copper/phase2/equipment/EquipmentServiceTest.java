@@ -3,8 +3,13 @@ package cn.copper.phase2.equipment;
 import cn.copper.phase2.common.BusinessException;
 import cn.copper.phase2.common.ErrorCode;
 import cn.copper.phase2.equipment.EquipmentModels.EquipmentDetail;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentItem;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentListResponse;
 import cn.copper.phase2.equipment.EquipmentModels.EquipmentProfile;
+import cn.copper.phase2.equipment.EquipmentModels.EquipmentQuery;
 import cn.copper.phase2.equipment.EquipmentRepository.EquipmentRow;
+import cn.copper.phase2.reminder.ReminderSettingModels.ReminderSetting;
+import cn.copper.phase2.reminder.ReminderSettingService;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -26,7 +31,25 @@ class EquipmentServiceTest {
     }
 
     private static EquipmentService service(EquipmentRepository repository) {
-        return new EquipmentService(repository, new EquipmentReferenceChecker(repository));
+        return service(repository, mock(ReminderSettingService.class));
+    }
+
+    private static EquipmentService service(EquipmentRepository repository,
+                                            ReminderSettingService reminderSetting) {
+        return new EquipmentService(repository, new EquipmentReferenceChecker(repository), reminderSetting);
+    }
+
+    /** 列表项构造：只有维保到期三项与用例相关，其余字段固定，避免噪声。 */
+    private static EquipmentItem listItem(long id, String code, LocalDate maintenanceDueDate) {
+        return new EquipmentItem(id, code, code + " 设备", 1, "车间1", "曹阳", true,
+                "DRAWING_MACHINE", "拉丝机", "IN_USE", 4L, maintenanceDueDate, null, null);
+    }
+
+    private static ReminderSettingService settingWith(int maintenanceLeadDays) {
+        ReminderSettingService reminderSetting = mock(ReminderSettingService.class);
+        when(reminderSetting.current()).thenReturn(
+                new ReminderSetting(15, maintenanceLeadDays, 1L, null));
+        return reminderSetting;
     }
 
     @Test
@@ -102,5 +125,43 @@ class EquipmentServiceTest {
                 () -> service(repository).equipmentDetail("abc"));
         assertEquals(ErrorCode.VALIDATION_ERROR, error.errorCode());
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    void listWithoutAnyContractReportsMissingDataAndDoesNotReadSettings() {
+        EquipmentRepository repository = mock(EquipmentRepository.class);
+        ReminderSettingService reminderSetting = mock(ReminderSettingService.class);
+        when(repository.search(any(EquipmentQuery.class)))
+                .thenReturn(List.of(listItem(1, "DRAW-01", null), listItem(2, "DRAW-02", null)));
+
+        EquipmentListResponse response = service(repository, reminderSetting)
+                .equipment(new EquipmentQuery(null, null, null, null, null, null, null));
+
+        assertEquals(2, response.items().size());
+        response.items().forEach(item -> {
+            assertNull(item.maintenanceDueDate());
+            assertNull(item.maintenanceRemainingDays());
+            assertEquals("MISSING_DATA", item.maintenanceExpiryState());
+        });
+        // 整页都没有到期日时不该去碰提醒设置表，避免只读页面产生写入
+        verify(reminderSetting, never()).current();
+    }
+
+    @Test
+    void listComputesRemainingDaysAndStateFromMaintenanceLeadDays() {
+        EquipmentRepository repository = mock(EquipmentRepository.class);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        when(repository.search(any(EquipmentQuery.class))).thenReturn(List.of(
+                listItem(1, "DRAW-01", today.plusDays(10)),
+                listItem(2, "DRAW-02", today.plusDays(200)),
+                listItem(3, "DRAW-03", today.minusDays(5))));
+
+        EquipmentListResponse response = service(repository, settingWith(45))
+                .equipment(new EquipmentQuery(null, null, null, null, null, null, null));
+
+        assertEquals(List.of(10, 200, -5), response.items().stream()
+                .map(EquipmentItem::maintenanceRemainingDays).toList());
+        assertEquals(List.of("DUE_SOON", "NORMAL", "EXPIRED"), response.items().stream()
+                .map(EquipmentItem::maintenanceExpiryState).toList());
     }
 }

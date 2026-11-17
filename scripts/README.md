@@ -40,7 +40,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Add-AlertEvent.ps1
 
 ## 验收脚本的数据库连接
 
-会连库的脚本（`verify_sensor_config.py`、`verify_sensor_delete.py`、`ui-check-parameter-edit.mjs`、`ui-check-sensor-delete.mjs`、`seed_demo_readings.py`）共用 `db_env.py` / `db-env.mjs` 解析连接信息，并在造测试数据之前先探一次库。
+会连库的脚本（`verify_sensor_config.py`、`verify_sensor_delete.py`、`ui-check-parameter-edit.mjs`、`ui-check-sensor-delete.mjs`、`seed_demo_readings.py`、`backfill_equipment_create_log.py`）共用 `db_env.py` / `db-env.mjs` 解析连接信息，并在造测试数据之前先探一次库。
 
 - 端口优先级：环境变量 `DB_PORT` > 仓库根 `.env` > 内置默认值 3306（仅历史兼容，不要依赖）。
 - 每次运行会打印实际端口与来源，例如 `[DB] 127.0.0.1:3308 连接正常（端口来源：.env 文件）`。

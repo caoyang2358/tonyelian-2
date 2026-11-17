@@ -106,7 +106,7 @@ class InitializationApiTest {
         when(equipmentService.equipment(ArgumentMatchers.any(EquipmentQuery.class))).thenReturn(
                 EquipmentListResponse.all(List.of(
                         new EquipmentItem(41, "SMELT-FUR-01", "1#熔化炉", 7, "车间一", null, false,
-                                null, null, null, 0L))));
+                                null, null, null, 0L, null, null, "MISSING_DATA"))));
         mvc.perform(get("/api/v1/equipment"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].id").value(41))
                 .andExpect(jsonPath("$.data.items[0].code").value("SMELT-FUR-01"))

@@ -6,10 +6,14 @@ export type EquipmentBase = {
   id: string; code: string; name: string; workshopId: string;
   workshopName: string; responsiblePerson: string | null; enabled: boolean;
 };
-/** S1-E01 列表项：共享字段 + 类型、管理状态与聚合版本。未补档设备后四项为 null / 0。 */
+/** S1-E01 列表项：共享字段 + 类型、管理状态、聚合版本与维保到期。未补档设备类型与状态为 null / 0。 */
 export type Equipment = EquipmentBase & {
   typeCode: string | null; typeName: string | null;
   managementStatus: string | null; version: number;
+  /** 最近一份维保合同的结束日；没有合同时为 null，状态固定 MISSING_DATA。 */
+  maintenanceDueDate: string | null;
+  maintenanceRemainingDays: number | null;
+  maintenanceExpiryState: DeadlineExpiryState | null;
 };
 export type EquipmentQuery = {
   keyword?: string; workshopId?: string; typeCode?: string;
@@ -148,6 +152,11 @@ export function mapEquipmentRows(source: unknown[]): Equipment[] {
       typeCode: optional(row.typeCode, '设备类型'), typeName: optional(row.typeName, '设备类型名称'),
       managementStatus: optional(row.managementStatus, '管理状态'),
       version: row.version == null ? 0 : integer(row.version, '设备版本'),
+      // 维保到期三项：无合同时日期为空，状态由后端给 MISSING_DATA，页面据此显示"待补"
+      maintenanceDueDate: optional(row.maintenanceDueDate, '维保到期日'),
+      maintenanceRemainingDays: wholeNumber(row.maintenanceRemainingDays, '维保剩余天数'),
+      maintenanceExpiryState: row.maintenanceExpiryState == null
+        ? null : deadlineExpiryState(row.maintenanceExpiryState),
     };
   });
 }
@@ -329,7 +338,7 @@ export type ContractExpiryState = 'ACTIVE' | 'EXPIRING_SOON' | 'EXPIRED' | 'UNKN
 /** 维保合同摘要（S1-C01）。remainingDays 为负表示已超期天数。 */
 export interface ContractSummary {
   contractId: string; serviceOrganization: string; contractNumber: string | null;
-  startDate: string | null; endDate: string | null;
+  startDate: string | null; endDate: string | null; remark: string | null;
   equipmentCount: number; expiryState: ContractExpiryState; remainingDays: number | null;
 }
 
@@ -365,6 +374,7 @@ export function mapContractPage(value: unknown): PageResult<ContractSummary> {
         serviceOrganization: str(row.serviceOrganization, '服务单位'),
         contractNumber: optional(row.contractNumber, '合同编号'),
         startDate: optional(row.startDate, '开始日期'), endDate: optional(row.endDate, '结束日期'),
+        remark: optional(row.remark, '备注'),
         equipmentCount: integer(row.equipmentCount, '覆盖设备数'),
         expiryState: expiryState(row.expiryState),
         remainingDays: wholeNumber(row.remainingDays, '剩余天数'),
@@ -979,6 +989,592 @@ export function mapRuleVersionPage(value: unknown): PageResult<SensorRuleVersion
   };
 }
 
+/* ------------------------------------------------ 系统二 · 能源价格 S2-E04—E06 */
+
+export type EnergyType = 'ELECTRICITY' | 'WATER' | 'GAS';
+export type EnergyScope = 'GENERAL' | 'WORKSHOP';
+
+/**
+ * 能源类型及固定单位。
+ *
+ * <p>单位不单独维护一份：它由能源决定，页面只展示不给选，避免出现"电按立方米计价"。</p>
+ */
+export const ENERGY_TYPES: {code: EnergyType; label: string; unit: string}[] = [
+  {code: 'ELECTRICITY', label: '电', unit: 'kWh'},
+  {code: 'WATER', label: '水', unit: 'm³'},
+  {code: 'GAS', label: '煤气', unit: 'Nm³'},
+];
+
+export const ENERGY_SCOPE_LABELS: Record<EnergyScope, string> = {
+  GENERAL: '通用',
+  WORKSHOP: '车间专用',
+};
+
+/** 一条价格记录。current=false 表示已被更正替换下来的历史行。 */
+export interface EnergyPriceSummary {
+  priceId: string;
+  energyType: EnergyType;
+  energyTypeName: string | null;
+  workshopId: string | null;
+  workshopName: string | null;
+  scope: EnergyScope;
+  effectiveDate: string;
+  unitCode: string;
+  unitPriceYuanPerUnit: string;
+  version: number;
+  current: boolean;
+  supersedesPriceId: string | null;
+  operatorName: string | null;
+  reason: string | null;
+  recordedAt: string | null;
+}
+
+/** 按实际用能日匹配到的价格；scope 说明它取自通用还是车间专用。 */
+export interface EnergyPriceMatch {
+  priceId: string;
+  scope: EnergyScope;
+  effectiveDate: string;
+  unitCode: string;
+  unitPriceYuanPerUnit: string;
+  version: number;
+}
+
+export interface EnergyPricePageResult extends PageResult<EnergyPriceSummary> {
+  /** 仅在同时给出能源与实际日时有值；null 表示"这次没问匹配"，不是"没匹配到"。 */
+  matchedPrice: EnergyPriceMatch | null;
+}
+
+export interface EnergyPriceQuery {
+  energyType?: string;
+  workshopId?: string;
+  scope?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  actualDate?: string;
+  includeHistory?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+/** 本次写入影响的日期范围；to 为 null 表示一直向后生效，不是范围未知。 */
+export interface AffectedScope { from: string; to: string | null; workshopIds: string[] }
+
+export interface EnergyPriceWriteValues {
+  energyType: EnergyType;
+  workshopId: string | null;
+  effectiveDate: string;
+  unitCode: string;
+  unitPriceYuanPerUnit: string;
+}
+
+/** E05 新增结果。costRunId 恒为 null：核算服务未接入。 */
+export interface EnergyPriceWriteResult extends EnergyPriceWriteValues {
+  priceId: string; version: number; scope: EnergyScope;
+  costRunId: string | null; affectedScope: AffectedScope;
+}
+
+/** E06 更正结果。原价格仍保留，新价格经 supersedesPriceId 指向它。 */
+export interface EnergyPriceCorrectionResult {
+  previousPriceId: string; priceId: string; version: number;
+  supersedesPriceId: string; changeLogId: string;
+  affectedScope: AffectedScope; costRunId: string | null;
+  status: 'PENDING' | 'COMPLETE' | 'NOT_APPLICABLE';
+}
+
+/** 更正内容：只提交要改的字段，未出现的字段保留原值。 */
+export interface EnergyPriceChanges {
+  energyType?: EnergyType;
+  workshopId?: string | null;
+  effectiveDate?: string;
+  unitCode?: string;
+  unitPriceYuanPerUnit?: string;
+}
+
+function energyTypeOf(value: unknown): EnergyType {
+  const raw = str(value, '能源类型');
+  if (raw === 'ELECTRICITY' || raw === 'WATER' || raw === 'GAS') return raw;
+  throw new ApiError(`能源类型「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function scopeOf(value: unknown): EnergyScope {
+  const raw = str(value, '价格范围');
+  if (raw === 'GENERAL' || raw === 'WORKSHOP') return raw;
+  throw new ApiError(`价格范围「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function mapAffectedScope(value: unknown): AffectedScope {
+  const data = record(value, '受影响范围');
+  return {
+    from: str(data.from, '影响开始日'),
+    to: data.to == null ? null : str(data.to, '影响结束日'),
+    workshopIds: Array.isArray(data.workshopIds) ? data.workshopIds.map(item => id(item, '车间ID')) : [],
+  };
+}
+
+export function mapEnergyPricePage(value: unknown): EnergyPricePageResult {
+  const data = record(value, '能源价格分页');
+  if (!Array.isArray(data.items)) throw new ApiError('能源价格列表缺少items数组。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((item: unknown) => {
+      const row = record(item, '能源价格');
+      return {
+        priceId: id(row.priceId, '价格ID'),
+        energyType: energyTypeOf(row.energyType),
+        energyTypeName: optional(row.energyTypeName, '能源名称'),
+        workshopId: row.workshopId == null ? null : id(row.workshopId, '车间ID'),
+        workshopName: optional(row.workshopName, '车间名称'),
+        scope: scopeOf(row.scope),
+        effectiveDate: str(row.effectiveDate, '生效日'),
+        unitCode: str(row.unitCode, '单位'),
+        unitPriceYuanPerUnit: str(row.unitPriceYuanPerUnit, '单价'),
+        version: integer(row.version, '版本号'),
+        current: row.current === true,
+        supersedesPriceId: row.supersedesPriceId == null ? null : id(row.supersedesPriceId, '被更正价格ID'),
+        operatorName: optional(row.operatorName, '经办人'),
+        reason: optional(row.reason, '说明'),
+        recordedAt: optional(row.recordedAt, '录入时间'),
+      };
+    }),
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+    matchedPrice: data.matchedPrice == null ? null : (() => {
+      const row = record(data.matchedPrice, '匹配价格');
+      return {
+        priceId: id(row.priceId, '价格ID'),
+        scope: scopeOf(row.scope),
+        effectiveDate: str(row.effectiveDate, '生效日'),
+        unitCode: str(row.unitCode, '单位'),
+        unitPriceYuanPerUnit: str(row.unitPriceYuanPerUnit, '单价'),
+        version: integer(row.version, '版本号'),
+      };
+    })(),
+  };
+}
+
+export function mapEnergyPriceWriteResult(value: unknown): EnergyPriceWriteResult {
+  const data = record(value, '新增价格结果');
+  return {
+    priceId: id(data.priceId, '价格ID'),
+    version: integer(data.version, '版本号'),
+    energyType: energyTypeOf(data.energyType),
+    workshopId: data.workshopId == null ? null : id(data.workshopId, '车间ID'),
+    scope: scopeOf(data.scope),
+    effectiveDate: str(data.effectiveDate, '生效日'),
+    unitCode: str(data.unitCode, '单位'),
+    unitPriceYuanPerUnit: str(data.unitPriceYuanPerUnit, '单价'),
+    costRunId: data.costRunId == null ? null : str(data.costRunId, '核算运行ID'),
+    affectedScope: mapAffectedScope(data.affectedScope),
+  };
+}
+
+export function mapEnergyPriceCorrectionResult(value: unknown): EnergyPriceCorrectionResult {
+  const data = record(value, '更正价格结果');
+  const status = str(data.status, '核算状态');
+  if (status !== 'PENDING' && status !== 'COMPLETE' && status !== 'NOT_APPLICABLE') {
+    throw new ApiError(`核算状态「${status}」不在约定范围内。`, 'INVALID_RESPONSE');
+  }
+  return {
+    previousPriceId: id(data.previousPriceId, '原价格ID'),
+    priceId: id(data.priceId, '新价格ID'),
+    version: integer(data.version, '版本号'),
+    supersedesPriceId: id(data.supersedesPriceId, '被更正价格ID'),
+    changeLogId: id(data.changeLogId, '变更记录ID'),
+    affectedScope: mapAffectedScope(data.affectedScope),
+    costRunId: data.costRunId == null ? null : str(data.costRunId, '核算运行ID'),
+    status,
+  };
+}
+
+/**
+ * 完整性三态。COMPLETE 可以包含明确的零；PARTIAL 只有 knownValue，value 为 null；
+ * MISSING 两者都为 null。页面绝不能把 PARTIAL 的 knownValue 当完整值展示。
+ */
+export type EnergyCompleteness = 'COMPLETE' | 'PARTIAL' | 'MISSING';
+
+/** 一条缺项：说清去哪里补，而不只是"数据缺失"。 */
+export interface EnergyMissingItem {
+  code: string;
+  sourceType: string | null;
+  sourceId: string | null;
+  workshopId: string | null;
+  actualDate: string | null;
+  field: string | null;
+  message: string;
+}
+
+export interface EnergyQuantity {
+  unit: string;
+  value: string | null;
+  knownValue: string | null;
+  completeness: EnergyCompleteness;
+  missingItems: EnergyMissingItem[];
+}
+
+export interface WorkshopEnergyTotals {
+  workshopId: string;
+  workshopName: string | null;
+  electricity: EnergyQuantity;
+  water: EnergyQuantity;
+  gas: EnergyQuantity;
+  qualifiedOutput: EnergyQuantity;
+}
+
+export interface EnergyTotalsResult {
+  from: string;
+  to: string;
+  workshops: WorkshopEnergyTotals[];
+}
+
+export interface EnergyTotalsQuery { from: string; to: string; workshopId?: string }
+
+export interface EnergyMeterIdentity { sensorId: string; sensorCode: string; sensorName: string }
+
+/** 一个日来源槽。meter 为 null 表示该日没有可用表计（缺计量），不是"表计信息加载失败"。 */
+export interface EnergyDailyConsumption {
+  actualDate: string;
+  workshopId: string;
+  workshopName: string | null;
+  energyType: EnergyType;
+  energyTypeName: string | null;
+  unit: string;
+  meter: EnergyMeterIdentity | null;
+  value: string | null;
+  knownValue: string | null;
+  completeness: EnergyCompleteness;
+  qualityStatus: string | null;
+  calculationMethod: string | null;
+  refreshTime: string | null;
+  missingItems: EnergyMissingItem[];
+}
+
+/** 范围内全量槽的完整性分布，不受筛选影响；page/total 才是当前列表。 */
+export interface EnergyDailySummary {
+  slotTotal: number;
+  completeCount: number;
+  partialCount: number;
+  missingCount: number;
+}
+
+export interface EnergyDailyConsumptionPage extends PageResult<EnergyDailyConsumption> {
+  summary: EnergyDailySummary;
+}
+
+export interface EnergyDailyConsumptionQuery {
+  from: string;
+  to: string;
+  workshopId?: string;
+  energyType?: string;
+  qualityStatus?: string;
+  completeness?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** 当时有效的价格快照。带上范围与版本，页面才能解释"为什么是这个价"。 */
+export interface EnergyPriceSnapshot {
+  priceId: string;
+  scope: string;
+  effectiveDate: string;
+  unitCode: string;
+  unitPriceYuanPerUnit: string;
+  version: number;
+}
+
+/** 当日一类能源的来源、价格与费用。consumption 为 null 时 amountYuan 必为 null。 */
+export interface EnergyDaySource {
+  energyType: EnergyType;
+  energyTypeName: string | null;
+  unit: string;
+  meter: EnergyMeterIdentity | null;
+  consumption: string | null;
+  knownConsumption: string | null;
+  completeness: EnergyCompleteness;
+  qualityStatus: string | null;
+  calculationMethod: string | null;
+  refreshTime: string | null;
+  price: EnergyPriceSnapshot | null;
+  amountYuan: string | null;
+  missingItems: EnergyMissingItem[];
+}
+
+export interface EnergyShareEnergy {
+  energyType: EnergyType;
+  unit: string;
+  allocatedConsumption: string | null;
+  amountYuan: string | null;
+}
+
+/** 一个分摊对象；订单与公共份额同构，靠 targetType 区分。 */
+export interface EnergyAllocationShare {
+  targetType: string;
+  orderId: string | null;
+  orderNo: string | null;
+  qualifiedQuantityTon: string | null;
+  ratio: string | null;
+  energies: EnergyShareEnergy[];
+  amountYuan: string | null;
+  missingItems: EnergyMissingItem[];
+}
+
+export interface EnergyReconciliation {
+  energyType: EnergyType;
+  unit: string;
+  sourceConsumption: string | null;
+  allocatedConsumption: string | null;
+  publicConsumption: string | null;
+  difference: string | null;
+}
+
+export interface EnergyDayConfirmation {
+  confirmed: boolean;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  invalidated: boolean;
+  note: string;
+}
+
+export interface EnergyDenominator {
+  quantityTon: string | null;
+  complete: boolean;
+  note: string;
+}
+
+/**
+ * S2-E03 当日来源与分摊。
+ * status 只说明"能不能分摊"，不能分摊的原因看 missingItems 与 statusNote。
+ */
+export interface EnergyWorkshopDayAllocation {
+  workshopId: string;
+  workshopName: string | null;
+  workshopType: string | null;
+  actualDate: string;
+  allocationBasis: string;
+  status: string;
+  statusNote: string;
+  dayConfirmation: EnergyDayConfirmation;
+  denominator: EnergyDenominator;
+  sources: EnergyDaySource[];
+  totalAmountYuan: string | null;
+  allocations: EnergyAllocationShare[];
+  publicShare: EnergyAllocationShare | null;
+  reconciliation: EnergyReconciliation[];
+  costRun: {costRunId: string | null; version: number | null; status: string | null};
+  missingItems: EnergyMissingItem[];
+}
+
+function completenessOf(value: unknown): EnergyCompleteness {
+  const raw = str(value, '完整性');
+  if (raw === 'COMPLETE' || raw === 'PARTIAL' || raw === 'MISSING') return raw;
+  throw new ApiError(`完整性「${raw}」不在约定范围内。`, 'INVALID_RESPONSE');
+}
+
+function nullableStr(value: unknown, name: string): string | null {
+  return value == null ? null : str(value, name);
+}
+
+function mapMissingItems(value: unknown): EnergyMissingItem[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new ApiError('缺项列表格式不符合接口约定。', 'INVALID_RESPONSE');
+  return value.map((entry: unknown) => {
+    const row = record(entry, '缺项');
+    return {
+      code: str(row.code, '缺项代码'),
+      sourceType: nullableStr(row.sourceType, '缺项来源类型'),
+      sourceId: row.sourceId == null ? null : id(row.sourceId, '缺项来源ID'),
+      workshopId: row.workshopId == null ? null : id(row.workshopId, '缺项车间ID'),
+      actualDate: nullableStr(row.actualDate, '缺项日期'),
+      field: nullableStr(row.field, '缺项字段'),
+      message: str(row.message, '缺项说明'),
+    };
+  });
+}
+
+function mapEnergyQuantity(value: unknown, name: string): EnergyQuantity {
+  const row = record(value, name);
+  return {
+    unit: str(row.unit, `${name}单位`),
+    value: nullableStr(row.value, `${name}数值`),
+    knownValue: nullableStr(row.knownValue, `${name}已知部分`),
+    completeness: completenessOf(row.completeness),
+    missingItems: mapMissingItems(row.missingItems),
+  };
+}
+
+export function mapEnergyTotals(value: unknown): EnergyTotalsResult {
+  const data = record(value, '能源总量');
+  if (!Array.isArray(data.workshops)) throw new ApiError('能源总量缺少工作车间列表。', 'INVALID_RESPONSE');
+  return {
+    from: str(data.from, '起始日'),
+    to: str(data.to, '结束日'),
+    workshops: data.workshops.map((entry: unknown) => {
+      const row = record(entry, '车间总量');
+      return {
+        workshopId: id(row.workshopId, '车间ID'),
+        workshopName: nullableStr(row.workshopName, '车间名称'),
+        electricity: mapEnergyQuantity(row.electricity, '电'),
+        water: mapEnergyQuantity(row.water, '水'),
+        gas: mapEnergyQuantity(row.gas, '煤气'),
+        qualifiedOutput: mapEnergyQuantity(row.qualifiedOutput, '合格产量'),
+      };
+    }),
+  };
+}
+
+export function mapEnergyDailyConsumptionPage(value: unknown): EnergyDailyConsumptionPage {
+  const data = record(value, '能源日明细');
+  if (!Array.isArray(data.items)) throw new ApiError('能源日明细缺少items数组。', 'INVALID_RESPONSE');
+  const summary = record(data.summary, '日明细汇总');
+  return {
+    items: data.items.map((entry: unknown) => {
+      const row = record(entry, '日来源');
+      return {
+        actualDate: str(row.actualDate, '实际日'),
+        workshopId: id(row.workshopId, '车间ID'),
+        workshopName: nullableStr(row.workshopName, '车间名称'),
+        energyType: energyTypeOf(row.energyType),
+        energyTypeName: nullableStr(row.energyTypeName, '能源名称'),
+        unit: str(row.unit, '单位'),
+        meter: row.meter == null ? null : (() => {
+          const meter = record(row.meter, '表计');
+          return {
+            sensorId: id(meter.sensorId, '表计ID'),
+            sensorCode: str(meter.sensorCode, '表计编码'),
+            sensorName: str(meter.sensorName, '表计名称'),
+          };
+        })(),
+        value: nullableStr(row.value, '消耗量'),
+        knownValue: nullableStr(row.knownValue, '已知消耗量'),
+        completeness: completenessOf(row.completeness),
+        qualityStatus: nullableStr(row.qualityStatus, '质量状态'),
+        calculationMethod: nullableStr(row.calculationMethod, '计算方式'),
+        refreshTime: nullableStr(row.refreshTime, '刷新时间'),
+        missingItems: mapMissingItems(row.missingItems),
+      };
+    }),
+    page: count(data.page, '页码'),
+    pageSize: count(data.pageSize, '每页条数'),
+    total: count(data.total, '总数'),
+    summary: {
+      slotTotal: integer(summary.slotTotal, '槽位总数'),
+      completeCount: integer(summary.completeCount, '完整数'),
+      partialCount: integer(summary.partialCount, '部分已知数'),
+      missingCount: integer(summary.missingCount, '缺测数'),
+    },
+  };
+}
+
+function mapPriceSnapshot(value: unknown): EnergyPriceSnapshot | null {
+  if (value == null) return null;
+  const row = record(value, '价格快照');
+  return {
+    priceId: id(row.priceId, '价格ID'),
+    scope: str(row.scope, '价格范围'),
+    effectiveDate: str(row.effectiveDate, '生效日'),
+    unitCode: str(row.unitCode, '计价单位'),
+    unitPriceYuanPerUnit: str(row.unitPriceYuanPerUnit, '单价'),
+    version: integer(row.version, '价格版本'),
+  };
+}
+
+function mapDaySource(value: unknown): EnergyDaySource {
+  const row = record(value, '当日来源');
+  return {
+    energyType: energyTypeOf(row.energyType),
+    energyTypeName: nullableStr(row.energyTypeName, '能源名称'),
+    unit: str(row.unit, '单位'),
+    meter: row.meter == null ? null : (() => {
+      const meter = record(row.meter, '表计');
+      return {
+        sensorId: id(meter.sensorId, '表计ID'),
+        sensorCode: str(meter.sensorCode, '表计编码'),
+        sensorName: str(meter.sensorName, '表计名称'),
+      };
+    })(),
+    consumption: nullableStr(row.consumption, '消耗量'),
+    knownConsumption: nullableStr(row.knownConsumption, '已知消耗量'),
+    completeness: completenessOf(row.completeness),
+    qualityStatus: nullableStr(row.qualityStatus, '质量状态'),
+    calculationMethod: nullableStr(row.calculationMethod, '计算方式'),
+    refreshTime: nullableStr(row.refreshTime, '刷新时间'),
+    price: mapPriceSnapshot(row.price),
+    amountYuan: nullableStr(row.amountYuan, '费用'),
+    missingItems: mapMissingItems(row.missingItems),
+  };
+}
+
+function mapAllocationShare(value: unknown): EnergyAllocationShare {
+  const row = record(value, '分摊份额');
+  const energies = Array.isArray(row.energies) ? row.energies : [];
+  return {
+    targetType: str(row.targetType, '分摊对象类型'),
+    orderId: row.orderId == null ? null : id(row.orderId, '订单ID'),
+    orderNo: nullableStr(row.orderNo, '订单号'),
+    qualifiedQuantityTon: nullableStr(row.qualifiedQuantityTon, '归属合格量'),
+    ratio: nullableStr(row.ratio, '分摊比例'),
+    energies: energies.map((entry: unknown) => {
+      const energy = record(entry, '分摊能源');
+      return {
+        energyType: energyTypeOf(energy.energyType),
+        unit: str(energy.unit, '单位'),
+        allocatedConsumption: nullableStr(energy.allocatedConsumption, '分摊消耗'),
+        amountYuan: nullableStr(energy.amountYuan, '分摊费用'),
+      };
+    }),
+    amountYuan: nullableStr(row.amountYuan, '分摊费用合计'),
+    missingItems: mapMissingItems(row.missingItems),
+  };
+}
+
+/** S2-E03：分母、来源、份额、校验四块必须一起解析，缺任何一块都会让页面显示错的比例。 */
+export function mapWorkshopDayAllocation(value: unknown): EnergyWorkshopDayAllocation {
+  const data = record(value, '当日分摊');
+  const confirmation = record(data.dayConfirmation, '当日录全确认');
+  const denominator = record(data.denominator, '分摊分母');
+  const costRun = record(data.costRun, '核算运行');
+  const reconciliation = Array.isArray(data.reconciliation) ? data.reconciliation : [];
+  return {
+    workshopId: id(data.workshopId, '车间ID'),
+    workshopName: nullableStr(data.workshopName, '车间名称'),
+    workshopType: nullableStr(data.workshopType, '车间类型'),
+    actualDate: str(data.actualDate, '实际日'),
+    allocationBasis: str(data.allocationBasis, '分摊依据'),
+    status: str(data.status, '分摊状态'),
+    statusNote: str(data.statusNote, '状态说明'),
+    dayConfirmation: {
+      confirmed: confirmation.confirmed === true,
+      confirmedBy: nullableStr(confirmation.confirmedBy, '确认人'),
+      confirmedAt: nullableStr(confirmation.confirmedAt, '确认时间'),
+      invalidated: confirmation.invalidated === true,
+      note: str(confirmation.note, '确认说明'),
+    },
+    denominator: {
+      quantityTon: nullableStr(denominator.quantityTon, '分母吨数'),
+      complete: denominator.complete === true,
+      note: str(denominator.note, '分母说明'),
+    },
+    sources: Array.isArray(data.sources) ? data.sources.map(mapDaySource) : [],
+    totalAmountYuan: nullableStr(data.totalAmountYuan, '当日费用合计'),
+    allocations: Array.isArray(data.allocations) ? data.allocations.map(mapAllocationShare) : [],
+    publicShare: data.publicShare == null ? null : mapAllocationShare(data.publicShare),
+    reconciliation: reconciliation.map((entry: unknown) => {
+      const row = record(entry, '合计校验');
+      return {
+        energyType: energyTypeOf(row.energyType),
+        unit: str(row.unit, '单位'),
+        sourceConsumption: nullableStr(row.sourceConsumption, '源总量'),
+        allocatedConsumption: nullableStr(row.allocatedConsumption, '订单合计'),
+        publicConsumption: nullableStr(row.publicConsumption, '公共合计'),
+        difference: nullableStr(row.difference, '差额'),
+      };
+    }),
+    costRun: {
+      costRunId: costRun.costRunId == null ? null : id(costRun.costRunId, '核算运行ID'),
+      version: costRun.version == null ? null : count(costRun.version, '核算版本'),
+      status: nullableStr(costRun.status, '核算状态'),
+    },
+    missingItems: mapMissingItems(data.missingItems),
+  };
+}
+
 export const api = {
   equipment: (query: EquipmentQuery = {}, signal?: AbortSignal) => requestApi(`/api/v1/equipment${queryString(query)}`, mapEquipmentPage, {signal}),
   equipmentDetail: (equipmentId: string, signal?: AbortSignal) => requestApi(`/api/v1/equipment/${encodeURIComponent(equipmentId)}`, mapEquipmentDetail, {signal}),
@@ -1141,6 +1737,58 @@ export const api = {
   sensorRuleVersions: (parameterId: string, page = 1, pageSize = 20, signal?: AbortSignal) =>
     requestApi(`/api/v1/sensor-parameters/${encodeURIComponent(parameterId)}/rule-versions?page=${page}&pageSize=${pageSize}`,
       mapRuleVersionPage, {signal}),
+  /** S2-E04 能源价格分页；带实际日时附按"车间专用优先、无则回退通用"算出的匹配价。 */
+  energyPrices: (query: EnergyPriceQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.energyType) params.set('energyType', query.energyType);
+    if (query.workshopId) params.set('workshopId', query.workshopId);
+    if (query.scope) params.set('scope', query.scope);
+    if (query.effectiveFrom) params.set('effectiveFrom', query.effectiveFrom);
+    if (query.effectiveTo) params.set('effectiveTo', query.effectiveTo);
+    if (query.actualDate) params.set('actualDate', query.actualDate);
+    if (query.includeHistory) params.set('includeHistory', 'true');
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/energy/prices${text ? `?${text}` : ''}`, mapEnergyPricePage, {signal});
+  },
+  /**
+   * S2-E05 新增生效价。
+   * workshopId 必须显式出现：null 表示通用范围，漏传会被服务端判为校验失败。
+   */
+  createEnergyPrice: (values: EnergyPriceWriteValues, meta: {requestId: string; operatorName: string}) =>
+    requestApi('/api/v1/energy/prices', mapEnergyPriceWriteResult,
+      {method: 'POST', body: {...meta, ...values}}),
+  /** S2-E06 更正原价格：原行保留并退出当前有效，新行经 supersedesPriceId 指向它，必须填原因。 */
+  correctEnergyPrice: (priceId: string, changes: EnergyPriceChanges,
+                       meta: {requestId: string; operatorName: string; expectedVersion: number; reason: string}) =>
+    requestApi(`/api/v1/energy/prices/${encodeURIComponent(priceId)}/corrections`,
+      mapEnergyPriceCorrectionResult, {method: 'POST', body: {...meta, changes}}),
+  /**
+   * S2-E01 分车间四项总量。省略 workshopId 时返回全部生产车间。
+   * 缺表计、覆盖未核验、产量未确认都会体现为 completeness，页面照实展示即可。
+   */
+  energyTotals: (query: EnergyTotalsQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams({from: query.from, to: query.to});
+    if (query.workshopId) params.set('workshopId', query.workshopId);
+    return requestApi(`/api/v1/energy/totals?${params.toString()}`, mapEnergyTotals, {signal});
+  },
+  /** S2-E02 日来源明细；缺计量或缺读数的日槽同样返回，供页面定位缺口。 */
+  energyDailyConsumptions: (query: EnergyDailyConsumptionQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams({from: query.from, to: query.to});
+    if (query.workshopId) params.set('workshopId', query.workshopId);
+    if (query.energyType) params.set('energyType', query.energyType);
+    if (query.qualityStatus) params.set('qualityStatus', query.qualityStatus);
+    if (query.completeness) params.set('completeness', query.completeness);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    return requestApi(`/api/v1/energy/daily-consumptions?${params.toString()}`,
+      mapEnergyDailyConsumptionPage, {signal});
+  },
+  /** S2-E03 车间某日的来源与分摊。分母不成立时只给缺项，不给比例。 */
+  energyDayAllocation: (workshopId: string, actualDate: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/energy/workshops/${encodeURIComponent(workshopId)}`
+      + `/days/${encodeURIComponent(actualDate)}/allocations`, mapWorkshopDayAllocation, {signal}),
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),

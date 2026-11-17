@@ -76,6 +76,16 @@ test('变更记录按契约映射版本与操作人', () => {
   assert.equal(page.total, 1);
 });
 
+test('新增建档记录的版本前值为空而不是 0', () => {
+  // 建档这一条没有「改前版本」，若解析时兜成 0，页面就会把新增写成 v0 → v0，
+  // 读起来像一次没有变化的更正。
+  const page = mapChangeLogPage({items: [{id: '1', operation: 'CREATE', before: null, after: {code: 'X'}, reason: '设备档案由一期导入建立，补录建档记录', operatorName: '系统初始化', recordedAt: '2026-11-03T20:04:58+08:00', requestId: 'backfill-create-1', versionBefore: null, versionAfter: 0}], page: 1, pageSize: 20, total: 1});
+  assert.equal(page.items[0].operation, 'CREATE');
+  assert.equal(page.items[0].versionBefore, null);
+  assert.equal(page.items[0].versionAfter, 0);
+  assert.equal(page.items[0].before, null);
+});
+
 test('参考数据把空工序列表当作空数组', () => {
   const reference = mapReferenceData({
     workshops: [{id: '1', code: 'WS', name: '车间1', enabled: true}],
@@ -181,4 +191,18 @@ test('有关联时删除返回409并带回阻塞明细', async () => {
       return true;
     },
   );
+});
+
+test('列表项解析维保到期三项：无合同时日期为空，有合同时保留天数与状态', () => {
+  const rows = mapEquipmentRows([
+    listRow,
+    {...listRow, id: 17, maintenanceDueDate: '2026-12-31', maintenanceRemainingDays: -3, maintenanceExpiryState: 'EXPIRED'},
+  ]);
+  // 后端没有合同就给 null，页面据此显示"待补"，不能当成 0 天或已到期
+  assert.equal(rows[0].maintenanceDueDate, null);
+  assert.equal(rows[0].maintenanceRemainingDays, null);
+  assert.equal(rows[0].maintenanceExpiryState, null);
+  assert.equal(rows[1].maintenanceDueDate, '2026-12-31');
+  assert.equal(rows[1].maintenanceRemainingDays, -3);
+  assert.equal(rows[1].maintenanceExpiryState, 'EXPIRED');
 });

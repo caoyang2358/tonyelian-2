@@ -21,6 +21,14 @@ function newRequestId(): string {
 
 const OPERATION_LABELS: Record<string, string> = { CREATE: '新增', UPDATE: '更正', DELETE: '删除' };
 
+/**
+ * 原因标签按动作分开写。
+ *
+ * <p>新增记录里的 reason 解释的是「这份档案怎么来的」，不是「为什么改」，
+ * 沿用「更正原因」会让人以为建档那一刻设备被改过。</p>
+ */
+const REASON_LABELS: Record<string, string> = { CREATE: '建档说明', UPDATE: '更正原因', DELETE: '删除原因' };
+
 function text(value: string | null | undefined): string {
   return value == null || value === '' ? '—' : value;
 }
@@ -50,6 +58,10 @@ function ProfileTab({detail, options}: {detail: EquipmentDetail; options: Refere
     : null;
   const statusName = profile.managementStatus
     ? options?.equipmentManagementStatuses.find(item => item.code === profile.managementStatus)?.name ?? profile.managementStatus
+    : null;
+  // 工序字典可能尚未登记（dim_process 为空），此时不要回退成裸 ID，否则页面会显示成「1」。
+  const processName = profile.processId
+    ? options?.processes.find(item => item.id === profile.processId)?.name ?? `未登记工序（ID ${profile.processId}）`
     : null;
   const missing = detail.missingFields.map(field => FIELD_LABELS[field] ?? field);
   const alreadyStopped = profile.managementStatus === 'STOPPED' || profile.managementStatus === 'SCRAPPED';
@@ -101,7 +113,7 @@ function ProfileTab({detail, options}: {detail: EquipmentDetail; options: Refere
         <Field label="购置日期" value={profile.purchasedOn} unknown={!profile.purchasedOn} />
         <Field label="投用日期" value={profile.commissionedOn} unknown={!profile.commissionedOn} />
         <Field label="质保到期日" value={profile.warrantyExpiresOn} unknown={!profile.warrantyExpiresOn} />
-        <Field label="所属工序" value={profile.processId} unknown={!profile.processId} />
+        <Field label="所属工序" value={processName} unknown={!processName} />
       </dl>
     </section>
 
@@ -161,12 +173,16 @@ function ChangesTab({equipmentId, refreshToken}: {equipmentId: string; refreshTo
     <ul className="eq-timeline">{items.map(item => <li key={item.id} className={`is-${item.operation.toLowerCase()}`}>
       <div className="eq-timeline-head">
         <strong>{OPERATION_LABELS[item.operation] ?? item.operation}</strong>
-        <span className="eq-badge">v{item.versionBefore ?? 0} → v{item.versionAfter ?? 0}</span>
+        {/* 只有更正才有「改前 → 改后」两个版本；新增是建档、删除之后不再有版本，
+            硬凑成 v0 → v0 或 v4 → v0 只会被读成版本回退了。 */}
+        {item.operation === 'UPDATE' && item.versionBefore !== null && item.versionAfter !== null
+          ? <span className="eq-badge">v{item.versionBefore} → v{item.versionAfter}</span>
+          : item.operation === 'CREATE' ? <span className="eq-badge">建档</span> : null}
       </div>
       <p className="eq-timeline-meta">{item.operatorName} · {formatTime(item.recordedAt)}</p>
-      {item.reason && <p className="eq-timeline-reason">更正原因：{item.reason}</p>}
+      {item.reason && <p className="eq-timeline-reason">{REASON_LABELS[item.operation] ?? '说明'}：{item.reason}</p>}
       {item.after != null && <details>
-        <summary>查看变更后快照</summary>
+        <summary>{item.operation === 'CREATE' ? '查看建档时档案' : '查看变更后快照'}</summary>
         <pre>{JSON.stringify(item.after, null, 2)}</pre>
       </details>}
     </li>)}</ul>

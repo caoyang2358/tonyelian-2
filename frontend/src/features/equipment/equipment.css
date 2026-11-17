@@ -662,6 +662,127 @@
 
 .eq-supplier-actions a.eq-row-link:hover { text-decoration: underline }
 
+/* 合同卡片：签约单位与期限徽标同排，下面依次是合同文件与操作行 */
+.eq-contract-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.eq-contract-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eq-contract-side { flex: none }
+
+/* 合同备注：签约要点，单行截断（全文在 title），让卡片高度不被长备注撑开 */
+.eq-contract-remark {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted, #7c8982);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 合同文件区：与卡片上半部分用虚线分开，一眼看出文件属于这份合同而不是本设备 */
+.eq-contract-files {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line, #e4eae4);
+}
+
+.eq-contract-files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.eq-contract-files-title { font-size: 11px; color: #50634f }
+.eq-contract-files-title em { font-style: normal; color: var(--muted, #7c8982) }
+
+.eq-contract-upload {
+  width: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--brand, #26745b);
+}
+
+.eq-contract-upload:hover { text-decoration: underline }
+.eq-contract-upload:disabled { color: #a8b3ac; cursor: default }
+
+.eq-contract-empty {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-contract-file-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eq-contract-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #f7f9f6;
+}
+
+.eq-contract-file-main { flex: 1; min-width: 0 }
+
+.eq-contract-file-name {
+  display: block;
+  font-size: 11.5px;
+  color: #1c3a31;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.eq-contract-file-name:hover { color: var(--brand, #26745b); text-decoration: underline }
+
+.eq-contract-file-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted, #7c8982);
+}
+
+.eq-contract-file-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.eq-contract-file-actions .eq-row-link {
+  width: auto;
+  font-size: 11px;
+  color: var(--brand, #26745b);
+}
+
+.eq-contract-file-actions .eq-row-link:hover { text-decoration: underline }
+
+.eq-contract-foot { display: flex; gap: 12px }
+
+.eq-contract-foot .eq-row-link {
+  width: auto;
+  font-size: 11.5px;
+  color: var(--brand, #26745b);
+}
+
+.eq-contract-foot .eq-row-link:hover { text-decoration: underline }
+
 /* 期限徽标：状态不只靠颜色区分，文字本身已说明"已超期 / 剩余 / 未填" */
 .eq-badge {
   display: inline-block;
@@ -1290,4 +1411,38 @@
 
 .equipment-panel .button {
   font-size: 12px;
+}
+
+/* 维保到期列：日期一行、天数一行，与管理状态列的「徽标 + 小字」同一节奏，
+   不额外占用列宽。超期用红、临近用黄，与期限看板的 is-danger / is-warn 一致。 */
+.equipment-panel .eq-due-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.equipment-panel .eq-due-date {
+  color: #4a5d43;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.equipment-panel .eq-due-date.is-absent {
+  font-size: 11px;
+  color: #9fa992;
+}
+
+.equipment-panel .eq-due-hint {
+  font-size: 11px;
+  color: #9aa494;
+  white-space: nowrap;
+}
+
+.equipment-panel .eq-due-hint.is-warn {
+  color: #96631f;
+}
+
+.equipment-panel .eq-due-hint.is-danger {
+  color: #8b4444;
 }
