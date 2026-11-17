@@ -221,6 +221,37 @@ class EnergyAllocationServiceTest {
     }
 
     @Test
+    void 缺一类能源单价时份额金额留空而不是只加已知项() {
+        when(repository.workshop(2L)).thenReturn(Optional.of(wireWorkshop));
+        when(repository.outputFacts(anyLong(), any(), any())).thenReturn(List.of(
+                new OutputFact(DAY, "QUALIFIED_OUTPUT", new BigDecimal("10.000"))));
+        when(repository.orderAttributions(2L, DAY)).thenReturn(List.of(
+                new OrderAttribution(1L, "SO-2026-001", new BigDecimal("5.000"))));
+
+        MeterRow electricity = new MeterRow(11L, "EM-01", "车间二电总表", "ELECTRICITY");
+        MeterRow water = new MeterRow(12L, "WM-01", "车间二水总表", "WATER");
+        when(repository.meters(2L, "ELECTRICITY")).thenReturn(List.of(electricity));
+        when(repository.meters(2L, "WATER")).thenReturn(List.of(water));
+        when(repository.dayReadings(any(), any(), any()))
+                .thenReturn(List.of(reading(11L, "1000.000000")))
+                .thenReturn(List.of(reading(12L, "100.000000")));
+        when(priceRepository.matchPrice("ELECTRICITY", 2L, DAY)).thenReturn(Optional.of(
+                new PriceMatch("1", EnergyModels.SCOPE_WORKSHOP, DAY, "元/kWh", "1.0000000000", 3L)));
+        when(priceRepository.matchPrice("WATER", 2L, DAY)).thenReturn(Optional.of(
+                new PriceMatch("2", EnergyModels.SCOPE_GENERAL, DAY, "元/m³", "2.0000000000", 1L)));
+        when(priceRepository.matchPrice("GAS", 2L, DAY)).thenReturn(Optional.empty());
+
+        WorkshopDayAllocation result = service(true).dayAllocation("2", "2026-11-10");
+
+        AllocationShare order = result.allocations().get(0);
+        // 消耗照常拆分，但煤气无价 → 该订单成本不拿「电+水」凑一个偏小的数。
+        assertEquals("500.000000", allocated(order, "ELECTRICITY"));
+        assertNull(order.amountYuan());
+        assertNull(result.publicShare().amountYuan());
+        assertNull(result.totalAmountYuan());
+    }
+
+    @Test
     void 车间不存在与日期格式错误分别返回404和400() {
         when(repository.workshop(anyLong())).thenReturn(Optional.empty());
 

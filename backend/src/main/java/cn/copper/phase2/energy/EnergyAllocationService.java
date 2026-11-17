@@ -213,7 +213,10 @@ public class EnergyAllocationService {
         return new WorkshopDayAllocation(
                 workshopText, workshop.workshopName(), workshop.workshopType(), date,
                 basis, status, statusNote,
-                new DayConfirmation(false, null, null, false,
+                dayConfirmed
+                        ? new DayConfirmation(true, null, null, false,
+                        "当日生产记录已确认录全，分摊比例为最终依据")
+                        : new DayConfirmation(false, null, null, false,
                         "S2-R18/R19 未接入，本版不提供当日录全确认；分摊比例均为按现有记录的临时结果"),
                 denominator, sources, totalAmount, allocations, publicShare,
                 reconciliation, costRun, missing);
@@ -292,15 +295,20 @@ public class EnergyAllocationService {
         return shares;
     }
 
+    /**
+     * 份额金额：三类能源都算得出来才给合计。
+     *
+     * <p>缺一类就整项留空，而不是把另两类加起来——那个和看起来是这个订单的真实成本，
+     * 实际低了一截，比空着更容易被当成结论用。</p>
+     */
     private static String sumAmount(List<ShareEnergy> shares) {
-        boolean any = false;
+        if (shares.isEmpty()) return null;
         BigDecimal total = BigDecimal.ZERO;
         for (ShareEnergy share : shares) {
-            if (share.amountYuan() == null) continue;
-            any = true;
+            if (share.amountYuan() == null) return null;
             total = total.add(new BigDecimal(share.amountYuan()));
         }
-        return any ? format(total, EnergyAllocationModels.AMOUNT_SCALE) : null;
+        return format(total, EnergyAllocationModels.AMOUNT_SCALE);
     }
 
     /**

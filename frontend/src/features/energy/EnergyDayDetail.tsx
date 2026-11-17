@@ -256,6 +256,11 @@ export function EnergyDayDetail({workshopId, actualDate, onClose}: {
                     ? '车间一按库存成本归集材料与能源，同次投料被分次称重引用时只归集一次。'
                     : '按当天实际合格铜丝重量分摊全日消耗，含待机消耗，属于经营估算。'}
                 </p>
+                {shares.some(share => share.amountYuan === null) && (
+                  <p className="en-detail-note">
+                    费用为「—」表示该项缺少可计价的数量或单价，未按已知部分合计。
+                  </p>
+                )}
               </section>
 
               {data.reconciliation.length > 0 && (
