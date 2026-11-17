@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
 import type { ContractDetail, ContractSummary } from '../../lib/api';
+import { ContractFiles } from './ContractFiles';
 import './equipment.css';
 
 /**
@@ -12,6 +13,9 @@ import './equipment.css';
  *
  * <p>期限状态由服务端按业务日期现算，页面只做展示，不自己拿本地时间减一遍——
  * 否则浏览器时区一变，剩余天数就和列表页对不上。</p>
+ *
+ * <p>每张卡片下面挂着该合同的专属文件（{@link ContractFiles}）：合同扫描件按合同归档，
+ * 不与设备"附件"页签里的配图、手册混在一起。</p>
  */
 
 interface Draft {
@@ -186,16 +190,22 @@ export function ContractTab({equipmentId, refreshToken}: {equipmentId: string; r
     {!busy && rows !== null && (rows.length === 0
       ? <p className="eq-param-empty">该设备尚未纳入任何维保合同。可在此新建，或在服务单位名下补一份。</p>
       : <ul className="eq-supplier-list">
-        {rows.map(row => <li key={row.contractId} className="eq-supplier-item">
-          <div className="eq-supplier-main">
-            <strong>{row.serviceOrganization}</strong>
-            <small className="eq-supplier-count">
-              {row.contractNumber ? `${row.contractNumber} · ` : ''}覆盖 {row.equipmentCount} 台设备
-            </small>
-            <small className="eq-supplier-count">{period(row)}</small>
-            <span style={{marginTop: 4, display: 'inline-block'}}><ExpiryBadge row={row} /></span>
+        {rows.map(row => <li key={row.contractId} className="eq-supplier-item eq-contract-card">
+          <div className="eq-contract-head">
+            <div className="eq-supplier-main">
+              <strong>{row.serviceOrganization}</strong>
+              <small className="eq-supplier-count">
+                {row.contractNumber ? `${row.contractNumber} · ` : ''}覆盖 {row.equipmentCount} 台设备
+              </small>
+              <small className="eq-supplier-count">{period(row)}</small>
+            </div>
+            <span className="eq-contract-side"><ExpiryBadge row={row} /></span>
           </div>
-          <div className="eq-supplier-actions">
+          {/* 备注是签约要点（检修次数、结算方式、续签状态），设备管理员据此判断要不要续签；
+              单行截断 + title 看全文，避免 2000 字上限的备注把卡片撑高。 */}
+          {row.remark && <p className="eq-contract-remark" title={row.remark}>{row.remark}</p>}
+          <ContractFiles contractId={row.contractId} />
+          <div className="eq-contract-foot">
             <button type="button" className="eq-row-link" onClick={() => openEdit(row)}>编辑</button>
             <button type="button" className="eq-row-link" onClick={() => unbind(row)}>移出本设备</button>
           </div>

@@ -57,7 +57,7 @@ public class ContractRepository {
 
     static final String SUMMARY_TEMPLATE = """
             SELECT c.contract_id, c.service_organization, c.contract_number,
-                   c.start_date, c.end_date,
+                   c.start_date, c.end_date, c.remark,
                    (SELECT COUNT(*) FROM p2_contract_equipment ce
                      WHERE ce.contract_id = c.contract_id) AS equipment_count,
                    %s AS expiry_state,
@@ -115,6 +115,7 @@ public class ContractRepository {
             rs.getString("contract_number"),
             toLocalDate(rs.getDate("start_date")),
             toLocalDate(rs.getDate("end_date")),
+            rs.getString("remark"),
             rs.getLong("equipment_count"),
             rs.getString("expiry_state"),
             rs.getObject("remaining_days") == null ? null : rs.getInt("remaining_days"));

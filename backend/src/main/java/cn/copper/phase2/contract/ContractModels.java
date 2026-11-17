@@ -21,10 +21,15 @@ public final class ContractModels {
      * <p>{@code expiryState} 由 {@code end_date} 与服务端业务日期计算，取值见
      * {@link #STATE_ACTIVE} 等常量；{@code remainingDays} 为距到期的天数，
      * 结束日期为空时两者都给"未知"，不用 0 或负数冒充。</p>
+     *
+     * <p>{@code remark} 随摘要一起返回：它是合同的签约要点（检修次数、结算方式、续签状态），
+     * 设备管理员要靠它在列表上判断这份合同还要不要续。此前只放在详情里，等于把只读信息
+     * 关进了编辑表单——想看一眼备注就得打开可写状态，容易误改。</p>
      */
     public record ContractSummary(String contractId, String serviceOrganization,
                                   String contractNumber, LocalDate startDate, LocalDate endDate,
-                                  long equipmentCount, String expiryState, Integer remainingDays) {}
+                                  String remark, long equipmentCount, String expiryState,
+                                  Integer remainingDays) {}
 
     /**
      * C02 详情：合同字段 + 覆盖设备 + 关联附件 + 并发版本。
