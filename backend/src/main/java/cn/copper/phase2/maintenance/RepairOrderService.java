@@ -262,7 +262,8 @@ public class RepairOrderService {
         return detail;
     }
 
-    /** S1-R05 正式提交：资料齐备才允许进入待审核，首次提交时间只记一次。 */    @Transactional
+    /** S1-R05 正式提交：资料齐备才允许进入待审核，首次提交时间只记一次。 */
+    @Transactional
     public RepairActionResult submit(String repairOrderId, RepairOrderSubmitCommand command) {
         long id = parseId("repairOrderId", repairOrderId);
         RepairOrderSubmitCommand request = validate(command);
@@ -317,6 +318,12 @@ public class RepairOrderService {
         long actionId = repository.insertAction(id, RepairOrderWorkflow.actionType(action), request.result(),
                 current.status(), next, now, now, request.operatorName(), request.reason(), null);
         repository.advanceStatus(id, next, now, null, null);
+        if (RepairOrderWorkflow.CLOSED.equals(next)
+                && RepairOrderWorkflow.ACTION_NO_REPAIR.equals(action)) {
+            // 审核判定无需维修，工单已关闭，事件也应闭环；重复单不在这里结束，
+            // 因为同一个异常还有另一张工单在走，应由那张单收口。
+            repository.closeSourceAlertEvent(id, now, AlertEventStates.END_REASON_NO_REPAIR_DECIDED, now);
+        }
         return complete(request.requestId(), id, next, actionId);
     }
 
@@ -384,6 +391,12 @@ public class RepairOrderService {
                 current.status(), next, acceptedAt, now, request.operatorName(), request.reason(), null);
         repository.advanceStatus(id, next, now, null,
                 RepairOrderWorkflow.COMPLETED.equals(next) ? acceptedAt : null);
+        if (RepairOrderWorkflow.COMPLETED.equals(next)) {
+            // 验收通过即异常闭环。采集端没有后续数据时事件不会自动恢复，
+            // 不写这一笔就会出现「工单已结束、事件还在进行中」的矛盾。
+            repository.closeSourceAlertEvent(id, acceptedAt,
+                    AlertEventStates.END_REASON_REPAIR_COMPLETED, now);
+        }
         return complete(request.requestId(), id, next, actionId);
     }
 

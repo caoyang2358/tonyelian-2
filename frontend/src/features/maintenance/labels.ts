@@ -54,7 +54,10 @@ export const reviewResultLabels: Record<string, string> = {
 };
 export const acceptanceResultLabels: Record<string, string> = {PASS: '验收通过', FAIL: '验收不通过'};
 export const triggerModeLabels: Record<string, string> = {IMMEDIATE: '立即触发', SUSTAINED: '持续触发'};
-export const endReasonLabels: Record<string, string> = {RECOVERED: '自动恢复', RULE_CHANGED: '规则变更'};
+export const endReasonLabels: Record<string, string> = {
+  RECOVERED: '自动恢复', RULE_CHANGED: '规则变更',
+  REPAIR_COMPLETED: '维修验收结束', NO_REPAIR_DECIDED: '审核判定无需维修',
+};
 /** 参数编码兜底翻译：库里参数名是人工录入的，取不到名称时用编码翻译成中文。 */
 export const parameterCodeLabels: Record<string, string> = {
   temperature: '温度', pressure: '压力', level: '液位', speed: '速度', diameter: '直径', tension: '张力',

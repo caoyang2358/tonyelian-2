@@ -278,6 +278,35 @@ public class RepairOrderRepository {
                 """, status, now, firstSubmittedAt, completedAt, repairOrderId);
     }
 
+    /**
+     * 工单走到终态时闭环来源事件：把还没结束的异常事件写结束，并记下结束原因。
+     *
+     * <p>没有采集数据时事件不会按恢复结束，若不在这里闭环，页面就会出现
+     * 「工单已结束、事件还在进行中」的矛盾。只动未结束的事件，
+     * 已被自动恢复或规则变更结束的事件保留原有结束原因，不做覆盖。</p>
+     *
+     * <p>结束时间用 {@code GREATEST(?, triggered_at)} 兜住 chk_2
+     * （ended_at 不得早于触发时间），避免人工补录事件与工单时间倒挂时整笔操作失败。</p>
+     *
+     * @param endReason 结束原因，取值见 {@link AlertEventStates}：验收通过是维修闭环，
+     *                  审核判定无需维修是另一码事，页面据此显示「结束原因」，不与工单状态互相冒充
+     * @return 受影响行数；0 表示来源不是异常事件，或事件已经结束
+     */
+    public int closeSourceAlertEvent(long repairOrderId, LocalDateTime endedAt,
+                                     String endReason, LocalDateTime now) {
+        return jdbc.update("""
+                UPDATE p2_alert_event e
+                  JOIN p2_repair_order r ON r.source_alert_event_id = e.event_id
+                   SET e.ended_at = GREATEST(?, e.triggered_at),
+                       e.end_reason = ?,
+                       e.version = e.version + 1,
+                       e.updated_at = ?
+                 WHERE r.repair_order_id = ?
+                   AND r.source_type = 'ALERT_EVENT'
+                   AND e.ended_at IS NULL
+                """, endedAt, endReason, now, repairOrderId);
+    }
+
     public long insertAction(long repairOrderId, String actionType, String result, String previousStatus,
                              String nextStatus, LocalDateTime occurredAt, LocalDateTime recordedAt,
                              String operatorName, String reason, String description) {

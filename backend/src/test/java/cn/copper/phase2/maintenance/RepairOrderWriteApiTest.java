@@ -331,6 +331,23 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.data.status").value("CLOSED"));
 
         verify(repository).advanceStatus(eq(7L), eq("CLOSED"), any(), eq(null), eq(null));
+        // 重复单说明同一个异常还有另一张工单在走，事件交给那张单收口，不在这里结束。
+        verify(repository, never()).closeSourceAlertEvent(anyLong(), any(), anyString(), any());
+    }
+
+    @Test
+    void noRepairClosesOrderAndEndsSourceEvent() throws Exception {
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("REVIEW_PENDING", 3));
+        when(repository.findOrder(7L)).thenReturn(order("CLOSED", 4, "误报，无需维修", "张三"));
+
+        mvc.perform(post("/api/v1/repair-orders/7/reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(REQUEST_ID, 3, "\"result\":\"NO_REPAIR\",\"reason\":\"参数为误报\"")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CLOSED"));
+
+        // 判定无需维修，异常已有结论，事件不能继续挂着「进行中」。
+        verify(repository).closeSourceAlertEvent(eq(7L), any(), eq("NO_REPAIR_DECIDED"), any());
     }
 
     @Test
@@ -398,6 +415,8 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
         verify(repository).advanceStatus(eq(7L), eq("COMPLETED"), any(), eq(null), any());
+        // 验收通过要把来源事件一起闭环，否则事件会一直显示「进行中」。
+        verify(repository).closeSourceAlertEvent(eq(7L), any(), eq("REPAIR_COMPLETED"), any());
     }
 
     @Test
@@ -413,6 +432,8 @@ class RepairOrderWriteApiTest {
                 .andExpect(jsonPath("$.data.status").value("IN_REPAIR"));
 
         verify(repository).advanceStatus(eq(7L), eq("IN_REPAIR"), any(), eq(null), eq(null));
+        // 验收不通过只是回到待维修，异常还没解决，事件不能结束。
+        verify(repository, never()).closeSourceAlertEvent(anyLong(), any(), anyString(), any());
     }
 
     @Test
