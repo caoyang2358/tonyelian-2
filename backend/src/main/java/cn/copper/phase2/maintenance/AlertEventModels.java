@@ -30,7 +30,14 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
-            /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
+            /**
+             * 维修联动状态：WAITING_REPAIR（等待维修）/ HANDLED（已处理）/ NONE（未报修）。
+             *
+             * <p>由关联工单推导而非事件表另存：报修出未结工单即为等待维修，
+             * 工单验收完成且无未结工单即为已处理，历史记录因此永远和工单状态一致。</p>
+             */
+            String repairState,
+            /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态、人工处理状态与维修联动状态推导。 */
             String priority,
             /** 触发时的读数与单位：列表直接可见超限程度，不必逐条点开详情。 */
             String triggerValue,
@@ -82,6 +89,8 @@ public final class AlertEventModels {
             String endReason,
             String eventState,
             String handlingState,
+            /** 维修联动状态，含义同列表字段：等待维修 / 已处理 / 未报修。 */
+            String repairState,
             String priority,
             String triggerValue,
             String unitCode,

@@ -6,6 +6,10 @@ export const eventStateLabels: Record<string, string> = {
 export const handlingStateLabels: Record<string, string> = {
   PENDING: '待处理', ACKNOWLEDGED: '已知悉', DEFER_REPAIR: '暂不报修',
 };
+/** 维修联动状态：由关联工单推导，报修即等待维修，工单验收完成即已处理。 */
+export const repairStateLabels: Record<string, string> = {
+  WAITING_REPAIR: '等待维修', HANDLED: '已处理', NONE: '',
+};
 /** 处理优先级：后端按"是否恢复 + 是否已人工处理"推导，前端只负责翻译。 */
 export const priorityLabels: Record<string, string> = {
   URGENT: '紧急', HIGH: '高', NORMAL: '一般', LOW: '低',
@@ -21,10 +25,22 @@ export function formatReading(value: string | null): string {
 export const faultCategoryLabels: Record<string, string> = {
   MECHANICAL: '机械', ELECTRICAL: '电气', INSTRUMENT: '仪表', PROCESS: '工艺', OTHER: '其他',
 };
+/**
+ * 工单状态：页面只呈现四类业务状态——待审核、待维修、待验收、已结束。
+ * 退回补充属于审核环节内的补充态，显示为「待审核（已退回）」；关闭与验收通过都归入已结束。
+ */
 export const orderStatusLabels: Record<string, string> = {
-  DRAFT: '待提交', REVIEW_PENDING: '待审核', RETURNED_FOR_INFO: '待补充',
-  IN_REPAIR: '维修中', ACCEPTANCE_PENDING: '待验收', COMPLETED: '已完成', CLOSED: '已关闭',
+  REVIEW_PENDING: '待审核', RETURNED_FOR_INFO: '待审核（已退回）',
+  IN_REPAIR: '待维修', ACCEPTANCE_PENDING: '待验收',
+  COMPLETED: '已结束', CLOSED: '已结束',
 };
+/** 四类状态的筛选项；多状态用逗号分隔，后端按 IN 查询。 */
+export const orderStatusFilters: {value: string; text: string}[] = [
+  {value: 'REVIEW_PENDING,RETURNED_FOR_INFO', text: '待审核'},
+  {value: 'IN_REPAIR', text: '待维修'},
+  {value: 'ACCEPTANCE_PENDING', text: '待验收'},
+  {value: 'COMPLETED,CLOSED', text: '已结束'},
+];
 export const sourceTypeLabels: Record<string, string> = {
   ALERT_EVENT: '异常事件', INSPECTION: '巡检', MANUAL: '人工上报',
 };

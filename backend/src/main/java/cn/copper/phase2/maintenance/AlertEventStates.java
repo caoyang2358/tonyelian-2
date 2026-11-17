@@ -32,6 +32,20 @@ final class AlertEventStates {
     static final Set<String> HANDLING_STATES = Set.of(PENDING, ACKNOWLEDGED, DEFER_REPAIR);
 
     /**
+     * 维修联动状态：由关联工单推导，事件表不另存一份，避免"工单修完了事件还写着维修中"。
+     *
+     * <ul>
+     *   <li>{@link #REPAIR_WAITING}：存在未结束的工单（待审核/待维修/待验收），页面上叫「等待维修」。</li>
+     *   <li>{@link #REPAIR_HANDLED}：没有未结束工单，且存在已验收的工单，页面上叫「已处理」。</li>
+     *   <li>{@link #REPAIR_NONE}：还没报修，展示人工处理状态即可。</li>
+     * </ul>
+     */
+    static final String REPAIR_WAITING = "WAITING_REPAIR";
+    static final String REPAIR_HANDLED = "HANDLED";
+    static final String REPAIR_NONE = "NONE";
+    static final Set<String> REPAIR_STATES = Set.of(REPAIR_WAITING, REPAIR_HANDLED, REPAIR_NONE);
+
+    /**
      * 处理优先级：事件表没有优先级列，按"设备是否还在异常 + 是否有人处理"推导。
      *
      * <p>排序用序号（1 最高），出参用语义码。这样工人打开列表时，排在前面的一定是

@@ -15,6 +15,12 @@ const volumeMeta = [
   {key: 'completed', label: '完成工单', color: '#9fbd6f', caliberKey: 'completedRepairCount'},
 ] as const;
 
+const bucketMeta = [
+  {key: 'within30Minutes', label: '30 分钟以内', color: '#5b8f6f'},
+  {key: 'within2Hours', label: '30 分钟~2 小时', color: '#c2a04a'},
+  {key: 'over2Hours', label: '超过 2 小时', color: '#b5694a'},
+] as const;
+
 const deadlineMeta = [
   {key: 'dueSoon', label: '临期', color: '#c2a04a'},
   {key: 'expired', label: '已超期', color: '#b5694a'},
@@ -102,6 +108,13 @@ export function OverviewTab() {
     value: breakdown ? breakdown[meta.key] : 0,
   }));
   const deadlineSum = deadlineSegments.reduce((sum, item) => sum + item.value, 0);
+  const buckets = data?.durationBuckets ?? {within30Minutes: 0, within2Hours: 0, over2Hours: 0};
+  const bucketTotal = buckets.within30Minutes + buckets.within2Hours + buckets.over2Hours;
+  const overdueShare = bucketTotal > 0 ? Math.round(buckets.over2Hours / bucketTotal * 100) : 0;
+  const deadlineTypes = data?.deadlineTypeCounts ?? {warranty: 0, maintenance: 0, expectedLife: 0};
+  const deadlineAbnormal = (data?.deadlineBreakdown?.dueSoon ?? 0) + (data?.deadlineBreakdown?.expired ?? 0);
+  const missingEquipmentCount = data?.deadlineMissingEquipmentCount ?? 0;
+  const overdueRepairCount = data?.overdueRepairCount ?? 0;
   const maxReport = Math.max(1, ...(data?.equipmentReportCounts.map(row => row.reportCount) ?? [1]));
 
   return <>
@@ -129,6 +142,10 @@ export function OverviewTab() {
       </div>
       {error && <div className="state-error" role="alert"><div className="state-icon"><Icon name="alert" size={24} /></div><div><h3>无法完成统计</h3><p>{error}</p></div></div>}
       {data && <>
+        <p className="ops-scope">
+          <span>统计范围：<b>{formatGeneratedAt(data.from)}</b> 至 <b>{formatGeneratedAt(data.to)}</b></span>
+          <span className="ops-scope-note">期限提醒与工单时效看的是查询这一刻的状态，不受该范围限制</span>
+        </p>
         <div className="ops-metrics">
           {volumeMeta.map(meta => <div className="ops-metric" key={meta.key}>
             <strong>{volumeValues[meta.key]}</strong>
@@ -142,7 +159,7 @@ export function OverviewTab() {
           </div>)}
           <div className="ops-metric">
             <strong>{formatDuration(data.averageHandlingSeconds) ?? '—'}</strong>
-            <span>平均处理时长（{data.handlingSampleCount} 单）<Tip text={caliber.averageHandlingSeconds} /></span>
+            <span>维修工单平均处理时长（{data.handlingSampleCount} 单）<Tip text={caliber.averageHandlingSeconds} /></span>
             <i className="ops-metric-mini">
               <b className={`ops-metric-mini-${seconds == null ? 'good' : durationTone(seconds)}`}
                  style={{width: `${durationPercent}%`}} />
@@ -175,8 +192,8 @@ export function OverviewTab() {
           </div>
 
           <div className="ops-chart-head">
-            <h3 className="ops-section-title">平均处理时长</h3>
-            <span className="ops-chart-hint">满量程 2 小时 · 30 分钟内为健康区间<Tip text={caliber.averageHandlingSeconds} /></span>
+            <h3 className="ops-section-title">维修工单平均处理时长</h3>
+            <span className="ops-chart-hint">满量程 2 小时 · 30 分钟内绿色 · 30 分钟~2 小时黄色 · 超 2 小时红色<Tip text={caliber.averageHandlingSeconds} /></span>
           </div>
           {seconds == null
             ? <p className="missing-value">统计范围内没有验收通过的工单，暂无可计算的时长。</p>
@@ -191,16 +208,40 @@ export function OverviewTab() {
                   <i style={{left: '50%'}} title="1 小时" />
                 </div>
                 <div className="ops-duration-scale"><span>0</span><span>30 分钟</span><span>1 小时</span><span>2 小时</span></div>
+                {bucketTotal > 0 && <div className="ops-buckets">
+                  <p className="ops-buckets-title">已完成 {bucketTotal} 单的时长分布</p>
+                  <div className="ops-buckets-bar" role="img" aria-label="已完成工单的时长分段：30 分钟以内、30 分钟至 2 小时、超过 2 小时">
+                    {bucketMeta.map(meta => buckets[meta.key] > 0 && <span key={meta.key}
+                      style={{flexGrow: buckets[meta.key], background: meta.color}}
+                      title={`${meta.label}：${buckets[meta.key]} 单`} />)}
+                  </div>
+                  <div className="ops-buckets-legend">
+                    {bucketMeta.map(meta => <span key={meta.key}>
+                      <i style={{background: meta.color}} />{meta.label}<b>{buckets[meta.key]}</b> 单
+                    </span>)}
+                  </div>
+                  {buckets.over2Hours > 0
+                    ? <p className="ops-buckets-alert">其中 <b>{buckets.over2Hours}</b> 单超过预期处理时间（2 小时），占已完成工单的 {overdueShare}%</p>
+                    : <p className="ops-buckets-ok">已完成工单全部在 2 小时内处理完毕</p>}
+                </div>}
               </div>}
+          <div className={`ops-overdue${overdueRepairCount > 0 ? ' ops-overdue-active' : ''}`}>
+            <span>工单时效：当前在办工单中 <b>{overdueRepairCount}</b> 单已超过 2 小时未结束<Tip text={caliber.overdueRepairCount} /></span>
+            <span className="ops-overdue-note">与上面的期限提醒不是一回事：这里算的是工单从提交到现在的时长。</span>
+          </div>
 
           <div className="ops-chart-head">
-            <h3 className="ops-section-title">期限提醒</h3>
-            <span className="ops-chart-hint">{data.deadlineReminderCount ?? 0} 条需处理<Tip text={caliber.deadlineReminderCount} /></span>
+            <h3 className="ops-section-title">期限提醒（设备档案）</h3>
+            <span className="ops-chart-hint">
+              {data.deadlineReminderCount ?? 0} 条待处理
+              {missingEquipmentCount > 0 && `（涉及 ${missingEquipmentCount} 台设备）`}
+              <Tip text={caliber.deadlineReminderCount} />
+            </span>
           </div>
           {data.deadlineReminderCount == null
             ? <p className="ops-note-block">{data.deadlineReminderNote ?? '期限提醒口径未就绪：此处返回"缺项"而不是"没有提醒"。'}</p>
             : deadlineSum === 0
-              ? <div className="ops-reminder"><strong>0</strong><div><span>当前没有需要处理的期限提醒</span></div></div>
+              ? <div className="ops-reminder"><strong>0</strong><div><span>当前没有需要处理的期限提醒：临期与超期均为 0，档案齐全</span></div></div>
               : <div className="ops-deadline">
                   <div className="ops-deadline-bar" role="img" aria-label="期限构成：临期、已超期与待补资料">
                     {deadlineSegments.filter(item => item.value > 0).map(item =>
@@ -209,9 +250,18 @@ export function OverviewTab() {
                   </div>
                   <div className="ops-deadline-legend">
                     {deadlineSegments.map(item => <span key={item.key}>
-                      <i style={{background: item.color}} />{item.label}<b>{item.value}</b>
+                      <i style={{background: item.color}} />{item.label}<b>{item.value}</b> 条
                     </span>)}
                   </div>
+                  {deadlineAbnormal > 0 && <p className="ops-deadline-type">
+                    临期与超期按来源：质保 <b>{deadlineTypes.warranty}</b> 条 · 维保 <b>{deadlineTypes.maintenance}</b> 条 · 预计寿命 <b>{deadlineTypes.expectedLife}</b> 条
+                  </p>}
+                  <ul className="ops-deadline-notes">
+                    <li>计数单位是<strong>条</strong>不是台：一台设备的质保、维保、预计寿命各算一条，所以条数通常是台数的三倍（多份维保合同时更多）。</li>
+                    <li>「待补资料」指缺投用日期、质保年限或维保合同，算不出到期日；它<strong>不是</strong>"还没到期"，补齐后自动转入临期/超期评估，数字随之下降。</li>
+                    <li>提醒方式：每次打开概览按当时的档案重新判定，临期阈值取提醒设置里的提前量（质保、维保），寿命固定提前一年；属于常驻待办，不是定时推送。</li>
+                    <li>工单超时<strong>不在</strong>这张卡里，见下方「工单时效」。</li>
+                  </ul>
                 </div>}
 
           <div className="ops-chart-head">

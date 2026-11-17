@@ -62,36 +62,37 @@ class RepairOrderWriteApiTest {
     // ---- S1-R01 建单 ----
 
     @Test
-    void manualCreateReturnsDraftWithEditableFields() throws Exception {
+    void manualCreateSubmitsIntoReviewPending() throws Exception {
         when(repository.equipmentExists(3L)).thenReturn(true);
         when(repository.insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
-                eq(null), eq(null), eq(null), any()))
+                eq(null), eq("控制柜跳闸"), eq(null), eq("REVIEW_PENDING"), any(), any()))
                 .thenReturn(7L);
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, null, null));
+        when(repository.findOrder(7L)).thenReturn(order("REVIEW_PENDING", 1, "控制柜跳闸", null));
 
         mvc.perform(post("/api/v1/repair-orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"requestId":"%s","operatorName":"张三","sourceType":"MANUAL","equipmentId":"3"}
+                                {"requestId":"%s","operatorName":"张三","sourceType":"MANUAL","equipmentId":"3",
+                                 "description":"控制柜跳闸"}
                                 """.formatted(REQUEST_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.repairOrderId").value("7"))
                 .andExpect(jsonPath("$.data.orderNo").value("RO-20261103-000007"))
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("REVIEW_PENDING"))
                 .andExpect(jsonPath("$.data.version").value(1))
-                .andExpect(jsonPath("$.data.editableFields[0]").value("description"))
+                .andExpect(jsonPath("$.data.editableFields").isEmpty())
                 .andExpect(jsonPath("$.data.sourceSnapshot").doesNotExist());
 
-        verify(repository).insertAction(eq(7L), eq("CREATE"), eq(null), eq(null), eq("DRAFT"),
-                any(), any(), eq("张三"), eq(null), eq(null));
+        verify(repository).insertAction(eq(7L), eq("CREATE"), eq(null), eq(null), eq("REVIEW_PENDING"),
+                any(), any(), eq("张三"), eq("建单即提交"), eq(null));
     }
 
     @Test
     void createStoresFaultCategoryDescriptionAndReporter() throws Exception {
         when(repository.equipmentExists(3L)).thenReturn(true);
         when(repository.insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
-                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), any())).thenReturn(7L);
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, "控制柜跳闸", "张三"));
+                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), eq("REVIEW_PENDING"), any(), any())).thenReturn(7L);
+        when(repository.findOrder(7L)).thenReturn(order("REVIEW_PENDING", 1, "控制柜跳闸", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -101,10 +102,10 @@ class RepairOrderWriteApiTest {
                                  "description":"控制柜跳闸","reporterName":"张三"}
                                 """.formatted(REQUEST_ID)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+                .andExpect(jsonPath("$.data.status").value("REVIEW_PENDING"));
 
         verify(repository).insertOrder(anyString(), eq(3L), eq("MANUAL"), eq(null), eq(null), eq(null),
-                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), any());
+                eq("ELECTRICAL"), eq("控制柜跳闸"), eq("张三"), eq("REVIEW_PENDING"), any(), any());
     }
 
     @Test
@@ -126,18 +127,19 @@ class RepairOrderWriteApiTest {
         when(repository.findInspectionSource(5L)).thenReturn(new InspectionSource(
                 "5", "3", "1#结晶牵引机", NOW, "李四", "检查结晶轮", "ABNORMAL", "速度波动", 2));
         when(repository.insertOrder(anyString(), eq(3L), eq("INSPECTION"), eq(null), eq(5L), anyString(),
-                eq(null), eq(null), eq(null), any()))
+                eq(null), eq("速度波动"), eq(null), eq("REVIEW_PENDING"), any(), any()))
                 .thenReturn(7L);
         when(repository.findOrder(7L)).thenReturn(
-                order("DRAFT", 1, null, null));
+                order("REVIEW_PENDING", 1, "速度波动", null));
 
         mvc.perform(post("/api/v1/repair-orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"requestId":"%s","operatorName":"张三","sourceType":"INSPECTION","sourceId":"5"}
+                                {"requestId":"%s","operatorName":"张三","sourceType":"INSPECTION","sourceId":"5",
+                                 "description":"速度波动"}
                                 """.formatted(REQUEST_ID)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("REVIEW_PENDING"))
                 .andExpect(jsonPath("$.data.sourceSnapshot.inspectionId").value("5"))
                 .andExpect(jsonPath("$.data.sourceSnapshot.result").value("ABNORMAL"));
     }
@@ -149,12 +151,13 @@ class RepairOrderWriteApiTest {
         mvc.perform(post("/api/v1/repair-orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"requestId":"%s","operatorName":"张三","sourceType":"INSPECTION","sourceId":"999"}
+                                {"requestId":"%s","operatorName":"张三","sourceType":"INSPECTION","sourceId":"999",
+                                 "description":"速度波动"}
                                 """.formatted(REQUEST_ID)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
 
-        verify(repository, never()).insertOrder(any(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(repository, never()).insertOrder(any(), anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -186,9 +189,9 @@ class RepairOrderWriteApiTest {
     // ---- S1-R04 保存资料 ----
 
     @Test
-    void saveInDraftKeepsStatusAndWritesAuditTrail() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 2, "结晶轮异响", "张三"));
+    void saveInReturnedForInfoKeepsStatusAndWritesAuditTrail() throws Exception {
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 1));
+        when(repository.findOrder(7L)).thenReturn(order("RETURNED_FOR_INFO", 2, "结晶轮异响", "张三"));
         when(repository.insertChangeLog(anyString(), anyString(), anyString(), anyString(), anyString(),
                 any(), anyString())).thenReturn(11L);
 
@@ -198,7 +201,7 @@ class RepairOrderWriteApiTest {
                                 "\"description\":\"结晶轮异响\",\"reporterName\":\"张三\",\"photoAttachmentIds\":[]")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.changeLogId").value("11"))
-                .andExpect(jsonPath("$.data.repairOrder.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.repairOrder.status").value("RETURNED_FOR_INFO"))
                 .andExpect(jsonPath("$.data.repairOrder.description").value("结晶轮异响"));
 
         verify(repository).saveContent(eq(7L), eq("结晶轮异响"), eq(null), eq("张三"), eq(null), any());
@@ -221,7 +224,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void staleVersionIsRejectedBeforeStateIsInspected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 4));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 4));
 
         mvc.perform(put("/api/v1/repair-orders/7")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -229,12 +232,12 @@ class RepairOrderWriteApiTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"))
                 .andExpect(jsonPath("$.data.currentVersion").value(4))
-                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+                .andExpect(jsonPath("$.data.status").value("RETURNED_FOR_INFO"));
     }
 
     @Test
     void photoFromAnotherOrderIsRejected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 1));
         when(repository.attachmentBelongsToOrder(88L, 7L)).thenReturn(false);
 
         mvc.perform(put("/api/v1/repair-orders/7")
@@ -247,8 +250,8 @@ class RepairOrderWriteApiTest {
     // ---- S1-R05 提交 ----
 
     @Test
-    void submitMovesDraftToReviewPendingAndRecordsFirstSubmission() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 2));
+    void submitMovesReturnedForInfoToReviewPendingAndRecordsFirstSubmission() throws Exception {
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 2));
         when(repository.findOrder(7L)).thenReturn(order("REVIEW_PENDING", 3, "结晶轮异响", "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
@@ -263,8 +266,8 @@ class RepairOrderWriteApiTest {
 
     @Test
     void submitWithoutDescriptionIsRejectedBeforeStatusChanges() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, null, "张三"));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 1));
+        when(repository.findOrder(7L)).thenReturn(order("RETURNED_FOR_INFO", 1, null, "张三"));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -277,8 +280,8 @@ class RepairOrderWriteApiTest {
 
     @Test
     void submitWithoutReporterIsRejected() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, "结晶轮异响", null));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 1));
+        when(repository.findOrder(7L)).thenReturn(order("RETURNED_FOR_INFO", 1, "结晶轮异响", null));
 
         mvc.perform(post("/api/v1/repair-orders/7/submissions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -343,14 +346,14 @@ class RepairOrderWriteApiTest {
 
     @Test
     void reviewInWrongStatusReturnsStateConflict() throws Exception {
-        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("DRAFT", 1));
+        when(repository.lockOrder(7L)).thenReturn(StatusRow.of("RETURNED_FOR_INFO", 1));
 
         mvc.perform(post("/api/v1/repair-orders/7/reviews")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(REQUEST_ID, 1, "\"result\":\"APPROVE\"")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("STATE_CONFLICT"))
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("RETURNED_FOR_INFO"))
                 .andExpect(jsonPath("$.data.version").value(1));
     }
 
@@ -497,7 +500,7 @@ class RepairOrderWriteApiTest {
 
     @Test
     void orderNoFollowsDocumentedFormat() throws Exception {
-        when(repository.findOrder(7L)).thenReturn(order("DRAFT", 1, null, null));
+        when(repository.findOrder(7L)).thenReturn(order("RETURNED_FOR_INFO", 1, null, null));
 
         mvc.perform(get("/api/v1/repair-orders/7"))
                 .andExpect(status().isOk())

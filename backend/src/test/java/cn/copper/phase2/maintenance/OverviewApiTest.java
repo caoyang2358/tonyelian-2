@@ -1,8 +1,11 @@
 package cn.copper.phase2.maintenance;
 
 import cn.copper.phase2.common.ApiExceptionHandler;
+import cn.copper.phase2.common.PageResult;
 import cn.copper.phase2.deadline.DeadlineModels.DeadlineBreakdown;
+import cn.copper.phase2.deadline.DeadlineModels.DeadlineItem;
 import cn.copper.phase2.deadline.DeadlineService;
+import cn.copper.phase2.maintenance.OverviewModels.DurationBuckets;
 import cn.copper.phase2.maintenance.OverviewModels.EquipmentReportCount;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
@@ -54,6 +58,8 @@ class OverviewApiTest {
         when(repository.countCompletedRepairs(any(), any(), isNull(), isNull())).thenReturn(2L);
         when(repository.handlingStats(any(), any(), isNull(), isNull()))
                 .thenReturn(new OverviewRepository.HandlingStats(new BigDecimal("754.45"), 2L));
+        when(repository.durationBuckets(any(), any(), isNull(), isNull()))
+                .thenReturn(new DurationBuckets(1, 0, 1));
         when(repository.reportCountsByEquipment(any(), any(), isNull(), isNull())).thenReturn(List.of(
                 new EquipmentReportCount("3", "1#结晶牵引机", 3, 2),
                 new EquipmentReportCount("1", "1#熔化炉", 1, 0)));
@@ -70,6 +76,9 @@ class OverviewApiTest {
                 .andExpect(jsonPath("$.data.completedRepairCount").value(2))
                 .andExpect(jsonPath("$.data.averageHandlingSeconds").value("754.5"))
                 .andExpect(jsonPath("$.data.handlingSampleCount").value(2))
+                .andExpect(jsonPath("$.data.durationBuckets.within30Minutes").value(1))
+                .andExpect(jsonPath("$.data.durationBuckets.over2Hours").value(1))
+                .andExpect(jsonPath("$.data.caliber.durationBuckets").exists())
                 .andExpect(jsonPath("$.data.equipmentReportCounts[0].equipmentName").value("1#结晶牵引机"))
                 .andExpect(jsonPath("$.data.equipmentReportCounts[0].reportCount").value(3))
                 .andExpect(jsonPath("$.data.equipmentReportCounts[0].completedCount").value(2))
@@ -90,23 +99,69 @@ class OverviewApiTest {
                 .andExpect(jsonPath("$.data.deadlineBreakdown.dueSoon").value(1))
                 .andExpect(jsonPath("$.data.deadlineBreakdown.expired").value(1))
                 .andExpect(jsonPath("$.data.deadlineBreakdown.missing").value(0))
-                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("临期")))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("设备档案")))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("不含维修工单")))
                 .andExpect(jsonPath("$.data.averageHandlingSeconds").value(nullValue()))
                 .andExpect(jsonPath("$.data.handlingSampleCount").value(0));
     }
 
-    /** 有设备算不出到期日时，说明里要带上待补条数，否则"0 条提醒"会被读成"没有风险"。 */
+    /**
+     * 待补资料必须计入"待处理"，否则页面上会出现"0 条需处理"与"待补资料 24"并排的矛盾；
+     * 同时条数是"设备 × 期限类型"，说明里要按条表述，不能写成"24 台设备"。
+     */
     @Test
-    void deadlineNoteMentionsUnevaluableCount() throws Exception {
+    void missingDeadlineCountsAsAttentionAndIsDescribedInRows() throws Exception {
         when(repository.handlingStats(any(), any(), isNull(), isNull()))
                 .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
         when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 24L));
+        when(deadlineService.search(any(), any(), isNull(), eq("MISSING_DATA"), eq(1), anyInt()))
+                .thenReturn(PageResult.of(List.of(
+                        deadlineItem("1"), deadlineItem("1"), deadlineItem("1"),
+                        deadlineItem("2"), deadlineItem("2"), deadlineItem("2")), 1, 100, 6));
 
         mvc.perform(ranged())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deadlineReminderCount").value(0))
+                .andExpect(jsonPath("$.data.deadlineReminderCount").value(24))
+                .andExpect(jsonPath("$.data.deadlineMissingEquipmentCount").value(2))
                 .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("24 条")))
-                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("暂无法评估")));
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("2 台设备")))
+                .andExpect(jsonPath("$.data.deadlineReminderNote").value(containsString("算不出到期日")));
+    }
+
+    /** 临期与超期要能按来源拆开，否则回答不了"是维保到期还是质保到期"。 */
+    @Test
+    void deadlineTypeCountsSplitByReminderType() throws Exception {
+        when(repository.handlingStats(any(), any(), isNull(), isNull()))
+                .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
+        when(repository.reportCountsByEquipment(any(), any(), isNull(), isNull())).thenReturn(List.of());
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(2L, 1L, 0L));
+        when(deadlineService.search(any(), any(), isNull(), eq("DUE_SOON"), eq(1), anyInt()))
+                .thenReturn(PageResult.of(List.of(
+                        deadlineItem("1", "WARRANTY"), deadlineItem("2", "MAINTENANCE")), 1, 100, 2));
+        when(deadlineService.search(any(), any(), isNull(), eq("EXPIRED"), eq(1), anyInt()))
+                .thenReturn(PageResult.of(List.of(deadlineItem("3", "EXPECTED_LIFE")), 1, 100, 1));
+
+        mvc.perform(ranged())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deadlineTypeCounts.warranty").value(1))
+                .andExpect(jsonPath("$.data.deadlineTypeCounts.maintenance").value(1))
+                .andExpect(jsonPath("$.data.deadlineTypeCounts.expectedLife").value(1))
+                .andExpect(jsonPath("$.data.caliber.deadlineTypeCounts").exists());
+    }
+
+    /** 工单时效单独一个数字：在办超 2 小时，不计入期限提醒。 */
+    @Test
+    void overdueRepairCountIsReportedSeparatelyFromDeadlines() throws Exception {
+        when(repository.handlingStats(any(), any(), isNull(), isNull()))
+                .thenReturn(new OverviewRepository.HandlingStats(null, 0L));
+        when(repository.countOverdueRepairs(any(), isNull(), isNull())).thenReturn(5L);
+        when(deadlineService.breakdown(any(), any())).thenReturn(new DeadlineBreakdown(0L, 0L, 0L));
+
+        mvc.perform(ranged())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.overdueRepairCount").value(5))
+                .andExpect(jsonPath("$.data.deadlineReminderCount").value(0))
+                .andExpect(jsonPath("$.data.caliber.overdueRepairCount").value(containsString("2 小时")));
     }
 
     /** 概览的筛选条件要与期限统计一致地传下去，否则"按设备查看"会被算成全厂。 */
@@ -191,5 +246,15 @@ class OverviewApiTest {
         mvc.perform(ranged().param("workshopId", "ws-1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.data.fieldErrors[0].field").value("workshopId"));
+    }
+
+    private static DeadlineItem deadlineItem(String equipmentId) {
+        return deadlineItem(equipmentId, "WARRANTY");
+    }
+
+    /** 只关心 equipmentId 与来源类型，其余字段留空。 */
+    private static DeadlineItem deadlineItem(String equipmentId, String reminderType) {
+        return new DeadlineItem(equipmentId, null, null, null, null, null,
+                reminderType, null, null, null, null, null, null, null, "MISSING_DATA", List.of());
     }
 }

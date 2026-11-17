@@ -67,7 +67,7 @@ class AlertEventApiTest {
                 new AlertEventItem("9", "3", "1#结晶牵引机", "11", "TC-001", "21", "TEMP", "熔化温度",
                         TRIGGERED_AT, TRIGGERED_AT, RECOVERED_AT, RECOVERED_AT, "RECOVERED",
                         AlertEventStates.RECOVERED, AlertEventStates.PENDING,
-                        AlertEventStates.PRIORITY_NORMAL, "82.5", "℃", AlertEventStates.SOURCE_REALTIME,
+                        AlertEventStates.REPAIR_WAITING, AlertEventStates.PRIORITY_NORMAL, "82.5", "℃", AlertEventStates.SOURCE_REALTIME,
                         List.of("14"), List.of("IN_REPAIR"), 1)));
 
         mvc.perform(get("/api/v1/alert-events"))
@@ -351,7 +351,8 @@ class AlertEventApiTest {
                 "42", "1", "1#熔化炉", "8", "TEMP-003", "3", "temperature", "底部温度",
                 OffsetDateTime.parse("2026-11-12T10:00:00+08:00"), OffsetDateTime.parse("2026-11-12T10:10:00+08:00"),
                 null, null, null,
-                AlertEventStates.ONGOING, AlertEventStates.PENDING, AlertEventStates.PRIORITY_URGENT,
+                AlertEventStates.ONGOING, AlertEventStates.PENDING, AlertEventStates.REPAIR_NONE,
+                AlertEventStates.PRIORITY_URGENT,
                 "97.2", "C", Map.of("type", "MANUAL", "operator", "张三", "reason", "采集器故障"),
                 "4", null, List.of(), 1);
     }
@@ -360,7 +361,7 @@ class AlertEventApiTest {
         return new AlertEventDetail(
                 "9", "3", "1#结晶牵引机", "11", "TC-001", "21", "TEMP", "熔化温度",
                 TRIGGERED_AT.minusMinutes(20), TRIGGERED_AT, RECOVERED_AT, RECOVERED_AT, "RECOVERED",
-                AlertEventStates.RECOVERED, AlertEventStates.DEFER_REPAIR,
+                AlertEventStates.RECOVERED, AlertEventStates.DEFER_REPAIR, AlertEventStates.REPAIR_NONE,
                 AlertEventStates.PRIORITY_LOW,
                 "78.5", "℃", Map.of("sampleId", "S-20261103-1"), "31",
                 snapshot, orders, 2);

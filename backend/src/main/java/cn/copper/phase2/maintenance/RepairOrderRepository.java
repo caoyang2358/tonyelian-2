@@ -216,15 +216,15 @@ public class RepairOrderRepository {
     public long insertOrder(String placeholderOrderNo, long equipmentId, String sourceType,
                             Long sourceAlertEventId, Long sourceInspectionId, String sourceSnapshotJson,
                             String faultCategory, String description, String reporterName,
-                            LocalDateTime now) {
+                            String status, LocalDateTime firstSubmittedAt, LocalDateTime now) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement("""
                     INSERT INTO p2_repair_order
                         (order_no, equipment_id, source_type, source_alert_event_id, source_inspection_id,
                          source_snapshot, fault_category, description, reporter_name,
-                         status, created_at, updated_at, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                         status, first_submitted_at, created_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, placeholderOrderNo);
             ps.setLong(2, equipmentId);
@@ -235,9 +235,10 @@ public class RepairOrderRepository {
             ps.setString(7, faultCategory);
             ps.setString(8, description);
             ps.setString(9, reporterName);
-            ps.setString(10, RepairOrderWorkflow.DRAFT);
-            ps.setObject(11, now);
+            ps.setString(10, status);
+            ps.setObject(11, firstSubmittedAt);
             ps.setObject(12, now);
+            ps.setObject(13, now);
             return ps;
         }, keys);
         Number key = keys.getKey();
@@ -330,6 +331,17 @@ public class RepairOrderRepository {
         jdbc.update("DELETE FROM p2_repair_photo WHERE repair_order_id = ?", repairOrderId);
         for (Long attachmentId : attachmentIds) {
             jdbc.update("INSERT INTO p2_repair_photo (repair_order_id, attachment_id) VALUES (?, ?)",
+                    repairOrderId, attachmentId);
+        }
+    }
+
+    /**
+     * 追加照片：建单即提交后，报修人在上传窗口里补传的现场照片只能追加，不能整集合替换，
+     * 避免把审核或维修阶段已经挂上的证据照片冲掉。重复挂同一张附件时忽略。
+     */
+    public void appendPhotos(long repairOrderId, List<Long> attachmentIds) {
+        for (Long attachmentId : attachmentIds) {
+            jdbc.update("INSERT IGNORE INTO p2_repair_photo (repair_order_id, attachment_id) VALUES (?, ?)",
                     repairOrderId, attachmentId);
         }
     }
@@ -440,8 +452,13 @@ public class RepairOrderRepository {
             args.add(Long.valueOf(query.equipmentId()));
         }
         if (query.status() != null) {
-            conditions.add("r.status = ?");
-            args.add(query.status());
+            // 页面按四类状态筛选，其中「待审核」包含退回补充、「已结束」包含验收与关闭，
+            // 因此这里允许逗号分隔的多状态，等价于 IN 查询。
+            String[] statuses = query.status().split(",");
+            conditions.add("r.status IN (" + String.join(", ", java.util.Collections.nCopies(statuses.length, "?")) + ")");
+            for (String status : statuses) {
+                args.add(status);
+            }
         }
         if (query.sourceType() != null) {
             conditions.add("r.source_type = ?");

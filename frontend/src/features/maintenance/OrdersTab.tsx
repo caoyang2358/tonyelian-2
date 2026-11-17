@@ -4,7 +4,8 @@ import { MaintenanceApiError, repairOrderApi, toOffsetIso } from '../../lib/main
 import type { RepairActionItem, RepairOrderDetail, RepairOrderItem } from '../../lib/maintenanceApi';
 import {
   acceptanceResultLabels, actionTypeLabels, endReasonLabels, faultCategoryLabels, formatReading, formatTime,
-  formatUnit, label, localInputValue, orderStatusLabels, parameterText, reviewResultLabels, sourceTypeLabels,
+  formatUnit, label, localInputValue, orderStatusFilters, orderStatusLabels, parameterText, reviewResultLabels,
+  sourceTypeLabels,
 } from './labels';
 import { EquipmentSelect, Pager, PhotoPicker, PhotoSection, uploadPhotos, useOperatorName } from './shared';
 import type { RepairHandoff } from './shared';
@@ -22,15 +23,15 @@ function statusTagClass(status: string): string {
  * 文档只有状态机，没有"派工"这个动作码：审核通过（APPROVE）即进入维修中，
  * 因此"审核派工"把两者合并成一步，派工对象记在审核意见里。 */
 const flowSteps = [
-  {title: '报修提交', owner: '报修人', detail: '登记设备、故障类别与现象，提交后进入待审核'},
+  {title: '报修提交', owner: '报修人', detail: '录入设备、故障类别与现象，提交即进入待审核'},
   {title: '审核派工', owner: '设备主管', detail: '确认是否维修并指定维修人；也可退回补充、判无需维修'},
   {title: '维修处理', owner: '维修工', detail: '登记维修时间与处理内容，附现场照片'},
-  {title: '验收关闭', owner: '验收人', detail: '验收通过即完成；不通过退回维修'},
+  {title: '验收关闭', owner: '验收人', detail: '验收通过即结束；不通过退回维修'},
 ] as const;
 
 /** 状态 → 当前所处环节下标；终态返回 4（四步全部完成）。 */
 function stepIndex(status: string): number {
-  if (status === 'REVIEW_PENDING') return 1;
+  if (status === 'REVIEW_PENDING' || status === 'RETURNED_FOR_INFO') return 1;
   if (status === 'IN_REPAIR') return 2;
   if (status === 'ACCEPTANCE_PENDING') return 3;
   if (status === 'COMPLETED' || status === 'CLOSED') return 4;
@@ -265,10 +266,8 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
       if (createPhotos.length) {
         const result = await uploadPhotos('REPAIR_ORDER', created.repairOrderId, who, createPhotos);
         if (result.uploadedIds.length) {
-          await repairOrderApi.save(created.repairOrderId, {
-            operatorName: who, expectedVersion: created.version, reason: '报修时上传现场照片',
-            description: createDescription.trim(), supplement: '', reporterName: reporter,
-            faultCategory: createFault, photoAttachmentIds: result.uploadedIds,
+          await repairOrderApi.appendPhotos(created.repairOrderId, {
+            operatorName: who, attachmentIds: result.uploadedIds,
           }).catch(() => null);
         }
         photoNote = result.uploaded
@@ -280,7 +279,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
       }
       setCreateFeedback({
         kind: createPhotos.length && photoNote.includes('未上传成功') ? 'error' : 'ok',
-        text: `报修工单 ${created.orderNo} 已创建（状态「${label(orderStatusLabels, created.status)}」）${photoNote}。未提交前不计入统计。`,
+        text: `报修工单 ${created.orderNo} 已提交，进入「${label(orderStatusLabels, created.status)}」${photoNote}。`,
       });
       setCreateSourceId(''); setCreateDescription(''); setCreateFault(''); setCreatePhotos([]);
       await loadList();
@@ -313,7 +312,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
 
   return <>
     <section className="panel" aria-label="新建报修工单">
-      <div className="panel-heading"><div><h2>新建报修工单</h2><p>未正式提交的工单不计入统计</p></div></div>
+      <div className="panel-heading"><div><h2>新建报修工单</h2><p>建单即提交，直接进入待审核</p></div></div>
       <div className="ops-form">
         <div className="ops-form-row">
           <label className="select-field"><span>来源</span>
@@ -353,7 +352,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
         <label className="select-field"><span>工单状态</span>
           <select value={status} onChange={event => {setStatus(event.target.value); setPage(1);}}>
             <option value="">全部状态</option>
-            {Object.entries(orderStatusLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
+            {orderStatusFilters.map(item => <option value={item.value} key={item.value}>{item.text}</option>)}
           </select></label>
         <button className="reset-filter" type="button" onClick={() => {setStatus(''); setPage(1);}}>清除筛选</button>
         <button className="button" type="button" onClick={() => void loadList(page, pageSize)} disabled={listLoading}>{listLoading ? '刷新中…' : '刷新'}</button>
@@ -382,7 +381,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
     {detailLoading && !detail && <section className="panel"><div className="loading-state"><span className="spinner" /><span>正在读取工单详情…</span></div></section>}
 
     {detail && <section className="panel" aria-label="工单详情">
-      <div className="panel-heading"><div><h2>工单 {detail.orderNo}<span className="panel-count">{label(orderStatusLabels, detail.status)}</span></h2><p>{detail.equipmentName} · {label(sourceTypeLabels, detail.sourceType)}来源 · 报修人 {detail.reporterName ?? '待补充'}</p></div></div>
+      <div className="panel-heading"><div><h2>工单 {detail.orderNo}<span className="panel-count">{label(orderStatusLabels, detail.status)}</span></h2><p>{detail.equipmentName} · {label(sourceTypeLabels, detail.sourceType)}来源 · 报修人 {detail.reporterName ?? '未填写'}</p></div></div>
       <div className="ops-detail ops-detail-padded">
         <ol className="ops-flow">
           {flowSteps.map((step, index) => {
@@ -402,9 +401,9 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
         <dl>
           <div><dt>设备</dt><dd><strong>{detail.equipmentName}</strong></dd></div>
           <div><dt>故障类别</dt><dd>{detail.faultCategory ? label(faultCategoryLabels, detail.faultCategory) : <span className="missing-value">未分类</span>}</dd></div>
-          <div><dt>故障现象</dt><dd>{detail.description ?? <span className="missing-value">待补充</span>}</dd></div>
+          <div><dt>故障现象</dt><dd>{detail.description ?? <span className="missing-value">未填写</span>}</dd></div>
           <div><dt>补充资料</dt><dd>{detail.supplement ?? <span className="missing-value">无</span>}</dd></div>
-          <div><dt>报修人</dt><dd>{detail.reporterName ?? <span className="missing-value">待补充</span>}</dd></div>
+          <div><dt>报修人</dt><dd>{detail.reporterName ?? <span className="missing-value">未填写</span>}</dd></div>
           <div><dt>报修时间</dt><dd>{formatTime(detail.createdAt)}</dd></div>
           <div><dt>首次提交 / 完成</dt><dd>{formatTime(detail.firstSubmittedAt)} / {formatTime(detail.completedAt)}</dd></div>
           <div><dt>最近更新</dt><dd>{formatTime(detail.updatedAt)}</dd></div>
@@ -456,8 +455,8 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
           <label className="ops-text-field"><span>补充资料（选填）</span>
             <textarea rows={2} value={saveSupplement} onChange={event => setSaveSupplement(event.target.value)} placeholder="例如：现场已断电挂牌，待停机窗口维修" /></label>
           <div className="ops-form-actions">
-            <button className="button" type="button" onClick={() => void runAction('save')} disabled={acting || !can('SAVE')}>保存修改</button>
-            <button className="button button-primary" type="button" onClick={() => void runAction('submit')} disabled={acting || !can('SUBMIT')}>提交报修</button>
+            <button className="button" type="button" onClick={() => void runAction('save')} disabled={acting || !can('SAVE')}>保存补充资料</button>
+            <button className="button button-primary" type="button" onClick={() => void runAction('submit')} disabled={acting || !can('SUBMIT')}>重新提交审核</button>
           </div>
         </>}
 
@@ -476,7 +475,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
             <button className="button button-primary" type="button" onClick={() => void runAction('review')} disabled={acting || !can('APPROVE')}>
               提交审核结论
             </button>
-            <span className="ops-form-context ops-inline-context">通过后进入「维修中」，派工对象记入审核说明</span>
+            <span className="ops-form-context ops-inline-context">通过后进入「待维修」，派工对象记入审核说明</span>
           </div>
         </>}
 
@@ -505,7 +504,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
         </>}
 
         {!editable && !can('APPROVE') && !can('RECORD_REPAIR_RESULT') && !can('ACCEPT_PASS') &&
-          <p className="ops-note-block">该工单已结束（{label(orderStatusLabels, detail.status)}），不再接受新的流转操作。</p>}
+          <p className="ops-note-block">该工单已结束，不再接受新的流转操作。</p>}
 
         {feedback && <p className={feedback.kind === 'ok' ? 'ops-feedback-ok' : 'ops-feedback-error'} role={feedback.kind === 'ok' ? 'status' : 'alert'}>{feedback.text}</p>}
       </div>

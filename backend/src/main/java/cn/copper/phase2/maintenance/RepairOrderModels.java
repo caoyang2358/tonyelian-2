@@ -105,7 +105,7 @@ public final class RepairOrderModels {
             List<String> editableFields,
             int version) {}
 
-    /** S1-R04 保存资料命令：仅在 DRAFT 与 RETURNED_FOR_INFO 状态可用。 */
+    /** S1-R04 保存资料命令：仅在退回补充状态可用（建单即提交，已无草稿态）。 */
     public record RepairOrderSaveCommand(
             String requestId,
             String operatorName,
@@ -119,6 +119,17 @@ public final class RepairOrderModels {
 
     /** S1-R04 响应：同一工单详情、新版本与必要审计依据。 */
     public record RepairOrderSaved(RepairOrderDetail repairOrder, String changeLogId) {}
+
+    /**
+     * 建单后补传现场照片。
+     *
+     * <p>建单即提交后工单不再有可编辑的草稿态，照片改成追加写入：只加不删、不改状态、
+     * 不推进版本，审核与维修阶段已挂的证据照片不会被覆盖。</p>
+     */
+    public record RepairPhotoCommand(
+            String requestId,
+            String operatorName,
+            List<String> attachmentIds) {}
 
     /** S1-R05 提交命令。 */
     public record RepairOrderSubmitCommand(

@@ -14,7 +14,7 @@ import { NetworkPage } from './features/network/NetworkPage';
 
 const navigation: {id: Page; label: string; system: 1 | 2; description: string; features: string[]}[] = [
   {id: 'equipment', label: '设备管理', system: 1, description: '查看生产设备与基础信息', features: []},
-  {id: 'operations', label: '运维管理', system: 1, description: '异常提醒、人工巡检与维修处理', features: ['异常事件与人工处理', '巡检记录与报修草稿', '维修、审核及验收']},
+  {id: 'operations', label: '运维管理', system: 1, description: '异常提醒、人工巡检与维修处理', features: ['异常事件与人工处理', '巡检记录与异常报修', '维修、审核及验收']},
   {id: 'knowledge', label: '运维知识库', system: 1, description: '设备知识、手册与人工排查步骤', features: ['按设备和类型查阅', '人工维护的故障排查步骤', '已验收维修案例整理']},
   {id: 'network', label: '设备组网', system: 1, description: '车间工艺、设备与测点的二维示意', features: ['二维工艺与设备关系', '测点信息及档案关联', '示意位置与连线维护']},
   {id: 'planning', label: '订单与计划', system: 2, description: '订单、库存、产能与日生产计划', features: ['订单与物料需求', '生产草稿与日计划', '库存分配和交付记录']},
