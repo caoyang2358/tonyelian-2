@@ -34,8 +34,13 @@ function stepIndex(status: string): number {
   if (status === 'REVIEW_PENDING' || status === 'RETURNED_FOR_INFO') return 1;
   if (status === 'IN_REPAIR') return 2;
   if (status === 'ACCEPTANCE_PENDING') return 3;
-  if (status === 'COMPLETED' || status === 'CLOSED') return 4;
+  if (status === 'COMPLETED') return 4;
   return 0;
+}
+
+/** 无需维修 / 重复单在审核环节直接关闭，维修与验收两步没有发生，流程条要如实显示"未进入"。 */
+function closedWithoutRepair(status: string): boolean {
+  return status === 'CLOSED';
 }
 
 /** 每个环节的实际处理人：取该环节最后一次动作的经办人与时间。 */
@@ -293,6 +298,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
     createPhotos, operator, loadList, openDetail]);
 
   const current = detail ? stepIndex(detail.status) : 0;
+  const closedEarly = detail ? closedWithoutRepair(detail.status) : false;
   const handlers = detail ? [
     detail.reporterName ?? handlerOf(detail.actions, ['SUBMIT'])?.operatorName ?? null,
     handlerOf(detail.actions, ['REVIEW'])?.operatorName ?? null,
@@ -385,7 +391,9 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
       <div className="ops-detail ops-detail-padded">
         <ol className="ops-flow">
           {flowSteps.map((step, index) => {
-            const state = current === 4 || index < current ? 'done' : index === current ? 'active' : 'todo';
+            const state = closedEarly
+              ? (index < 2 ? 'done' : 'skipped')
+              : current === 4 || index < current ? 'done' : index === current ? 'active' : 'todo';
             return <li className={`ops-flow-step ${state}`} key={step.title}>
               <span className="ops-flow-index">{index + 1}</span>
               <div className="ops-flow-body">
@@ -393,7 +401,8 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
                 <span className="ops-flow-hint">{step.detail}</span>
                 <span className="ops-flow-who">{handlers[index]
                   ? `处理人 ${handlers[index]}${handlerTimes[index] ? ` · ${formatTime(handlerTimes[index])}` : ''}`
-                  : state === 'active' ? '当前环节，等待处理' : '未开始'}</span>
+                  : state === 'active' ? '当前环节，等待处理'
+                    : state === 'skipped' ? '审核关闭，未进入该环节' : '未开始'}</span>
               </div>
             </li>;
           })}
@@ -432,7 +441,7 @@ export function OrdersTab({handoff, onHandoffApplied}: {handoff?: RepairHandoff 
     </section>}
 
     {detail && <section className="panel" aria-label="当前环节操作">
-      <div className="panel-heading"><div><h2>{current >= 4 ? '流程已结束' : `当前环节：${flowSteps[current].title}`}</h2></div></div>
+      <div className="panel-heading"><div><h2>{current >= 4 || closedEarly ? '流程已结束' : `当前环节：${flowSteps[current].title}`}</h2></div></div>
       <div className="ops-form">
         <div className="ops-form-row">
           <label className="select-field"><span>经办人</span>

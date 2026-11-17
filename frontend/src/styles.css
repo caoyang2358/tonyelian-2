@@ -205,6 +205,8 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 .ops-flow-step.done{border-color:#cfe0c6;background:#f4f9ee}
 .ops-flow-step.active{border-color:#2e6c51;background:#eef5ec;box-shadow:0 0 0 1px #2e6c51 inset}
 .ops-flow-step.todo{opacity:.72}
+.ops-flow-step.skipped{opacity:.62;border-style:dashed}
+.ops-flow-step.skipped .ops-flow-who{color:#8d9a86}
 .ops-flow-index{flex:0 0 20px;height:20px;border-radius:50%;background:#e7ecdf;color:#7c877a;font-size:10px;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
 .ops-flow-step.done .ops-flow-index{background:#cfe0c6;color:#3f6b32}
 .ops-flow-step.active .ops-flow-index{background:#2e6c51;color:#fff}
