@@ -1,0 +1,104 @@
+import { useState } from 'react';
+import type { Page } from '../../components/Icon';
+import { EnergyPricePanel } from './EnergyPricePanel';
+import { EnergyTotalsPanel } from './EnergyTotalsPanel';
+import './energy.css';
+
+/**
+ * 系统二 · 生产与能源统计。
+ *
+ * <p>视图划分按《页面与交互规格》第 1 节：总量统计、订单核算、库存成本、能源价格。
+ * 每日分摊不单独占页签——它是总量的详情，从某车间某日点进去看。</p>
+ *
+ * <p>已接入的两个视图背后是真实接口（E01/E02 用量、E04—E06 价格）。未接入的两个
+ * 如实写出等的是什么，不用空表格冒充"已实现"。</p>
+ */
+
+type ViewId = 'totals' | 'costing' | 'stock' | 'price';
+
+interface View {
+  id: ViewId;
+  label: string;
+  hint: string;
+  /** 未实现时给出具体依赖，让人知道等的是什么，而不是一句"敬请期待"。 */
+  blocked?: string;
+}
+
+const VIEWS: View[] = [
+  {
+    id: 'totals',
+    label: '总量统计',
+    hint: '分车间的电、水、煤气与合格产量，以及每日来源明细',
+  },
+  {
+    id: 'costing',
+    label: '订单核算',
+    hint: '库存成本、订单成本与估算盈亏',
+    blocked: '接口 K03/K04 待接入。依赖订单、库存成本流水与实际交付事实，'
+      + '而这些事实尚未产生（订单、投料、称重当前均为 0 行）。',
+  },
+  {
+    id: 'stock',
+    label: '库存成本',
+    hint: '铜杆与分规格铜丝的实物、价值及均价',
+    blocked: '接口 K01/K02 待接入。库存成本账由统一库存服务在入库、领用、归属时落账，'
+      + '该服务尚未建立，暂时没有可展示的成本来源。',
+  },
+  {
+    id: 'price',
+    label: '能源价格',
+    hint: '通用与车间专用单价、按用能日生效',
+  },
+];
+
+export interface EnergyStatisticsPageProps {
+  item: {id: Exclude<Page, 'equipment'>; label: string; description: string; features: string[]};
+  back: () => void;
+}
+
+export function EnergyStatisticsPage({item}: EnergyStatisticsPageProps) {
+  const [view, setView] = useState<ViewId>('totals');
+  const active = VIEWS.find(entry => entry.id === view)!;
+
+  return (
+    <section className="en-panel">
+      <header className="en-panel-head">
+        <div>
+          <span className="section-kicker">{item.label}</span>
+          <h2>{active.label}</h2>
+          <p>{active.hint}</p>
+        </div>
+        <div className="en-view-switch" role="tablist" aria-label="统计视图">
+          {VIEWS.map(entry => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={view === entry.id}
+              className={`en-view-tab ${view === entry.id ? 'active' : ''}`}
+              onClick={() => setView(entry.id)}
+            >
+              {entry.label}
+              {entry.blocked && <span className="en-view-pending">待接入</span>}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {active.blocked
+        ? <div className="en-blocked">
+            <p className="en-blocked-title">{active.label}尚未接入</p>
+            <p className="en-blocked-detail">{active.blocked}</p>
+            <p className="en-blocked-note">
+              先做能独立成立的部分，比对着空表造数更有意义——所以本轮先交付「总量统计」与「能源价格」。
+            </p>
+            <button type="button" className="button button-small" onClick={() => setView('totals')}>
+              回到总量统计
+            </button>
+          </div>
+        : view === 'totals'
+          ? <EnergyTotalsPanel />
+          : <EnergyPricePanel />}
+    </section>
+  );
+}
