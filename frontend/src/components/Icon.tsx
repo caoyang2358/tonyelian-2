@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 export type Page = 'equipment' | 'operations' | 'knowledge' | 'network' | 'planning' | 'production' | 'statistics';
-export type IconName = Page | 'arrow' | 'refresh' | 'search' | 'check' | 'alert' | 'database' | 'clock';
+export type IconName = Page | 'arrow' | 'refresh' | 'search' | 'check' | 'alert' | 'database' | 'clock' | 'plus' | 'document' | 'edit';
 
 export function Icon({name, size = 20}: {name: IconName; size?: number}) {
   const paths: Record<IconName, ReactNode> = {
@@ -19,6 +19,9 @@ export function Icon({name, size = 20}: {name: IconName; size?: number}) {
     alert: <><path d="m12 3 10 18H2zM12 9v5m0 3v.1" /></>,
     database: <><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M3 5v7c0 4 18 4 18 0V5M3 12v7c0 4 18 4 18 0v-7" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    plus: <><circle cx="12" cy="12" r="9" /><path d="M12 8v8m-4-4h8" /></>,
+    document: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 12h6m-6 4h6" /></>,
+    edit: <><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4" /><path d="M12 20h8" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }

@@ -66,6 +66,9 @@ export interface Overview {
 export interface Health { status: string; database?: { status: string; check?: string } }
 export interface ApiResult<T> { data: T; timestamp: string }
 
+/** 历史页面验收专用记录不属于甲方生产设备，不进入任何业务选择器或清单。 */
+const isBusinessEquipment = (equipment: {code: string}) => equipment.code !== 'KNOWLEDGE-VERIFY';
+
 /**
  * 后端业务错误。fields 来自 400 校验失败或 409 重复编码，可直接落到对应输入框；
  * detail 保留原始 data，便于读取 409 版本冲突里的 currentVersion。
@@ -128,7 +131,7 @@ export function mapEquipment(value: unknown): EquipmentBase[] {
     ids.add(key);
     if (![true, false, 0, 1].includes(row.enabled as boolean | number)) throw new ApiError('设备启用状态不是有效布尔值。', 'INVALID_RESPONSE');
     return {id: key, code: str(row.code, '设备编码'), name: str(row.name, '设备名称'), workshopId: id(row.workshopId, '车间ID'), workshopName: str(row.workshopName, '车间名称'), responsiblePerson: optional(row.responsiblePerson, '责任人'), enabled: row.enabled === true || row.enabled === 1};
-  });
+  }).filter(isBusinessEquipment);
 }
 
 /** S1-E01 扩展后的完整列表项映射：新增类型、类型名称、管理状态与版本。 */
@@ -152,9 +155,13 @@ export function mapEquipmentRows(source: unknown[]): Equipment[] {
 export function mapEquipmentPage(value: unknown): EquipmentPageResult {
   const data = record(value, '设备列表');
   if (!Array.isArray(data.items)) throw new ApiError('设备列表缺少items数组。', 'INVALID_RESPONSE');
+  const items = mapEquipmentRows(data.items).filter(isBusinessEquipment);
+  const hiddenCount = data.items.length - items.length;
+  const total = count(data.total, '总数');
   return {
-    items: mapEquipmentRows(data.items),
-    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'), total: count(data.total, '总数'),
+    items,
+    page: count(data.page, '页码'), pageSize: count(data.pageSize, '每页条数'),
+    total: total == null ? null : Math.max(0, total - hiddenCount),
   };
 }
 

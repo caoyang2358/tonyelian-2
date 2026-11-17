@@ -38,9 +38,11 @@ public class NetworkService {
     public record Latest(String parameterId, String sensorCode, String parameterCode, String value, String valueText,
                          String unitCode, String collectTime, String refreshTime, String qualityStatus,
                          String limitStatus, String monitoringStatus, String dataSource) {}
+    public record SensorOwner(String equipmentId, String sensorCode, String name) {}
     public record Layout(String workshopId, long version, String updatedAt, List<Node> nodes, List<Edge> edges,
                          List<String> processSteps,
                          @JsonInclude(JsonInclude.Include.NON_NULL) String changeLogId,
+                         @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, SensorOwner> sensorOwners,
                          @JsonInclude(JsonInclude.Include.NON_NULL) Map<String, List<Latest>> latestBySensorId) {}
     private record Header(long version, String updatedAt) {}
     private record Receipt(String operation, String target, byte[] hash, String response) {}
@@ -84,7 +86,7 @@ public class NetworkService {
             throw new LayoutError(409, "VERSION_CONFLICT", "布局已更新，请重新读取版本。",
                     Map.of("currentVersion", before.version()));
         }
-        command.nodes().forEach(node -> checkReference(id, node));
+        checkReferences(id, command.nodes());
         LocalDateTime now = LocalDateTime.now(ZONE).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         if (before.version() == 0) {
             jdbc.update("INSERT INTO p2_network_layout(workshop_id, version, updated_at) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE version = 1, updated_at = ?", id, now, now);
@@ -126,7 +128,7 @@ public class NetworkService {
             return statement;
         }, key);
         Layout result = new Layout(target, after.version(), after.updatedAt(), after.nodes(), after.edges(),
-                after.processSteps(), key.getKey().toString(), null);
+                after.processSteps(), key.getKey().toString(), after.sensorOwners(), null);
         jdbc.update("UPDATE p2_request_result SET response_data = ?, completed_at = ? WHERE request_id = ?",
                 encode(result), now, requestId);
         return result;
@@ -145,7 +147,7 @@ public class NetworkService {
                         rs.getObject(2, LocalDateTime.class).atZone(ZONE).toOffsetDateTime().toString()), id);
         var steps = processSteps(code);
         if (headers.isEmpty()) {
-            return new Layout(Long.toString(id), 0, null, List.of(), List.of(), steps, null,
+            return new Layout(Long.toString(id), 0, null, List.of(), List.of(), steps, null, Map.of(),
                     includeLatest ? Map.of() : null);
         }
         var nodes = jdbc.query("""
@@ -164,19 +166,45 @@ public class NetworkService {
                 """, (rs, row) -> new Edge(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), id);
         Header header = headers.get(0);
         return new Layout(Long.toString(id), header.version(), header.updatedAt(), nodes, edges, steps, null,
-                includeLatest ? readings.latest(nodes) : null);
+                sensorOwners(id), includeLatest ? readings.latest(nodes) : null);
     }
 
-    private void checkReference(long id, Node node) {
-        String sql = node.kind().equals("EQUIPMENT")
-                ? "SELECT workshop_id FROM dim_equipment WHERE equipment_id = ? FOR SHARE"
-                : """
-                  SELECT e.workshop_id FROM dim_sensor s JOIN dim_equipment e ON e.equipment_id = s.equipment_id
-                  WHERE s.sensor_id = ? FOR SHARE
-                  """;
-        var workshops = jdbc.queryForList(sql, Long.class, businessId(node.objectId()));
-        if (workshops.isEmpty() || workshops.get(0) != id) {
-            throw new LayoutError(409, "STATE_CONFLICT", "节点引用的对象不存在或不属于该车间。", node);
+    private Map<String, SensorOwner> sensorOwners(long workshopId) {
+        return jdbc.query("""
+                SELECT DISTINCT s.sensor_id, s.equipment_id, s.sensor_code, s.sensor_name
+                FROM p2_network_node n JOIN dim_sensor s ON s.sensor_id = n.sensor_id
+                WHERE n.workshop_id = ?
+                """, result -> {
+            Map<String, SensorOwner> owners = new LinkedHashMap<>();
+            while (result.next()) {
+                owners.put(result.getString(1), new SensorOwner(result.getString(2), result.getString(3), result.getString(4)));
+            }
+            return owners;
+        }, workshopId);
+    }
+
+    private void checkReferences(long workshopId, List<Node> nodes) {
+        Set<Long> equipmentIds = new HashSet<>();
+        for (Node node : nodes) {
+            if (node.kind().equals("EQUIPMENT") && !equipmentIds.add(businessId(node.objectId()))) {
+                throw invalid("同一设备在该车间布局中只能添加一次。", node);
+            }
+        }
+        for (Node node : nodes) {
+            boolean sensor = node.kind().equals("SENSOR");
+            String sql = sensor
+                    ? """
+                      SELECT e.equipment_id FROM dim_sensor s JOIN dim_equipment e ON e.equipment_id = s.equipment_id
+                      WHERE s.sensor_id = ? AND e.workshop_id = ? FOR SHARE
+                      """
+                    : "SELECT equipment_id FROM dim_equipment WHERE equipment_id = ? AND workshop_id = ? FOR SHARE";
+            var owners = jdbc.queryForList(sql, Long.class, businessId(node.objectId()), workshopId);
+            if (owners.isEmpty()) {
+                throw new LayoutError(409, "STATE_CONFLICT", "节点引用的对象不存在或不属于该车间。", node);
+            }
+            if (sensor && !equipmentIds.contains(owners.get(0))) {
+                throw invalid("请先将测点所属的设备添加到布局。", node);
+            }
         }
     }
 

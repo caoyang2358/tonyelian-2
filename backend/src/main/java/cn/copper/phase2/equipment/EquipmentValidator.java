@@ -71,9 +71,13 @@ public class EquipmentValidator {
         } else if (!ReferenceDictionaries.isEquipmentType(profile.typeCode().trim())) {
             errors.put("profile.typeCode", "设备类型不在可选范围内。");
         }
+        // 按《系统一-设备管理页面接口文档》第 23 行：新增与编辑均必填，历史未知只允许读取为 null。
+        // 因此写入路径不再接受 null；存量空值设备在下次更正时必须先选定状态。
         String status = profile.managementStatus();
-        if (status != null && !status.isBlank() && !ReferenceDictionaries.isManagementStatus(status.trim())) {
-            errors.put("profile.managementStatus", "管理状态只能是 IN_USE、STOPPED、SCRAPPED 或 null。");
+        if (status == null || status.isBlank()) {
+            errors.put("profile.managementStatus", "管理状态为必填项，请按现场核实结果选择。");
+        } else if (!ReferenceDictionaries.isManagementStatus(status.trim())) {
+            errors.put("profile.managementStatus", "管理状态只能是 IN_USE、STOPPED、SCRAPPED。");
         }
         optionalText(errors, "profile.model", profile.model(), MODEL_MAX, "型号");
         optionalText(errors, "profile.manufacturer", profile.manufacturer(), MANUFACTURER_MAX, "制造商");

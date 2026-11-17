@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../../components/Icon";
+import type { IconName } from "../../components/Icon";
 import type { PendingPageProps } from "../../components/PendingPage";
 import { api } from "../../lib/api";
 import type { Equipment, ReferenceOption } from "../../lib/api";
@@ -13,6 +15,34 @@ import type {
   RepairOrderDetail,
   RepairOrderItem,
 } from "../../lib/maintenanceApi";
+import { RichTextEditor } from "./RichTextEditor";
+import { hasRichContent, safeKnowledgeHtml } from "./richText";
+
+const categoryFields: Record<string, {
+  contentLabel: string;
+  contentHint: string;
+  faultLabel?: string;
+  stepsLabel?: string;
+  stepsHint?: string;
+}> = {
+  INTRODUCTION: { contentLabel: "设备详情介绍", contentHint: "可填写设备用途、结构组成、主要参数、运行特点和安全注意事项。" },
+  OPERATION_MAINTENANCE: { contentLabel: "操作与保养说明", contentHint: "可填写启停要求、日常点检、润滑与周期保养要求。", stepsLabel: "标准操作与保养步骤", stepsHint: "按现场执行顺序填写，便于操作人员逐项核对。" },
+  COMMON_FAULT: { contentLabel: "故障原因与处理建议", contentHint: "说明可能原因、影响范围、临时处置和需要升级处理的条件。", faultLabel: "典型故障现象", stepsLabel: "建议检查与处理顺序", stepsHint: "从安全确认、现象核实到恢复运行依次填写。" },
+  TROUBLESHOOTING: { contentLabel: "排查说明与安全提示", contentHint: "说明排查前提、风险隔离和判断依据。", faultLabel: "待排查故障现象", stepsLabel: "人工排查步骤（必填）", stepsHint: "每一步写清检查位置、判断标准和下一步动作。" },
+  REPAIR_CASE: { contentLabel: "维修过程与结论", contentHint: "记录故障原因、处理措施、替换部件、试运行结果和经验结论。", faultLabel: "报修与故障现象", stepsLabel: "维修处置过程", stepsHint: "按实际处置顺序整理关键动作。" },
+};
+
+const actionLabels: Record<string, string> = {
+  CREATE: "发起报修", REVIEW: "审核意见", REPAIR_RESULT: "维修结果", ACCEPTANCE: "验收结论", SUBMIT: "提交处理",
+};
+
+const categoryIcons: Record<string, IconName> = {
+  INTRODUCTION: "equipment",
+  OPERATION_MAINTENANCE: "check",
+  COMMON_FAULT: "alert",
+  TROUBLESHOOTING: "search",
+  REPAIR_CASE: "operations",
+};
 
 function Attachment({ id }: { id: string }) {
   const [name, setName] = useState("读取附件…");
@@ -52,7 +82,7 @@ function Attachment({ id }: { id: string }) {
   return (
     <li>
       {error ? (
-        `附件 ${id} 不可用，正文仍可阅读`
+        "引用资料暂不可用，正文仍可阅读"
       ) : (
         <>
           {name}{" "}
@@ -143,7 +173,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
     Promise.all([api.equipment(), api.referenceData()])
       .then(([e, t]) => {
         if (active) {
-          setEquipment(e.data.items);
+          setEquipment(e.data.items.filter((item) => item.enabled && item.code !== "KNOWLEDGE-VERIFY"));
           setTypes(t.data.equipmentTypes);
           setReferenceError("");
         }
@@ -260,7 +290,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
       setSaveError("请选择适用设备或类型");
       return;
     }
-    if (!draft.content?.trim() && !draft.steps.some((s) => s.trim())) {
+    if (!hasRichContent(draft.content) && !draft.steps.some((s) => s.trim())) {
       setSaveError("正文和步骤至少填写一项");
       return;
     }
@@ -329,7 +359,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
   }
   const eqLabel = (id: string | null, type: string | null) => {
     const e = equipment.find((e) => e.id === id);
-    return `${e?.name ?? (id ? `设备 ${id}` : "按类型适用")} · ${types.find((t) => t.code === (e?.typeCode ?? type))?.name ?? "待补充"}`;
+    return `${e?.name ?? (id ? `设备 ${id}` : "按类型适用")} · ${types.find((t) => t.code === (e?.typeCode ?? type))?.name ?? "通用生产设备"}`;
   };
   return (
     <section
@@ -339,6 +369,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
       <header className="knowledge-header">
         <div>
           <h2 id="knowledge-view-title" tabIndex={-1}>
+            <span className="knowledge-heading-icon"><Icon name={view === "editor" ? "edit" : view === "source" ? "operations" : view === "detail" ? "document" : "knowledge"} size={18} /></span>
             {view === "list"
               ? "知识条目"
               : view === "editor"
@@ -363,7 +394,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
           {view === "list" ? (
             <>
               <button className="button" onClick={back}>
-                返回设备
+                <Icon name="arrow" size={14} /><span>返回设备</span>
               </button>
               <button
                 className="button"
@@ -375,7 +406,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
                   setOrderPage(1);
                 }}
               >
-                从已验收工单整理案例
+                <Icon name="operations" size={15} /><span>从已验收工单整理案例</span>
               </button>
               <button
                 className="button button-primary"
@@ -384,12 +415,12 @@ export function KnowledgePage({ back }: PendingPageProps) {
                   edit();
                 }}
               >
-                新增知识
+                <Icon name="plus" size={16} /><span>新增知识</span>
               </button>
             </>
           ) : (
             <button className="button" disabled={saving} onClick={returnToList}>
-              返回知识列表
+              <Icon name="arrow" size={14} /><span>返回知识列表</span>
             </button>
           )}
         </div>
@@ -404,7 +435,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
         <>
           <div className="knowledge-filters">
             <label>
-              设备
+              <span className="knowledge-filter-label"><Icon name="equipment" size={15} />设备</span>
               <select
                 value={filter.equipmentId}
                 onChange={(e) => change("equipmentId", e.target.value)}
@@ -412,13 +443,13 @@ export function KnowledgePage({ back }: PendingPageProps) {
                 <option value="">全部设备</option>
                 {equipment.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.name} · {e.typeName ?? "待补充"}
+                    {e.name} · {e.typeName ?? "通用生产设备"}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              设备类型
+              <span className="knowledge-filter-label"><Icon name="production" size={15} />设备类型</span>
               <select
                 value={filter.equipmentType}
                 onChange={(e) => change("equipmentType", e.target.value)}
@@ -432,7 +463,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
               </select>
             </label>
             <label>
-              分类
+              <span className="knowledge-filter-label"><Icon name="knowledge" size={15} />分类</span>
               <select
                 value={filter.category}
                 onChange={(e) => change("category", e.target.value)}
@@ -446,11 +477,8 @@ export function KnowledgePage({ back }: PendingPageProps) {
               </select>
             </label>
             <label>
-              关键词 / 故障现象
-              <input
-                value={filter.keyword}
-                onChange={(e) => change("keyword", e.target.value)}
-              />
+              <span className="knowledge-filter-label"><Icon name="search" size={15} />关键词 / 故障现象</span>
+              <span className="knowledge-search-field"><Icon name="search" size={16} /><input value={filter.keyword} onChange={(e) => change("keyword", e.target.value)} /></span>
             </label>
           </div>
           {loading ? (
@@ -463,14 +491,18 @@ export function KnowledgePage({ back }: PendingPageProps) {
           ) : (
             <>
               <div className="knowledge-count">
-                共 <strong>{total}</strong> 篇知识
+                <Icon name="document" size={15} />共 <strong>{total}</strong> 篇知识
               </div>
               {items.length === 0 ? (
-                <p>
+                <div className="knowledge-empty-state" role="status">
+                  <span className="knowledge-empty-icon"><Icon name={Object.values(filter).some(Boolean) ? "search" : "knowledge"} size={28} /></span>
+                  <strong>{Object.values(filter).some(Boolean) ? "没有匹配的知识" : "知识库暂无内容"}</strong>
+                  <p>
                   {Object.values(filter).some(Boolean)
-                    ? "没有匹配的知识，请调整筛选条件。"
+                    ? "请调整设备、类型、分类或关键词筛选条件。"
                     : "暂无知识，可新增文章或整理维修案例。"}
-                </p>
+                  </p>
+                </div>
               ) : (
                 <div
                   className="table-region"
@@ -481,7 +513,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
                   <table className="knowledge-list">
                     <thead>
                       <tr>
-                        <th>知识标题 / 故障现象</th>
+                        <th>知识标题 / 内容摘要</th>
                         <th>分类</th>
                         <th>适用范围</th>
                         <th>更新时间</th>
@@ -500,26 +532,27 @@ export function KnowledgePage({ back }: PendingPageProps) {
                               {a.title}
                             </button>
                             <p className="knowledge-fault">
-                              {a.faultPhenomenon || "未填写故障现象"}
+                              {a.faultPhenomenon || (a.category === "INTRODUCTION" ? "设备用途、结构组成与运行要点" : "查看正文与执行要点")}
                             </p>
                           </td>
                           <td>
-                            <span className="knowledge-badge">
+                            <span className={`knowledge-badge knowledge-badge-${a.category.toLowerCase()}`}>
+                              <Icon name={categoryIcons[a.category] ?? "knowledge"} size={13} />
                               {categories[a.category]}
                             </span>
                           </td>
-                          <td>{eqLabel(a.equipmentId, a.equipmentType)}</td>
+                          <td><span className="knowledge-scope"><Icon name="equipment" size={14} />{eqLabel(a.equipmentId, a.equipmentType)}</span></td>
                           <td>
-                            {new Date(a.updatedAt).toLocaleString("zh-CN", {
+                            <span className="knowledge-time"><Icon name="clock" size={13} />{new Date(a.updatedAt).toLocaleString("zh-CN", {
                               hour12: false,
-                            })}
+                            })}</span>
                           </td>
                           <td>
                             <button
                               className="knowledge-text-button"
                               onClick={() => void read(a.articleId)}
                             >
-                              查看详情
+                              <span>查看详情</span><Icon name="arrow" size={13} />
                             </button>
                           </td>
                         </tr>
@@ -561,22 +594,29 @@ export function KnowledgePage({ back }: PendingPageProps) {
         </p>
       )}
       {view === "detail" && article && (
-        <article style={{ borderTop: "1px solid #ddd", marginTop: 24 }}>
-          <h3>{article.title}</h3>
-          <p>
-            {categories[article.category]} ·{" "}
-            {eqLabel(article.equipmentId, article.equipmentType)} · 版本{" "}
-            {article.version}
-          </p>
-          <p>故障现象：{article.faultPhenomenon ?? "无"}</p>
-          <p style={{ whiteSpace: "pre-wrap" }}>{article.content}</p>
-          <ol>
-            {article.steps.map((s, i) => (
-              <li key={i} style={{ whiteSpace: "pre-wrap" }}>
-                {s}
-              </li>
-            ))}
-          </ol>
+        <article>
+          <div className="knowledge-detail-heading">
+            <span className={`knowledge-badge knowledge-badge-${article.category.toLowerCase()}`}><Icon name={categoryIcons[article.category] ?? "knowledge"} size={13} />{categories[article.category]}</span>
+            <h3>{article.title}</h3>
+            <p>适用于：{eqLabel(article.equipmentId, article.equipmentType)}</p>
+          </div>
+          <dl className="knowledge-business-fields">
+            <div><dt>知识类型</dt><dd>{categories[article.category]}</dd></div>
+            <div><dt>适用设备或范围</dt><dd>{eqLabel(article.equipmentId, article.equipmentType)}</dd></div>
+            {categoryFields[article.category]?.faultLabel && <div className="wide"><dt>{categoryFields[article.category].faultLabel}</dt><dd>{article.faultPhenomenon ?? "未填写"}</dd></div>}
+            <div><dt>最近维护时间</dt><dd>{new Date(article.updatedAt).toLocaleString("zh-CN", { hour12: false })}</dd></div>
+            <div><dt>引用资料</dt><dd>{article.attachmentIds.length ? `${article.attachmentIds.length} 份` : "无"}</dd></div>
+          </dl>
+          <section className="knowledge-content-section">
+            <h4>{categoryFields[article.category]?.contentLabel ?? "知识详情"}</h4>
+            {article.content ? <div className="knowledge-rich-content" dangerouslySetInnerHTML={{ __html: safeKnowledgeHtml(article.content) }} /> : <p className="knowledge-empty">暂无正文内容</p>}
+          </section>
+          {!!article.steps.length && <section className="knowledge-content-section">
+            <h4>{categoryFields[article.category]?.stepsLabel ?? "执行步骤"}</h4>
+            <ol className="knowledge-steps">
+              {article.steps.map((s, i) => <li key={i} style={{ whiteSpace: "pre-wrap" }}>{s}</li>)}
+            </ol>
+          </section>}
           <ul>
             {article.attachmentIds.map((id) => (
               <Attachment key={id} id={id} />
@@ -644,7 +684,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
           <ol>
             {source.actions.map((a) => (
               <li key={a.actionId}>
-                {a.actionType}：{a.description ?? a.reason ?? a.result}
+                {actionLabels[a.actionType] ?? "处理记录"}：{a.description ?? a.reason ?? a.result}
               </li>
             ))}
           </ol>
@@ -676,7 +716,15 @@ export function KnowledgePage({ back }: PendingPageProps) {
             <select
               name="category"
               value={draft.category}
-              onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+              onChange={(e) => {
+                const category = e.target.value;
+                setDraft({
+                  ...draft,
+                  category,
+                  faultPhenomenon: categoryFields[category].faultLabel ? draft.faultPhenomenon : null,
+                  steps: categoryFields[category].stepsLabel ? draft.steps : [],
+                });
+              }}
             >
               {Object.entries(categories).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -698,7 +746,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
               <option value="">不指定设备</option>
               {equipment.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.name} · {e.typeName ?? "待补充"}
+                  {e.name} · {e.typeName ?? "通用生产设备"}
                 </option>
               ))}
             </select>
@@ -720,8 +768,8 @@ export function KnowledgePage({ back }: PendingPageProps) {
               ))}
             </select>
           </label>
-          <label>
-            故障现象
+          {categoryFields[draft.category].faultLabel && <label>
+            {categoryFields[draft.category].faultLabel}
             <input
               required={["COMMON_FAULT", "TROUBLESHOOTING"].includes(
                 draft.category,
@@ -732,20 +780,16 @@ export function KnowledgePage({ back }: PendingPageProps) {
                 setDraft({ ...draft, faultPhenomenon: e.target.value || null })
               }
             />
-          </label>
-          <label>
-            正文
-            <textarea
-              rows={7}
-              name="content"
-              value={draft.content ?? ""}
-              onChange={(e) =>
-                setDraft({ ...draft, content: e.target.value || null })
-              }
-            />
-          </label>
-          <fieldset>
-            <legend>有序步骤（正文或步骤至少一项；人工排查必须有步骤）</legend>
+          </label>}
+          <RichTextEditor
+            label={categoryFields[draft.category].contentLabel}
+            placeholder={categoryFields[draft.category].contentHint}
+            value={draft.content ?? ""}
+            onChange={(content) => setDraft({ ...draft, content: hasRichContent(content) ? content : null })}
+          />
+          {categoryFields[draft.category].stepsLabel && <fieldset className="knowledge-steps-editor">
+            <legend>{categoryFields[draft.category].stepsLabel}</legend>
+            <p className="fieldset-help">{categoryFields[draft.category].stepsHint}</p>
             {draft.steps.map((s, i) => (
               <div key={i}>
                 <label>
@@ -807,12 +851,12 @@ export function KnowledgePage({ back }: PendingPageProps) {
             >
               添加步骤
             </button>
-          </fieldset>
+          </fieldset>}
           <fieldset>
             <legend>附件引用</legend>
             {draft.attachmentIds.map((id) => (
-              <p key={id}>
-                附件 {id}{" "}
+              <div className="knowledge-attachment-reference" key={id}>
+                <ul><Attachment id={id} /></ul>
                 <button
                   type="button"
                   onClick={() =>
@@ -826,7 +870,7 @@ export function KnowledgePage({ back }: PendingPageProps) {
                 >
                   移除引用
                 </button>
-              </p>
+              </div>
             ))}
             {manualError && (
               <p role="alert">

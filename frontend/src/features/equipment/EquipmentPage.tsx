@@ -6,6 +6,7 @@ import type { Equipment, EquipmentDetail, EquipmentPageResult, EquipmentQuery, O
 import { DeadlinePanel } from './DeadlinePanel';
 import { EquipmentDetailDrawer } from './EquipmentDetailDrawer';
 import { EquipmentFormDialog } from './EquipmentFormDialog';
+import { isPlaceholderPerson } from './fieldLabels';
 import './equipment.css';
 
 const PAGE_SIZE = 20;
@@ -118,7 +119,6 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
       <div className="panel-heading">
         <div>
           <h2 id="equipment-list-title">生产设备档案<span className="panel-count">{result ? `${total} 台` : '等待读取'}</span></h2>
-          <p>沿用一期设备编码与车间信息</p>
         </div>
         <div className="eq-head-actions">
           <button type="button" className="button" onClick={() => setDeadlineOpen(true)}>
@@ -196,7 +196,6 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
                     <th scope="col">设备类型</th>
                     <th scope="col">管理状态</th>
                     <th scope="col">责任人</th>
-                    <th scope="col">启用状态</th>
                   </tr></thead>
                   <tbody>{rows.map((row, index) => <tr key={row.id}>
                     <td className="row-number">{String((currentPage - 1) * pageSize + index + 1).padStart(2, '0')}</td>
@@ -205,19 +204,25 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
                         <span className="device-symbol"><Icon name="equipment" size={20} /></span>
                         <span>
                           <strong>{row.name}</strong>
-                          <span className="device-code">{row.code}</span>
+                          <span className="device-code"><span className="eq-id-tag">设备编码</span>{row.code}</span>
                         </span>
                       </button>
                     </td>
                     <td><span className="workshop-marker" />{row.workshopName}</td>
-                    <td>{row.typeName ?? <span className="missing-value">待补档</span>}</td>
-                    <td>{row.managementStatus
-                      ? <span className={`eq-badge ${statusClass(row.managementStatus)}`}>
-                        {options?.equipmentManagementStatuses.find(item => item.code === row.managementStatus)?.name ?? row.managementStatus}
+                    <td>{row.typeName ?? <span className="missing-value">待补</span>}</td>
+                    <td>
+                      <span className="eq-status-cell">
+                        {row.managementStatus
+                          ? <span className={`eq-badge ${statusClass(row.managementStatus)}`}>
+                            {options?.equipmentManagementStatuses.find(item => item.code === row.managementStatus)?.name ?? row.managementStatus}
+                          </span>
+                          : <span className="missing-value">待补</span>}
+                        <span className="eq-subtle">系统{row.enabled ? '已启用' : '已停用'}</span>
                       </span>
-                      : <span className="missing-value">未知</span>}</td>
-                    <td>{row.responsiblePerson || <span className="missing-value">待补充</span>}</td>
-                    <td><span className={`equipment-status ${row.enabled ? 'enabled' : ''}`}><span />{row.enabled ? '已启用' : '已停用'}</span></td>
+                    </td>
+                    <td>{isPlaceholderPerson(row.responsiblePerson)
+                      ? <span className="missing-value">{row.responsiblePerson || '未指定'}</span>
+                      : row.responsiblePerson}</td>
                   </tr>)}</tbody>
                 </table>
               </div>

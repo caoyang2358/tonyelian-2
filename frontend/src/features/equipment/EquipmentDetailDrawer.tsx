@@ -5,6 +5,7 @@ import { SupplierTab } from './SupplierTab';
 import { ContractTab } from './ContractTab';
 import { AttachmentTab } from './AttachmentTab';
 import { SensorsTab } from './SensorsTab';
+import { FIELD_LABELS, isPlaceholderPerson } from './fieldLabels';
 import './equipment.css';
 
 /** 与新增/编辑弹窗共用同一个记住的操作人，避免两处显示不一致。 */
@@ -17,21 +18,6 @@ function newRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
 }
-
-const FIELD_LABELS: Record<string, string> = {
-  'profile.typeCode': '设备类型',
-  'profile.model': '型号',
-  'profile.processId': '所属工序',
-  'profile.installationLocation': '安装位置',
-  'profile.manufacturer': '制造厂家',
-  'profile.factorySerialNo': '出厂编号',
-  'profile.purchasedOn': '购置日期',
-  'profile.commissionedOn': '投用日期',
-  'profile.expectedLifeYears': '预计使用年限',
-  'profile.warrantyExpiresOn': '质保到期日',
-  'profile.managementStatus': '管理状态',
-  'profile.technicalParameters': '技术参数',
-};
 
 const OPERATION_LABELS: Record<string, string> = { CREATE: '新增', UPDATE: '更正', DELETE: '删除' };
 
@@ -66,6 +52,7 @@ function ProfileTab({detail, options}: {detail: EquipmentDetail; options: Refere
     ? options?.equipmentManagementStatuses.find(item => item.code === profile.managementStatus)?.name ?? profile.managementStatus
     : null;
   const missing = detail.missingFields.map(field => FIELD_LABELS[field] ?? field);
+  const alreadyStopped = profile.managementStatus === 'STOPPED' || profile.managementStatus === 'SCRAPPED';
   return <>
     {missing.length > 0 && <div className="eq-notice">
       <span>!</span>
@@ -75,7 +62,9 @@ function ProfileTab({detail, options}: {detail: EquipmentDetail; options: Refere
       <span>×</span>
       <div><strong>不能删除，仍有业务关联</strong>
         <ul>{detail.deletion.blockers.map(blocker => <li key={blocker.type}>{blocker.message}</li>)}</ul>
-        <div>如需停用，请改用编辑档案调整管理状态。</div>
+        <div>{alreadyStopped
+          ? `该设备已是「${statusName}」，历史关联按原样保留、不再参与新业务；如需彻底移除，须先清理上述关联。`
+          : '如需停用，请改用编辑档案调整管理状态。'}</div>
       </div>
     </div>}
 
@@ -83,13 +72,19 @@ function ProfileTab({detail, options}: {detail: EquipmentDetail; options: Refere
       <h3 className="eq-section-title">设备身份</h3>
       <dl className="eq-grid">
         <Field label="所属车间" value={detail.workshopName} />
-        <Field label="责任人" value={detail.responsiblePerson} unknown={!detail.responsiblePerson} />
-        <Field label="启用状态" value={detail.enabled ? '已启用' : '已停用'} />
+        <Field label="责任人" value={detail.responsiblePerson} unknown={isPlaceholderPerson(detail.responsiblePerson)} />
         <div className="eq-field">
           <dt>管理状态</dt>
           <dd>{statusName
             ? <span className={`eq-badge ${statusClass(profile.managementStatus)}`}>{statusName}</span>
             : <span className="eq-unknown">—</span>}</dd>
+        </div>
+        <div className="eq-field">
+          <dt>系统启用</dt>
+          <dd className={detail.enabled ? undefined : 'eq-unknown'}>
+            {detail.enabled ? '已启用' : '已停用'}
+            <span className="eq-subtle">系统内是否可用，不影响管理状态</span>
+          </dd>
         </div>
       </dl>
     </section>
@@ -221,8 +216,14 @@ export function EquipmentDetailDrawer({equipmentId, options, refreshToken, onClo
 
   useEffect(() => { closeRef.current?.focus(); }, []);
   useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const {body, documentElement} = document;
+    const previousOverflow = body.style.overflow;
+    const previousPadding = body.style.paddingRight;
+    // 隐藏滚动条会让可视宽度瞬间增加一个滚动条的宽度，页面内容会横向跳一下。
+    // 补上等宽内边距，开合抽屉前后内容位置保持不变。
+    const scrollbar = window.innerWidth - documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       // 确认框开着时先退回抽屉，避免误关后丢失已填的删除原因。
@@ -230,7 +231,11 @@ export function EquipmentDetailDrawer({equipmentId, options, refreshToken, onClo
       onClose();
     };
     document.addEventListener('keydown', onKey);
-    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', onKey); };
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPadding;
+      document.removeEventListener('keydown', onKey);
+    };
   }, [onClose, confirming, deleting]);
 
   const openConfirm = () => {

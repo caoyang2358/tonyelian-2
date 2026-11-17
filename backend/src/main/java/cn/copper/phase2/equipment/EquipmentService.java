@@ -12,6 +12,7 @@ import cn.copper.phase2.equipment.EquipmentRepository.EquipmentRow;
 import cn.copper.phase2.reference.ReferenceDictionaries;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -99,12 +100,20 @@ public class EquipmentService {
         return value.trim();
     }
 
-    /** 只列基线必需但尚未补充的字段，不把全部可选资料都当错误。 */
+    /**
+     * 只列基线必需但尚未补充的字段，不把全部可选资料都当错误。
+     * <p>必填范围取自《系统一-设备管理页面接口文档》第 19-26 行：类型与管理状态为新增/编辑必填，
+     * 历史设备可读为 null。这里如实列出，供页面提示，不阻断读取。</p>
+     */
     private static List<String> missingFields(EquipmentProfile profile) {
+        List<String> fields = new ArrayList<>(2);
         if (profile.typeCode() == null || profile.typeCode().isBlank()) {
-            return List.of("profile.typeCode");
+            fields.add("profile.typeCode");
         }
-        return List.of();
+        if (profile.managementStatus() == null || profile.managementStatus().isBlank()) {
+            fields.add("profile.managementStatus");
+        }
+        return List.copyOf(fields);
     }
 
     /**

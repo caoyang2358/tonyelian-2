@@ -28,6 +28,13 @@ function formatTime(value: string | null): string {
   return date.toLocaleString('zh-CN', {hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'});
 }
 
+/** 采集来源对用户可读化。DEMO-SEED 是联调脚本写入的固定标识，直接显示会像生产系统代号。 */
+function sourceSystemLabel(source: string | null): string {
+  if (!source) return '来源未标';
+  if (source === 'DEMO-SEED') return '演示数据（脚本生成）';
+  return source;
+}
+
 /** 默认查最近 24 小时：现场最常见的诉求是"刚才那波数据到底有没有"。 */
 function defaultRange(): {from: string; to: string} {
   const now = new Date();
@@ -113,7 +120,7 @@ export function SensorReadingsDialog({parameterId, title, unitCode, decimalPlace
                 <small>{record.sourceUnit ?? unitCode ?? ''}</small>
               </span>
               <span className="eq-sensor-record-meta">
-                {record.qualityCode ?? '质量码未标'} · {record.sourceSystem}
+                {record.qualityCode ?? '质量码未标'} · {sourceSystemLabel(record.sourceSystem)}
               </span>
             </li>)}
           </ul>)}
