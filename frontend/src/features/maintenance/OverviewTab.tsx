@@ -196,7 +196,6 @@ export function OverviewTab() {
       {data && <>
         <p className="ops-scope">
           <span>统计范围：<b>{formatGeneratedAt(data.from)}</b> 至 <b>{formatGeneratedAt(data.to)}</b></span>
-          <span className="ops-scope-note">期限提醒与工单时效看的是查询这一刻的状态，不受该范围限制</span>
         </p>
         <div className="ops-metrics">
           {volumeMeta.map(meta => <div className="ops-metric" key={meta.key}>
@@ -244,8 +243,7 @@ export function OverviewTab() {
           </div>
 
           <div className="ops-chart-head">
-            <h3 className="ops-section-title">维修工单平均处理时长</h3>
-            <span className="ops-chart-hint">满量程 2 小时 · 30 分钟内绿色 · 30 分钟~2 小时黄色 · 超 2 小时红色<Tip text={caliber.averageHandlingSeconds} /></span>
+            <h3 className="ops-section-title">维修工单平均处理时长<Tip text={caliber.averageHandlingSeconds} /></h3>
           </div>
           {seconds == null
             ? <p className="missing-value">统计范围内没有验收通过的工单，暂无可计算的时长。</p>
@@ -367,7 +365,6 @@ export function OverviewTab() {
               </div>)}
             </div>}
 
-          <p className="missing-value">统计生成时间：{formatGeneratedAt(data.generatedAt)}</p>
         </div>
       </>}
       {!data && !error && !loading && <div className="empty-state"><div className="empty-icon"><Icon name="statistics" size={30} /></div><h3>正在准备统计数据</h3><p>默认统计最近 30 天；时间按实际业务时刻计数。</p></div>}
