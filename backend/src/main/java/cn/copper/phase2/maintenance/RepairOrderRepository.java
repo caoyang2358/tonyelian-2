@@ -288,6 +288,10 @@ public class RepairOrderRepository {
      * <p>结束时间用 {@code GREATEST(?, triggered_at)} 兜住 chk_2
      * （ended_at 不得早于触发时间），避免人工补录事件与工单时间倒挂时整笔操作失败。</p>
      *
+     * <p>同一事件可能被报修成多张工单（建单不拦截，由审核判定重复），这里只有当
+     * 这张单是同一事件的<b>最后一张未结工单</b>时才结束事件；否则另一张单还在走，
+     * 事件先闭环又会造出「事件已结束、处理状态等待维修」的同类矛盾。</p>
+     *
      * @param endReason 结束原因，取值见 {@link AlertEventStates}：验收通过是维修闭环，
      *                  审核判定无需维修是另一码事，页面据此显示「结束原因」，不与工单状态互相冒充
      * @return 受影响行数；0 表示来源不是异常事件，或事件已经结束
@@ -304,6 +308,10 @@ public class RepairOrderRepository {
                  WHERE r.repair_order_id = ?
                    AND r.source_type = 'ALERT_EVENT'
                    AND e.ended_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM p2_repair_order other
+                                    WHERE other.source_alert_event_id = e.event_id
+                                      AND other.repair_order_id <> r.repair_order_id
+                                      AND other.status NOT IN ('COMPLETED', 'CLOSED'))
                 """, endedAt, endReason, now, repairOrderId);
     }
 
