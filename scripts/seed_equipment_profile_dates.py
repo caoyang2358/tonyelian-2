@@ -40,6 +40,21 @@ DEVICES = {
     8: ("2024-03-18", "2024-07-02", "2026-07-01", 8),   # GAUGE-02 测径仪
 }
 
+# 型号 / 厂家 / 出厂编号 / 工序（取值规则见 docs/数据来源说明.md 第 6 节：
+# 型号按行业通用格式构造；厂家按设备类型分 4 家虚构厂商；出厂编号 = 厂商缩写-年份-流水号）
+PROFILE_EXTRA = {
+    1: ("RTF-45",    "江苏天工电炉科技有限公司", "TG-2023-0145", 1),  # 工序:熔炼
+    2: ("BWL-30",    "江苏天工电炉科技有限公司", "TG-2023-0152", 2),  # 工序:保温精炼
+    3: ("SJY-1200",  "江苏鑫铜装备科技有限公司", "XT-2023-0331", 3),  # 工序:连铸牵引（文档示例）
+    4: ("LGJ-450",   "上海华线机械制造有限公司", "HX-2023-0217", 4),  # 工序:轧制
+    5: ("LT-450",    "上海华线机械制造有限公司", "HX-2024-0083", 5),  # 工序:拉丝
+    6: ("LT-450",    "上海华线机械制造有限公司", "HX-2024-0091", 5),
+    7: ("LT-450",    "上海华线机械制造有限公司", "HX-2024-0096", 5),
+    8: ("CJ-200",    "苏州光测智能装备有限公司", "GC-2024-0058", 6),  # 工序:在线检测
+}
+# 工序 ID 按 V17__seed_demo_processes.sql 的插入顺序（1 熔炼 / 2 保温精炼 / 3 连铸牵引 /
+# 4 轧制 / 5 拉丝 / 6 在线检测）；dim_process 已有其他数据时请先核对实际 ID。
+
 DATE_FIELDS = ("commissionedOn", "warrantyExpiresOn")
 LIFE_FIELD = "expectedLifeYears"
 
@@ -68,12 +83,17 @@ def fill_one(equipment_id: int, dates: tuple, revert: bool) -> str:
     version = detail["version"]
     code = detail["code"]
 
-    # 幂等：目标值已在档（且购置日期一致）时跳过，避免重复更正刷版本号。
+    # 幂等：目标值已在档时跳过，避免重复更正刷版本号。
+    extra = PROFILE_EXTRA[equipment_id]
     target = {
         "purchasedOn": None if revert else dates[0],
         "commissionedOn": None if revert else dates[1],
         "warrantyExpiresOn": None if revert else dates[2],
         "expectedLifeYears": None if revert else dates[3],
+        "model": None if revert else extra[0],
+        "manufacturer": None if revert else extra[1],
+        "factorySerialNo": None if revert else extra[2],
+        "processId": None if revert else str(extra[3]),
     }
     current = {k: profile.get(k) for k in target}
     if current == target:
@@ -91,15 +111,15 @@ def fill_one(equipment_id: int, dates: tuple, revert: bool) -> str:
         "enabled": detail["enabled"],
         "profile": {
             "typeCode": profile["typeCode"],
-            "model": profile["model"],
-            "processId": profile["processId"],
+            "model": target["model"],
+            "processId": target["processId"],
             "installationLocation": profile["installationLocation"],
-            "manufacturer": profile["manufacturer"],
-            "factorySerialNo": profile["factorySerialNo"],
-            "purchasedOn": None if revert else dates[0],
-            "commissionedOn": None if revert else dates[1],
-            "expectedLifeYears": None if revert else dates[3],
-            "warrantyExpiresOn": None if revert else dates[2],
+            "manufacturer": target["manufacturer"],
+            "factorySerialNo": target["factorySerialNo"],
+            "purchasedOn": target["purchasedOn"],
+            "commissionedOn": target["commissionedOn"],
+            "expectedLifeYears": target["expectedLifeYears"],
+            "warrantyExpiresOn": target["warrantyExpiresOn"],
             "managementStatus": profile["managementStatus"],
             "technicalParameters": profile["technicalParameters"],
         },
