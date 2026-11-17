@@ -314,7 +314,7 @@ export function OverviewTab() {
                         ? <p className="ops-deadline-detail-note">明细加载中…</p>
                         : <table className="ops-deadline-table">
                             <thead><tr>
-                              <th>设备</th><th>期限类型</th><th>状态</th><th>到期日 / 缺失项</th><th>负责人</th>
+                              <th>设备</th><th>期限类型</th><th>状态</th><th>到期情况</th><th>负责人</th>
                             </tr></thead>
                             <tbody>
                               {deadlineRows.slice(0, DEADLINE_ROWS_SHOWN).map(row => {
