@@ -1,0 +1,439 @@
+/* 系统二 · 生产与能源统计：视图切换、价格表与录入弹窗。前缀 en- 避免与既有样式冲突。 */
+
+.en-panel {
+  margin: 0 0 18px;
+  padding: 22px 24px 24px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.en-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.en-panel-head h2 { margin: 4px 0 6px; font-size: 19px; font-weight: 600; color: #1d332c; }
+.en-panel-head p { margin: 0; color: var(--muted); font-size: 13px; }
+
+.en-view-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  background: #f3f6f2;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.en-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #4a5c53;
+  font-size: 13px;
+}
+
+.en-view-tab:hover { background: #e8efe6; }
+.en-view-tab.active { background: #fff; color: var(--brand); font-weight: 600; box-shadow: 0 1px 4px #193e3514; }
+
+.en-view-pending {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f0eee6;
+  color: #8b8578;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.en-blocked {
+  padding: 26px 4px 8px;
+  max-width: 620px;
+}
+
+.en-blocked-title { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #3a4a42; }
+.en-blocked-detail { margin: 0 0 10px; color: #5a6a61; font-size: 13px; line-height: 1.7; }
+.en-blocked-note { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
+
+/* ---------------------------------------------------------------- 工具栏 */
+
+.en-price { padding-top: 16px; }
+
+.en-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+  align-items: flex-end;
+}
+
+.en-field { display: flex; flex-direction: column; gap: 5px; min-width: 132px; }
+.en-field > span { color: #5a6a61; font-size: 12.5px; }
+
+.en-field input,
+.en-field select,
+.en-field textarea {
+  padding: 7px 10px;
+  border: 1px solid #dfe6df;
+  border-radius: 7px;
+  background: #fff;
+  color: #253b33;
+  font-size: 13px;
+}
+
+.en-field input:focus,
+.en-field select:focus,
+.en-field textarea:focus { border-color: #8db9a2; }
+
+.en-field-wide { grid-column: 1 / -1; }
+.en-field-error { color: #b23b3b; font-size: 12px; font-style: normal; }
+.en-hint { color: #8d9a93; font-size: 12px; font-style: normal; }
+
+.en-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 8px;
+  color: #4a5c53;
+  font-size: 13px;
+}
+
+.en-add { margin-left: auto; }
+
+/* ---------------------------------------------------------------- 匹配区 */
+
+.en-match {
+  margin: 16px 0 6px;
+  padding: 14px 16px;
+  background: #f7f9f6;
+  border: 1px solid #e6ece4;
+  border-radius: 10px;
+}
+
+.en-match-title { margin: 0 0 10px; color: #3a4a42; font-size: 13px; font-weight: 600; }
+.en-match-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+
+.en-match-result {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px dashed #dde5db;
+  font-size: 13px;
+  color: #2d4038;
+}
+
+.en-match-meta { margin-left: 10px; color: var(--muted); font-size: 12.5px; }
+.en-missing { color: #a2671d; }
+.en-muted { color: var(--muted); }
+
+/* ---------------------------------------------------------------- 提示 */
+
+.en-notice,
+.en-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.en-notice { background: #eef6f1; border: 1px solid #cfe4d7; color: #245a43; }
+.en-error { background: #fdf0ee; border: 1px solid #f0cdc6; color: #9c3a2c; }
+
+.en-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- 表格 */
+
+.en-table-wrap { margin-top: 14px; overflow-x: auto; }
+
+.en-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.en-table th {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  color: #6b7a72;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.en-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid #f0f3ef;
+  vertical-align: middle;
+}
+
+.en-table tbody tr:hover { background: #fafbf9; }
+.en-row-history td { color: #8d9a93; }
+.en-empty { padding: 34px 10px !important; color: var(--muted); text-align: center; font-size: 13px; }
+
+.en-mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.en-unit { margin-left: 4px; color: var(--muted); font-size: 12px; }
+.en-scope-detail { display: block; color: var(--muted); font-size: 12px; }
+
+.en-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f0eee6;
+  color: #857f70;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.en-badge-current { background: #e8f3ec; color: #24704f; }
+
+.en-reason {
+  max-width: 230px;
+  overflow: hidden;
+  color: #5a6a61;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- 分页 */
+
+.en-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.en-pager > div { display: flex; align-items: center; gap: 10px; }
+.en-pager-index { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- 弹窗 */
+
+.en-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(25, 62, 53, .38);
+}
+
+.en-dialog {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 22px 24px 20px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px #193e3533;
+}
+
+.en-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.en-dialog h3 { margin: 0; font-size: 17px; font-weight: 600; color: #1d332c; }
+
+.en-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #f2f5f1;
+  color: #5a6a61;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.en-close:hover { background: #e8efe6; }
+
+.en-origin {
+  margin: 14px 0 4px;
+  padding: 11px 14px;
+  background: #f7f9f6;
+  border: 1px solid #e6ece4;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: #3a4a42;
+}
+
+.en-origin p { margin: 0 0 4px; }
+.en-origin p:last-child { margin-bottom: 0; }
+
+.en-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px 14px;
+  margin: 16px 0 6px;
+}
+
+.en-dialog-note {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: #fbfaf5;
+  border-left: 3px solid #e3d9bd;
+  border-radius: 6px;
+  color: #6b6350;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.en-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  .en-form { grid-template-columns: 1fr; }
+  .en-add { margin-left: 0; }
+}
+
+.en-match-hint {
+  margin: 8px 0 0;
+  color: #8d9a93;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------ 总量统计与每日来源 */
+
+.en-totals { padding-top: 16px; }
+
+.en-total-section { margin-top: 22px; }
+
+.en-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0 0 12px;
+  color: #1d332c;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.en-section-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.en-total-card {
+  margin-bottom: 14px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfcfa;
+}
+
+.en-total-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.en-total-head h4 { margin: 0; color: #1d332c; font-size: 14.5px; font-weight: 600; }
+
+.en-total-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 12px;
+}
+
+.en-quantity {
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+/* 左侧色条只说明完整度，不替代文字徽标——颜色不能是唯一信息。 */
+.en-quantity-complete { border-left: 3px solid #4f8a68; }
+.en-quantity-partial { border-left: 3px solid #c99a3c; }
+.en-quantity-missing { border-left: 3px solid #b9695c; }
+
+.en-quantity-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.en-quantity-label { color: #5a6a61; font-size: 12.5px; }
+
+.en-quantity-value {
+  margin: 8px 0 2px;
+  color: #1d332c;
+  font-size: 21px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.en-quantity-known {
+  margin: 0;
+  color: #8a6a2a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.en-badge-complete { background: #e8f3ec; color: #24704f; }
+.en-badge-partial { background: #fbf1dd; color: #8a6a2a; }
+.en-badge-missing { background: #fbeceb; color: #9c3a2c; }
+
+.en-gap { margin-top: 10px; }
+
+.en-gap > summary {
+  cursor: pointer;
+  color: #8a6a2a;
+  font-size: 12px;
+  list-style: none;
+}
+
+.en-gap > summary::-webkit-details-marker { display: none; }
+.en-gap > summary::before { content: '▸ '; }
+.en-gap[open] > summary::before { content: '▾ '; }
+
+.en-gap-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: #5a6a61;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.en-gap-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+
+.en-gap-list code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1efe8;
+  color: #8a6a2a;
+  font-size: 11px;
+}
+
+.en-gap-date { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.en-row-gap td { background: #fdfaf3; }
+.en-row-gap .en-gap-list { margin: 0; }

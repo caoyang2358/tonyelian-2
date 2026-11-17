@@ -7,9 +7,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -60,18 +65,42 @@ public class ChangeLogRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(ChangeLogWrite entry) {
-        jdbc.update(INSERT_SQL,
-                entry.objectType(),
-                entry.objectId(),
-                entry.action(),
-                toJson(entry.before()),
-                toJson(entry.after()),
-                entry.reason(),
-                entry.operatorName(),
-                entry.versionBefore(),
-                entry.versionAfter(),
-                entry.requestId());
+    /**
+     * 写入一条留痕，返回其主键。
+     *
+     * <p>返回主键是给需要回指留痕的接口用的（例如价格更正响应里的 {@code changeLogId}）。
+     * 绝大多数调用方并不需要，忽略返回值即可。</p>
+     */
+    public long insert(ChangeLogWrite entry) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(INSERT_SQL,
+                    Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, entry.objectType());
+            ps.setString(2, entry.objectId());
+            ps.setString(3, entry.action());
+            ps.setString(4, toJson(entry.before()));
+            ps.setString(5, toJson(entry.after()));
+            ps.setString(6, entry.reason());
+            ps.setString(7, entry.operatorName());
+            if (entry.versionBefore() == null) {
+                ps.setNull(8, Types.INTEGER);
+            } else {
+                ps.setInt(8, entry.versionBefore());
+            }
+            if (entry.versionAfter() == null) {
+                ps.setNull(9, Types.INTEGER);
+            } else {
+                ps.setInt(9, entry.versionAfter());
+            }
+            ps.setString(10, entry.requestId());
+            return ps;
+        }, keyHolder);
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("变更记录主键未返回。");
+        }
+        return key.longValue();
     }
 
     public List<ChangeLogItem> page(String objectType, String objectId, int page, int pageSize) {
