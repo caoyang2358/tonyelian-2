@@ -170,7 +170,9 @@ class AttachmentWriteServiceTest {
                 () -> service.replace("12", "rid-6", "设备管理员", "2", "换一张", file()));
 
         assertEquals("VALIDATION_ERROR", error.errorCode().name());
-        assertTrue(fields(error).get("file").contains("IMAGE"));
+        String message = fields(error).get("file");
+        assertTrue(message.contains("设备配图"), message);
+        assertTrue(message.contains("文档资料"), message);
         verify(storage, never()).persist(any());
     }
 

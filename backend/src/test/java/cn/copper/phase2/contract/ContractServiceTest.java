@@ -100,7 +100,7 @@ class ContractServiceTest {
                 OffsetDateTime.parse("2026-11-04T09:00:00+08:00"))));
         when(repository.summary(3L, 30)).thenReturn(Optional.of(new ContractSummary("3", "华东维保",
                 "HT-001", LocalDate.parse("2026-01-01"), LocalDate.parse("2026-12-31"),
-                2L, "ACTIVE", 57)));
+                "年度维保", 2L, "ACTIVE", 57)));
         when(repository.equipmentIds(3L)).thenReturn(List.of(1L, 2L));
         when(repository.attachmentIds(3L)).thenReturn(List.of());
         ContractService service = service(repository, 30);
@@ -123,7 +123,7 @@ class ContractServiceTest {
         when(repository.findRow(5L)).thenReturn(Optional.of(new ContractRow(5L, "华东维保", null,
                 null, null, null, 1, OffsetDateTime.parse("2026-11-04T09:00:00+08:00"))));
         when(repository.summary(5L, 30)).thenReturn(Optional.of(new ContractSummary("5", "华东维保",
-                null, null, null, 0L, "UNKNOWN", null)));
+                null, null, null, null, 0L, "UNKNOWN", null)));
         when(repository.equipmentIds(5L)).thenReturn(List.of());
         when(repository.attachmentIds(5L)).thenReturn(List.of());
         ContractService service = service(repository, 30);

@@ -18,7 +18,7 @@ test('合同分页解析出字符串ID、状态与剩余天数', () => {
   const page = mapContractPage({
     items: [{
       contractId: 18, serviceOrganization: '华东维保服务中心', contractNumber: null,
-      startDate: null, endDate: '2026-12-31', equipmentCount: 2,
+      startDate: null, endDate: '2026-12-31', remark: '含 4 次计划检修', equipmentCount: 2,
       expiryState: 'EXPIRING_SOON', remainingDays: 12,
     }],
     page: 1, pageSize: 20, total: 1,
@@ -27,8 +27,25 @@ test('合同分页解析出字符串ID、状态与剩余天数', () => {
   assert.equal(page.items[0].contractId, '18');
   assert.equal(page.items[0].contractNumber, null);
   assert.equal(page.items[0].startDate, null);
+  assert.equal(page.items[0].remark, '含 4 次计划检修');
   assert.equal(page.items[0].expiryState, 'EXPIRING_SOON');
   assert.equal(page.items[0].remainingDays, 12);
+});
+
+/** 备注是可选字段：没填时为 null，卡片按"没有就不渲染"处理，而不是显示空字符串。 */
+test('备注缺失时解析为null且不影响其他字段', () => {
+  const page = mapContractPage({
+    items: [{
+      contractId: '20', serviceOrganization: '华东维保', contractNumber: 'HT-020',
+      startDate: '2026-01-01', endDate: '2026-12-31', equipmentCount: 1,
+      expiryState: 'ACTIVE', remainingDays: 45,
+    }],
+    page: 1, pageSize: 20, total: 1,
+  });
+
+  assert.equal(page.items[0].remark, null);
+  assert.equal(page.items[0].contractNumber, 'HT-020');
+  assert.equal(page.items[0].remainingDays, 45);
 });
 
 /** 已超期的剩余天数是负数，不能被"非负整数"校验拦掉。 */

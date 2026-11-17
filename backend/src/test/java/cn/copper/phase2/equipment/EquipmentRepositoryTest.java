@@ -38,7 +38,8 @@ class EquipmentRepositoryTest {
         List<EquipmentItem> result = new EquipmentRepository(jdbc).productionEquipment();
         assertEquals(1, result.size());
         assertEquals(new EquipmentItem(903, "DRAW-03", "3#拉丝机", 82, "车间2", null, false,
-                null, null, null, 0L), result.get(0));
+                null, null, null, 0L, null, null, null), result.get(0));
+        assertTrue(EquipmentRepository.EQUIPMENT_SQL.contains("p2_maintenance_contract"));
         assertTrue(EquipmentRepository.EQUIPMENT_SQL.contains("e.equipment_usage = 'PRODUCTION'"));
         assertTrue(EquipmentRepository.EQUIPMENT_SQL.contains("w.workshop_id = e.workshop_id"));
         assertFalse(EquipmentRepository.EQUIPMENT_SQL.contains("e.enabled ="));

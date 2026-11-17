@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
 import type { AttachmentFileKind, AttachmentItem } from '../../lib/api';
+import { MAX_FILE_SIZE_TEXT, acceptOf, formatSize, formatsTextOf, localFileError } from './attachmentLimits';
 import './equipment.css';
 
 /**
@@ -12,8 +13,6 @@ import './equipment.css';
  * <p>页面上没有删除：契约 F01—F05 没有删除接口，误传的文件用"替换"覆盖内容，
  * 附件 ID 与既有引用（例如知识页引用的手册）保持不变。</p>
  */
-
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 /** 设备页只放档案配图、手册和合同文档；报修照片属于工单，不在设备档案里出现。 */
 const KINDS: {value: AttachmentFileKind; label: string}[] = [
@@ -36,24 +35,11 @@ function rememberedOperator(): string {
   catch { return '设备管理员'; }
 }
 
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
-}
-
 function formatTime(value: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
   return date.toLocaleString('zh-CN', {hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
-}
-
-/** 上传前的本地检查只挡明显的错误，类型与大小仍以服务端为准，避免两套规则各说各话。 */
-function localError(file: File): string | null {
-  if (file.size === 0) return '这个文件是空的，请重新选择。';
-  if (file.size > MAX_FILE_SIZE) return `文件大小为 ${formatSize(file.size)}，超过 20 MB 上限。`;
-  return null;
 }
 
 export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string; refreshToken: number}) {
@@ -87,7 +73,7 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
   }, [equipmentId, refreshToken, reloadKey]);
 
   async function upload(file: File) {
-    const invalid = localError(file);
+    const invalid = localFileError(file);
     if (invalid) { setFormError(invalid); return; }
     setUploading(true); setFormError(null);
     try {
@@ -124,7 +110,7 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
   async function submitReplace() {
     if (!replacing) return;
     if (!replaceFile) { setReplaceError('请选择要替换成的新文件。'); return; }
-    const invalid = localError(replaceFile);
+    const invalid = localFileError(replaceFile);
     if (invalid) { setReplaceError(invalid); return; }
     if (!replaceReason.trim()) { setReplaceError('替换原因不得为空，它会写入变更记录。'); return; }
 
@@ -163,7 +149,7 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
                 onClick={() => uploadRef.current?.click()}>
           {uploading ? '上传中…' : '上传附件'}
         </button>
-        <input ref={uploadRef} type="file" hidden onChange={pick} />
+        <input ref={uploadRef} type="file" hidden accept={acceptOf(kind)} onChange={pick} />
       </div>
     </div>
 
@@ -172,7 +158,7 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
     {busy && <div className="eq-loading">正在读取附件…</div>}
 
     {!busy && rows !== null && (rows.length === 0
-      ? <p className="eq-param-empty">这台设备还没有附件。可以上传设备配图、手册或合同类文档。</p>
+      ? <p className="eq-param-empty">这台设备还没有附件。可以上传设备配图、设备手册或文档资料。</p>
       : <ul className="eq-supplier-list">
         {rows.map(row => <li key={row.attachmentId} className="eq-supplier-item">
           <div className="eq-supplier-main">
@@ -190,8 +176,13 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
         </li>)}
       </ul>)}
     <p className="eq-form-hint">
-      支持图片、PDF、Word、Excel 与纯文本，单个文件不超过 20 MB。附件不提供删除：传错了请用"替换"更新内容，
-      已被知识页引用的手册会继续指向同一个附件 ID。
+      {`当前类别「${KIND_LABELS[kind]}」可传：${formatsTextOf(kind)}，单个文件不超过 ${MAX_FILE_SIZE_TEXT}；可执行文件（.exe、.bat 等）一律不收。`
+        + '换格式前请先切换上方类别——Word、Excel 属于「文档资料」，扫描图建议选「设备配图」。'
+        + '附件不提供删除：传错了请用"替换"更新内容，已被知识页引用的手册会继续指向同一个附件 ID。'}
+    </p>
+    <p className="eq-form-hint">
+      这里的附件属于本设备。合同签署件请到"维保合同"页签按合同上传——那里按合同归档，
+      合同换设备或覆盖多台时不会重复存，也不会混进设备档案。
     </p>
 
     {replacing && <div className="eq-overlay" role="presentation"
@@ -205,10 +196,13 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
           <div className="eq-form-row is-full">
             <label className="eq-form-field">
               <span>新文件<em>*</em></span>
-              <input type="file" onChange={event => { setReplaceFile(event.target.files?.[0] ?? null); setReplaceError(null); }} />
+              <input type="file" accept={acceptOf(replacing.fileKind)}
+                     onChange={event => { setReplaceFile(event.target.files?.[0] ?? null); setReplaceError(null); }} />
               {replaceFile
                 ? <small className="eq-form-hint">{replaceFile.name} · {formatSize(replaceFile.size)}</small>
-                : <small className="eq-form-hint">附件 ID 与引用关系保持不变，只更新内容与版本。</small>}
+                : <small className="eq-form-hint">
+                    只能换成同类别文件（{formatsTextOf(replacing.fileKind)}）。附件 ID 与引用关系保持不变，只更新内容与版本。
+                  </small>}
             </label>
           </div>
           <div className="eq-form-row is-full">

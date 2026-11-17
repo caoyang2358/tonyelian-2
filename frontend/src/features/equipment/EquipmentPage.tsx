@@ -23,6 +23,24 @@ function statusClass(status: string | null): string {
   return '';
 }
 
+/** 维保到期的提示色：超期红、临近黄，与期限看板的 is-danger / is-warn 同一套。 */
+function dueClass(state: Equipment['maintenanceExpiryState']): string {
+  if (state === 'EXPIRED') return 'is-danger';
+  if (state === 'DUE_SOON') return 'is-warn';
+  return '';
+}
+
+/**
+ * 维保到期列的第二行。日期本身由后端按最近一份合同算好，这里只把天数说成人话。
+ * 没有可用的到期日时不显示 0 或「—」，而是明说缺什么，避免被当成"已到期"。
+ * 措辞用「期限未填」而不是「无维保合同」：合同可能已建档、只是结束日期还空着。
+ */
+function dueHint(row: Equipment): string {
+  const days = row.maintenanceRemainingDays;
+  if (days === null) return '期限未填';
+  return days < 0 ? `已超期 ${Math.abs(days)} 天` : `剩 ${days} 天`;
+}
+
 function Metric({label, value, icon, detail}: {label: string; value: number | null; icon: IconName; detail: string}) {
   return <section className="metric"><div className="metric-label"><span>{label}</span><Icon name={icon} size={19} /></div><div className="metric-value">{value === null ? <span className="unknown">—</span> : value.toLocaleString('zh-CN')}<span className="metric-unit">{label === '生产设备' ? '台' : '个'}</span></div><p>{detail}</p></section>;
 }
@@ -195,6 +213,7 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
                     <th scope="col">所属车间</th>
                     <th scope="col">设备类型</th>
                     <th scope="col">管理状态</th>
+                    <th scope="col">维保到期</th>
                     <th scope="col">责任人</th>
                   </tr></thead>
                   <tbody>{rows.map((row, index) => <tr key={row.id}>
@@ -220,6 +239,17 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
                         <span className="eq-subtle">系统{row.enabled ? '已启用' : '已停用'}</span>
                       </span>
                     </td>
+                    <td>
+                      {row.maintenanceDueDate === null
+                        ? <span className="eq-due-cell">
+                          <span className="eq-due-date is-absent">待补</span>
+                          <span className="eq-due-hint">期限未填</span>
+                        </span>
+                        : <span className="eq-due-cell">
+                          <span className="eq-due-date">{row.maintenanceDueDate}</span>
+                          <span className={`eq-due-hint ${dueClass(row.maintenanceExpiryState)}`}>{dueHint(row)}</span>
+                        </span>}
+                    </td>
                     <td>{isPlaceholderPerson(row.responsiblePerson)
                       ? <span className="missing-value">{row.responsiblePerson || '未指定'}</span>
                       : row.responsiblePerson}</td>
@@ -235,8 +265,6 @@ export function EquipmentPage({overview, refreshToken}: EquipmentPageProps) {
                 </span>
               </div>
             </>}
-
-      <div className="panel-note"><span className="note-dot" /><p>点击设备名称可查看档案详情与变更记录；档案更正后会留下版本痕迹，多人同时编辑时后提交者会被要求重新读取。</p></div>
     </section>
 
     {openId && <EquipmentDetailDrawer

@@ -7,6 +7,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -71,7 +72,95 @@ class AttachmentStorageTest {
         BusinessException error = assertThrows(BusinessException.class,
                 () -> storage(1024).inspect(file, "IMAGE"));
 
-        assertTrue(fields(error).get("file").contains("IMAGE"));
+        String message = fields(error).get("file");
+        assertTrue(message.contains("设备配图"), message);
+        // 报错面向使用者：不暴露 IMAGE 这类内部枚举，也不甩 MIME 串。
+        assertFalse(message.contains("application/"), message);
+    }
+
+    /**
+     * 可执行文件按扩展名直接拒，理由说成"安全考虑"而不是"类型不在白名单"。
+     *
+     * <p>这一条不能只依赖白名单：白名单能挡住，但报错会变成一串 MIME，
+     * 用户既看不懂也不知道该怎么办。</p>
+     */
+    @Test
+    void executableFileIsRejectedWithReadableReason() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "setup.exe", "application/x-msdownload", new byte[]{1});
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> storage(1024).inspect(file, "DOCUMENT"));
+
+        String message = fields(error).get("file");
+        assertTrue(message.contains("可执行文件"), message);
+        assertTrue(message.contains(".exe"), message);
+    }
+
+    /** 把 .exe 改名成 .pdf 也挡得住：扩展名过了，Content-Type 仍指向可执行文件。 */
+    @Test
+    void executableRenamedAsPdfIsStillRejected() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "合同附件.pdf", "application/x-msdownload", new byte[]{1});
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> storage(1024).inspect(file, "DOCUMENT"));
+
+        String message = fields(error).get("file");
+        assertTrue(message.contains("可执行"), message);
+        // 要说清"改扩展名不算"，否则用户会以为系统连 PDF 都不认。
+        assertTrue(message.contains("扩展名"), message);
+    }
+
+    /** 设备手册只收 PDF 与图片；传 Word 时要指出去处，否则用户只看到"不收"却不知道该改选哪类。 */
+    @Test
+    void manualRejectsWordAndPointsToDocumentKind() {
+        MockMultipartFile file = new MockMultipartFile("file", "说明书.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                new byte[]{1});
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> storage(1024).inspect(file, "MANUAL"));
+
+        String message = fields(error).get("file");
+        assertTrue(message.contains("设备手册"), message);
+        assertTrue(message.contains("文档资料"), message);
+    }
+
+    /** 文档资料类要覆盖 Office 的四种扩展名，它们是设备台账里最常见的附件。 */
+    @Test
+    void documentKindAcceptsWordAndExcelVariants() {
+        AttachmentStorage storage = storage(1024);
+
+        assertEquals("application/msword", storage.inspect(new MockMultipartFile(
+                "file", "a.doc", "application/msword", new byte[]{1}), "DOCUMENT").mediaType());
+        assertEquals("application/vnd.ms-excel", storage.inspect(new MockMultipartFile(
+                "file", "b.xls", "application/vnd.ms-excel", new byte[]{1}), "DOCUMENT").mediaType());
+        assertTrue(storage.inspect(new MockMultipartFile("file", "c.docx",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        new byte[]{1}), "DOCUMENT").mediaType().endsWith("wordprocessingml.document"));
+        assertTrue(storage.inspect(new MockMultipartFile("file", "d.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        new byte[]{1}), "DOCUMENT").mediaType().endsWith("spreadsheetml.sheet"));
+    }
+
+    /** 报错文案必须能翻译所有放行类型；漏了翻译会退回显示 MIME，等于又变成看不懂的提示。 */
+    @Test
+    void everyAllowedTypeHasReadableLabel() {
+        for (String kind : List.of("IMAGE", "MANUAL", "DOCUMENT", "PHOTO")) {
+            String text = AttachmentStorage.describeAllowed(kind);
+            assertFalse(text.contains("application/"), kind + "：" + text);
+            assertFalse(text.contains("image/"), kind + "：" + text);
+        }
+    }
+
+    /** doc 与 docx 同叫"Word 文档"、xls 与 xlsx 同叫"Excel 表格"，同一个名字不能在清单里念两遍。 */
+    @Test
+    void allowedFormatsAreListedOnce() {
+        String text = AttachmentStorage.describeAllowed("DOCUMENT");
+
+        assertEquals(text.indexOf("Word 文档"), text.lastIndexOf("Word 文档"), text);
+        assertEquals(text.indexOf("Excel 表格"), text.lastIndexOf("Excel 表格"), text);
     }
 
     @Test

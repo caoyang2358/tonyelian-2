@@ -14,6 +14,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.sql.Types;
@@ -30,10 +31,26 @@ public class EquipmentRepository {
      * 列表查询统一走 LEFT JOIN：未补档的历史设备仍要出现在结果里，
      * 不能因为扩展行缺失而被 JOIN 过滤掉。
      */
+    /**
+     * 列表列。末列 {@code maintenance_due_date} 是关联子查询，取该设备所挂维保合同里
+     * <b>最近到期</b>的一份结束日，用于列表的「维保到期」列。
+     *
+     * <p>取最早而非最晚，是因为这列在页面上是预警位：一份合同快到期、另一份续签到明年时，
+     * 藏起快到期的那份等于把该处理的事藏起来。这与 S1-T01 期限看板按 {@code due_date}
+     * 升序、每份合同各占一行的口径一致，两处不会互相打脸。</p>
+     *
+     * <p>没有合同（或合同未填结束日）时返回 null，由服务层标成 MISSING_DATA，
+     * 不用档案里的质保到期日顶替——那是另一个期限来源，混用会让"维保到期"失真。
+     * {@code MIN} 天然忽略 null，合同没填结束日就等于这台设备没有可用的维保到期日。</p>
+     */
     private static final String SELECT_LIST = """
             SELECT e.equipment_id AS id, e.equipment_code AS code, e.equipment_name AS name,
                    e.workshop_id, w.workshop_name, e.responsible_person, e.enabled,
-                   p.type_code, p.management_status, COALESCE(p.version, 0) AS version
+                   p.type_code, p.management_status, COALESCE(p.version, 0) AS version,
+                   (SELECT MIN(c.end_date)
+                      FROM p2_contract_equipment ce
+                      JOIN p2_maintenance_contract c ON c.contract_id = ce.contract_id
+                     WHERE ce.equipment_id = e.equipment_id) AS maintenance_due_date
             """;
 
     private static final String FROM_LIST = """
@@ -80,7 +97,13 @@ public class EquipmentRepository {
     static final RowMapper<EquipmentItem> EQUIPMENT_MAPPER = (rs, row) -> new EquipmentItem(
             rs.getLong("id"), rs.getString("code"), rs.getString("name"), rs.getLong("workshop_id"),
             rs.getString("workshop_name"), rs.getString("responsible_person"), rs.getBoolean("enabled"),
-            rs.getString("type_code"), null, rs.getString("management_status"), rs.getLong("version"));
+            rs.getString("type_code"), null, rs.getString("management_status"), rs.getLong("version"),
+            toLocalDate(rs.getDate("maintenance_due_date")), null, null);
+
+    /** 剩余天数与状态由服务层统一计算，映射阶段只保留日期本身，避免两处各算一套。 */
+    static LocalDate toLocalDate(Date date) {
+        return date == null ? null : date.toLocalDate();
+    }
 
     /**
      * 详情聚合：一期共享身份 LEFT JOIN 二期扩展档案。
