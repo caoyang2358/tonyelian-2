@@ -286,7 +286,7 @@ export function OverviewTab() {
             <h3 className="ops-section-title">期限提醒（设备档案）</h3>
             <span className="ops-chart-hint">
               {data.deadlineReminderCount ?? 0} 条待处理
-              {missingEquipmentCount > 0 && `（涉及 ${missingEquipmentCount} 台设备）`}
+              {missingEquipmentCount > 0 && `（其中待补资料涉及 ${missingEquipmentCount} 台设备）`}
               <Tip text={caliber.deadlineReminderCount} />
             </span>
           </div>
