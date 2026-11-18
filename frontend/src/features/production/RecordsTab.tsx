@@ -272,7 +272,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
   return <section className="panel" aria-label="计划外生产补录">
     <div className="panel-heading"><div>
       <h2>计划外生产<small className="panel-count">补录</small></h2>
-      <p>登记没有对应计划任务的实际生产；首次保存自动建立补录组，后续可在同组继续登记。</p>
+      <p>登记没有对应计划任务的实际生产。一天内可以连续登记多笔，每次填一条、保存一条。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
@@ -311,14 +311,14 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
           recordType, workshopId: pickedWorkshop, materialId,
           anchorActualDate: actualDate, operatorName: '系统管理员', reason, fact,
         });
-        onSaved('已登记并建立补录组；同组后续登记请在实际记录中继续追加。');
+        onSaved('登记成功。还有要补录的，直接在本表单再填一条保存即可。');
       } catch (requestError) {
         setFeedback(errorFeedback(requestError));
       } finally {
         setBusy(false);
       }
     }}>
-      <p className="ops-form-context">首次保存自动建立补录组；跨天的生产分多次登记。</p>
+      <p className="ops-form-context">每次保存登记一条；一天内可连续登记多笔，互不影响。</p>
       <div className="ops-form-row">
         <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
           <span>登记事项</span>
@@ -370,7 +370,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
       </div>
       <div className="ops-form-actions">
         <button type="submit" className="button button-primary" disabled={busy}>
-          {busy ? '保存中…' : '保存首笔登记'}</button>
+          {busy ? '保存中…' : '保存这条登记'}</button>
       </div>
     </form>
   </section>;
