@@ -50,7 +50,7 @@ export function FormRow({fields, hint, busy, onSubmit, submitLabel = '保存'}: 
     <div className="ops-form-row">
       {fields.map(field => <label key={field.name} className="select-field"
         style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-        <span>{field.label}{field.required && ' *'}</span>
+        <span>{field.label}</span>
         {field.type === 'select'
           ? <select name={field.name} defaultValue={field.defaultValue ?? ''}>
             {field.options?.map(([value, label]) => <option key={value} value={value}>{label}</option>)}

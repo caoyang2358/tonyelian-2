@@ -78,9 +78,11 @@ public class ProductionQueryService {
         item.put("materialId", ProductionTypes.id(row.materialId()));
         item.put("plannedDate", row.productionDate().toString());
         item.put("sequenceNo", row.sequenceNo());
-        List<String> orderIds = repo.taskOrders(row.taskId()).stream()
-                .map(o -> ProductionTypes.id(o.orderId())).distinct().toList();
-        item.put("orderIds", orderIds);
+        List<ProductionRepository.TaskOrderRow> taskOrders = repo.taskOrders(row.taskId());
+        item.put("orderIds", taskOrders.stream()
+                .map(o -> ProductionTypes.id(o.orderId())).distinct().toList());
+        item.put("orderNos", taskOrders.stream()
+                .map(ProductionRepository.TaskOrderRow::orderNo).distinct().toList());
         item.put("version", row.version());
         item.put("plannedQualifiedTon", ProductionTypes.ton(row.plannedQualifiedTon()));
         BigDecimal actual = qualifiedOrNull(row);

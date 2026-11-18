@@ -64,7 +64,7 @@ public class DayStatusService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("code", "WEIGHING_PENDING");
             item.put("taskId", ProductionTypes.id(pending.taskId()));
-            item.put("message", "任务 " + pending.taskId() + " 当日已发生实际但尚缺合格称重，也未确认零产出。");
+            item.put("message", "任务 " + pending.taskId() + " 当天有生产记录但还没登记合格产量，也未确认零产出。");
             items.add(item);
         }
         boolean hasFact = hasAnyFact(workshopId, actualDate);
@@ -73,13 +73,13 @@ public class DayStatusService {
         if (!hasFact && !hasZero) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("code", "NO_EVIDENCE");
-            item.put("message", "当日尚无任何生产事实，也没有整日零产出确认，无法声明录全。");
+            item.put("message", "当天还没有任何生产记录，也未曾确认整日停产，暂时不能确认。");
             items.add(item);
         }
         if (hasFact && !hasWeighing && !hasZero) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("code", "ZERO_CONFIRMATION_MISSING");
-            item.put("message", "当日已有事实但无合格称重，请先确认对应范围的零产出。");
+            item.put("message", "当天已有生产记录但没有合格产量，请先登记称重或确认零产出。");
             items.add(item);
         }
         return items;
@@ -124,12 +124,12 @@ public class DayStatusService {
         if (pendingAmounts != null && pendingAmounts > 0) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("code", "MATERIAL_AMOUNT_MISSING");
-            item.put("message", "材料金额待补，相关成本待核算。");
+            item.put("message", "投料的材料金额未登记，成本核算待补。");
             items.add(item);
         }
         Map<String, Object> energy = new LinkedHashMap<>();
         energy.put("code", "ENERGY_PRICE_MISSING");
-        energy.put("message", "能源价格待补，成本待核算。");
+        energy.put("message", "能源价格未登记，成本核算待补。");
         items.add(energy);
         return items;
     }

@@ -27,7 +27,7 @@ export function TasksTab() {
     <section className="panel" aria-label="生产任务查询">
       <div className="panel-heading"><div>
         <h2>生产任务<small className="panel-count">{date}</small></h2>
-        <p>按计划日期展示两个车间的已确认任务；实际补录不影响任务的计划日归属。</p>
+        <p>按计划日期查看两车间的生产任务，可登记实际与结束任务。</p>
       </div></div>
       <div className="filters" style={{paddingBottom: 16}}>
         <label className="select-field">计划日期
@@ -50,7 +50,7 @@ export function TasksTab() {
         </label>
         <button type="button" className="reset-filter" onClick={() => {
           setDate(today()); setWorkshopId(''); setExecutionState('');
-        }}>重置</button>
+        }}>清除筛选</button>
       </div>
       <div className="table-region"><table>
         <thead><tr>
@@ -67,8 +67,9 @@ export function TasksTab() {
               style={{cursor: 'pointer'}}>
               <td>{workshopName(task.workshopId)}</td>
               <td>第 {task.sequenceNo} 号</td>
-              <td>{task.workshopId === '1' ? 'Φ8 铜杆' : `铜丝规格 ${task.materialId}`}</td>
-              <td>{task.orderIds.length ? task.orderIds.join('、') : <span className="missing-value">无</span>}</td>
+              <td>{MATERIAL_LABELS[task.materialId] ?? (task.workshopId === '1' ? 'Φ8 铜杆' : '铜丝')}</td>
+              <td>{(task.orderNos?.length ? task.orderNos : task.orderIds).join('、')
+                || <span className="missing-value">无</span>}</td>
               <td>{task.plannedQualifiedTon} 吨</td>
               <td>{task.actualQualifiedTon == null
                 ? <span className="missing-value">待统计</span> : `${task.actualQualifiedTon} 吨`}</td>
@@ -81,7 +82,7 @@ export function TasksTab() {
               </span></td>
             </tr>)}
           {!tasks.loading && !tasks.error && !tasks.data?.items.length &&
-            <tr><td colSpan={8}>该日期暂无已确认计划任务。历史任务可调整日期查询。</td></tr>}
+            <tr><td colSpan={8}>该日期暂无生产任务。任务由「订单与计划」模块创建后自动出现在这里；无计划的生产请用「实际记录」页签的计划外补录。</td></tr>}
         </tbody>
       </table></div>
     </section>
@@ -130,7 +131,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
   return <section className="panel" aria-label="任务详情">
     <div className="panel-heading"><div>
       <h2>任务详情<small className="panel-count">{taskId}</small></h2>
-      <p>计划摘要与实际记录时间线；写入以服务端最新版本校验。</p>
+      <p>任务计划摘要与登记入口。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
@@ -139,7 +140,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
     {task && <>
       <div className="ops-detail ops-detail-padded" style={{display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px 26px'}}>
-        <div><dt>计划</dt><dd>{task.planId} · 第 {task.sequenceNo} 号</dd></div>
+        <div><dt>计划 / 顺序</dt><dd>第 {task.sequenceNo} 号任务</dd></div>
         <div><dt>车间 / 产品</dt><dd>{workshopName(task.workshopId)} · {task.materialName ?? task.materialId}
           {task.materialSpec ? `（${task.materialSpec}）` : ''}</dd></div>
         <div><dt>计划日期</dt><dd>{task.plannedDate}</dd></div>
@@ -154,6 +155,9 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
         <div><dt>铜板现货</dt><dd>{task.inventory?.physicalTon ?? '—'} 吨</dd></div>
         <div><dt>本任务预留</dt><dd>{task.reservations.length
           ? task.reservations.map(r => `${r.reservedTon} 吨`).join('、')
+          : <span className="missing-value">无</span>}</dd></div>
+        <div><dt>关联订单</dt><dd>{task.orders.length
+          ? task.orders.map(o => `${o.orderNo}（${o.customerName}${o.quantityTon ? ` · ${o.quantityTon} 吨` : ''}）`).join('、')
           : <span className="missing-value">无</span>}</dd></div>
         <div><dt>待补事项</dt><dd>{task.missingItems.length
           ? <span className="ops-tag ops-tag-amber">{task.missingItems.join('、')}</span>
@@ -171,44 +175,45 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
         </div>
         {feedback && <SaveFeedback feedback={feedback}/>}
         {openForm === 'EXECUTION_RECORD' && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'startedAt', label: '实际开始时间', type: 'datetime-local'},
           {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local'},
-        ]} hint="起止至少登记一项；尚未发生的实际不能登记。"
+        ]} hint="开始与结束时间至少填一项。"
           busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/execution-records`, {
               ...values, expectedVersion: task.version,
               startedAt: toOffset(values.startedAt), stoppedAt: toOffset(values.stoppedAt),
             })}/>}
         {openForm === 'PLATE_INPUT' && isRodWorkshop && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'inputQuantityTon', label: '本次铜板投入（吨）', required: true, placeholder: '如 6.300'},
-          {name: 'materialAmountYuan', label: '材料总金额（元，可待补）', placeholder: '可留空'},
+          {name: 'materialAmountYuan', label: '材料金额（元，可留空）', placeholder: '可留空'},
         ]} hint={quantityHint} busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/plate-inputs`, {...values, expectedVersion: task.version})}/>}
         {openForm === 'ROD_OUTPUT' && isRodWorkshop && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
-          {name: 'qualifiedQuantityTon', label: '本次新增 Φ8 铜杆称重（吨）', required: true},
-        ]} hint="每次实际同规格新增称重登记一条事实，对应一笔入库。" busy={busy}
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+          {name: 'qualifiedQuantityTon', label: '本次合格产量（吨）', required: true},
+        ]} hint="每次称重登记一条记录，铜杆自动入库。" busy={busy}
           onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/rod-outputs`, {...values, expectedVersion: task.version})}/>}
         {openForm === 'ROD_HANDOVER' && !isRodWorkshop && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'sentQuantityTon', label: '实际交出重量（吨）', required: true},
           {name: 'sentAt', label: '交出时间', type: 'datetime-local', required: true},
-          {name: 'orderId', label: '适用订单编号（可空）'},
+          {name: 'orderId', label: '关联订单（可空）'},
           {name: 'receivedQuantityTon', label: '实收重量（接收已发生时填）'},
           {name: 'receivedAt', label: '接收时间', type: 'datetime-local'},
-        ]} hint="仅有交出时接收留空，保持待接收；接收未发生不阻塞保存。" busy={busy}
+        ]} hint="接收尚未发生时留空，之后可在「实际记录」中补录接收。" busy={busy}
           onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/rod-handovers`, {
               ...values, expectedVersion: task.version,
               sentAt: toOffset(values.sentAt), receivedAt: toOffset(values.receivedAt),
             })}/>}
         {openForm === 'WIRE_OUTPUT' && !isRodWorkshop && <FormRow fields={[
-          {name: 'materialId', label: '铜丝规格（物料编号）', required: true, placeholder: '如 103'},
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
-          {name: 'qualifiedQuantityTon', label: '本次新增合格量（吨）', required: true},
-          {name: 'stoppedAt', label: '本次停机时刻', type: 'datetime-local'},
-          {name: 'allocationsText', label: '订单归属（订单编号:吨数，多个用逗号分隔，可空）',
+          {name: 'materialId', label: '产品', type: 'select', required: true,
+            options: [['3', 'Φ2.6 铜丝']]},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+          {name: 'qualifiedQuantityTon', label: '本次合格产量（吨）', required: true},
+          {name: 'stoppedAt', label: '停机时间', type: 'datetime-local'},
+          {name: 'allocationsText', label: '订单归属（订单编号:吨数，逗号分隔，可空）',
             placeholder: '9001:3.000'},
-        ]} hint="按换单或日末实际称重登记；归属超出订单余量时由服务端调整并返回差额。" busy={busy}
+        ]} hint="按实际称重登记；归属超出订单余量时系统自动截断并提示差额。" busy={busy}
           onSubmit={values => submit('/api/v1/production/wire-outputs', {
             taskIds: [taskId], expectedVersions: {tasks: [{id: taskId, version: task.version}]},
             materialId: values.materialId, actualDate: values.actualDate,
@@ -217,21 +222,21 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
             allocations: parseAllocations(values.allocationsText),
           })}/>}
         {openForm === 'NO_OUTPUT_CONFIRMATION' && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'scope', label: '确认范围', type: 'select', required: true,
-            options: [['TASK', '本任务'], ['WORKSHOP_DAY', '整个车间日']]},
-          {name: 'reason', label: '确认原因', required: true, placeholder: '如设备检修未开机'},
-        ]} hint="已有合格称重的范围会被拒绝；整日零产出要求当日无任何正产出。" busy={busy}
+            options: [['TASK', '本任务'], ['WORKSHOP_DAY', '整个车间当天']]},
+          {name: 'reason', label: '原因', required: true, placeholder: '如设备检修未开机'},
+        ]} hint="当天已有合格产量时不能确认零产出。" busy={busy}
           onSubmit={values => submit('/api/v1/production/no-output-confirmations', {
               ...values, taskId: values.scope === 'TASK' ? taskId : undefined,
               expectedVersion: values.scope === 'TASK' ? task.version : undefined,
               workshopId: task.workshopId,
             })}/>}
         {openForm === 'TASK_COMPLETION' && <FormRow fields={[
-          {name: 'actualDate', label: '实际业务日', type: 'date', required: true, defaultValue: today()},
-          {name: 'stoppedAt', label: '真实停止时刻', type: 'datetime-local', required: true},
+          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+          {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local', required: true},
           {name: 'reason', label: '未称重即结束的原因（已称重可空）'},
-        ]} hint="结束后任务保留原计划与差额；之后的实际补录仍沿原任务。" busy={busy}
+        ]} hint="结束后任务保留原计划与差额；当天实际仍可补录。" busy={busy}
           onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/completion`, {
               ...values, expectedVersion: task.version, stoppedAt: toOffset(values.stoppedAt),
             })}/>}
@@ -254,7 +259,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
           </tbody>
         </table></div>
         <p className="panel-note" style={{marginTop: 10}}>
-          <span className="note-dot"/><p>投料、交接与称重明细请在「实际记录」页签查看原始事实与更正历史。</p>
+          <span className="note-dot"/><p>投料、称重与交接明细请到「实际记录」页签查看。</p>
         </p>
       </div>
     </>}
@@ -265,6 +270,10 @@ const ACTION_LABELS: Record<string, string> = {
   EXECUTION_RECORD: '登记实际起止', PLATE_INPUT: '登记投料', ROD_OUTPUT: '铜杆称重',
   ROD_HANDOVER: '登记交出', WIRE_OUTPUT: '铜丝称重', NO_OUTPUT_CONFIRMATION: '确认无合格产出',
   TASK_COMPLETION: '结束日任务',
+};
+
+export const MATERIAL_LABELS: Record<string, string> = {
+  '1': '铜板', '2': 'Φ8 铜杆', '3': 'Φ2.6 铜丝',
 };
 
 function parseAllocations(text: string | undefined): {orderId: string; quantityTon: string}[] {

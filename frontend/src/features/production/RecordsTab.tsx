@@ -31,7 +31,7 @@ export function RecordsTab() {
     <section className="panel" aria-label="实际记录查询">
       <div className="panel-heading"><div>
         <h2>实际记录<small className="panel-count">{records.data?.total ?? 0} 条</small></h2>
-        <p>按真实业务日展示计划内外事实；点击行查看原始事实与更正历史。</p>
+        <p>按实际日期查看生产记录，点击行查看明细与更正历史。</p>
       </div>
         <div style={{display: 'flex', gap: 8}}>
           <button type="button" className="button" onClick={() => {
@@ -125,6 +125,23 @@ function TimelineRow({item, expanded, onToggle}: {item: TimelineItem; expanded: 
   </>;
 }
 
+/** 记录详情字段的中文展示名。 */
+const DETAIL_FIELD_LABELS: Record<string, string> = {
+  actualDate: '发生日期', actualQuantityTon: '投料数量（吨）', qualifiedQuantityTon: '合格产量（吨）',
+  sentQuantityTon: '交出重量（吨）', receivedQuantityTon: '实收重量（吨）',
+  sentAt: '交出时间', receivedAt: '接收时间', operatorName: '经办人',
+  taskId: '任务编号', orderId: '订单编号', notes: '备注', reason: '原因',
+  materialAmountYuan: '材料金额（元）', startedAt: '开始时间', stoppedAt: '停止时间',
+  handoverState: '交接状态', errorRate: '误差率', confirmedBy: '确认人',
+  workshopId: '车间', materialId: '产品', source: '来源',
+};
+
+/** 库存流水类型的中文展示名。 */
+const MOVEMENT_LABELS: Record<string, string> = {
+  PRODUCTION_ISSUE: '生产投料出库', QUALIFIED_OUTPUT: '合格产出入库', ROD_OUTPUT: '铜杆入库',
+  WIRE_OUTPUT: '铜丝入库', CORRECTION: '更正调整', OPENING: '期初库存',
+};
+
 function RecordDetailInline({recordType, recordId}: {recordType: string; recordId: string}) {
   const load = useCallback((signal: AbortSignal) => fetchRecordDetail(recordType, recordId, signal),
     [recordType, recordId]);
@@ -134,12 +151,15 @@ function RecordDetailInline({recordType, recordId}: {recordType: string; recordI
   const data = detail.data;
   return <div style={{padding: '6px 4px 10px'}}>
     <dl className="ops-detail" style={{gridTemplateColumns: 'repeat(3, minmax(0,1fr))'}}>
-      {Object.entries(data.current ?? {}).filter(([, value]) => value != null).slice(0, 12)
-        .map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}
+      {Object.entries(data.current ?? {})
+        .filter(([key, value]) => value != null && value !== '' && key !== 'recordId' && key !== 'requestId')
+        .slice(0, 12)
+        .map(([key, value]) => <div key={key}><dt>{DETAIL_FIELD_LABELS[key] ?? key}</dt>
+          <dd>{String(value)}</dd></div>)}
     </dl>
     {data.movement && <p style={{fontSize: 11, color: '#5c6b57', margin: '4px 0'}}>
-      库存流水 {data.movement.movementId} · {data.movement.movementType} ·
-      {data.movement.quantityDeltaTon} 吨 · 结余 {data.movement.physicalAfterTon} 吨
+      库存变动：{MOVEMENT_LABELS[data.movement.movementType] ?? data.movement.movementType}
+      {' '}{data.movement.quantityDeltaTon} 吨 · 结余 {data.movement.physicalAfterTon} 吨
     </p>}
     {data.allocations?.length ? <p style={{fontSize: 11, color: '#5c6b57', margin: '4px 0'}}>
       订单归属：{data.allocations.map(a => `${a.orderNo} ${a.quantityTon} 吨`).join('、')}
@@ -148,7 +168,7 @@ function RecordDetailInline({recordType, recordId}: {recordType: string; recordI
       交接状态 {data.handoverState}{data.errorRate ? ` · 误差率 ${(Number(data.errorRate) * 100).toFixed(2)}%` : ''}
     </p>}
     {data.missingItems.length > 0 && <p style={{fontSize: 11, color: '#8a6a1f', margin: '4px 0'}}>
-      待补：{data.missingItems.join('、')}
+      {data.missingItems.join('；')}
     </p>}
     <p style={{fontSize: 10, color: '#9aa294', margin: '8px 0 0'}}>
       更正历史 {data.corrections.length} 条 · 当前版本 v{data.version}
@@ -179,7 +199,7 @@ function HandoverReceiveInline({recordId, pending}: {
         receivedAt: `${data.get('receivedAt')}:00+08:00`,
         reason: String(data.get('reason') || '补录接收过磅记录'),
       });
-      setMessage('接收已补录，同一交接的库存不再重复扣减。');
+      setMessage('接收已补录，同一交接不会再重复扣减库存。');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '补录失败。');
     } finally {
@@ -188,12 +208,12 @@ function HandoverReceiveInline({recordId, pending}: {
   }}>
     <div className="ops-form-row">
       <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-        <span>实收重量（吨）*</span>
+        <span>实收重量（吨）</span>
         <input name="receivedQuantityTon" required
           style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
       </label>
       <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-        <span>接收时间 *</span>
+        <span>接收时间</span>
         <input name="receivedAt" type="datetime-local" required
           style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
       </label>
@@ -203,7 +223,7 @@ function HandoverReceiveInline({recordId, pending}: {
           style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
       </label>
       <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-        <span>原因（超差放行必填）</span>
+        <span>原因（误差超 5% 时必填）</span>
         <input name="reason" placeholder="如补录过磅记录"
           style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px', minWidth: 200}}/>
       </label>
@@ -222,8 +242,8 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
   const [error, setError] = useState<string | null>(null);
   return <section className="panel" aria-label="计划外生产补录">
     <div className="panel-heading"><div>
-      <h2>计划外生产<small className="panel-count">S2-R17</small></h2>
-      <p>登记已发生但无对应已确认任务的真实事实；首笔创建归集组，后续可从记录行继续追加。</p>
+      <h2>计划外生产<small className="panel-count">补录</small></h2>
+      <p>登记没有对应计划任务的实际生产；首次保存自动建立补录组，后续可在同组继续登记。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
@@ -231,18 +251,18 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
     <FormRow fields={[
       {name: 'workshopId', label: '车间', type: 'select', required: true,
         options: [['1', '车间1 · 铜杆'], ['2', '车间2 · 铜丝']]},
-      {name: 'recordType', label: '首笔事实类型', type: 'select', required: true,
+      {name: 'recordType', label: '登记事项', type: 'select', required: true,
         options: [['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
           ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
           ['EXECUTION', '实际起止']]},
-      {name: 'materialId', label: '产出产品（物料编号）', required: true,
-        placeholder: '车间1 填 102（Φ8 铜杆）；车间2 填铜丝规格编号'},
-      {name: 'actualDate', label: '实际业务日', type: 'date', required: true},
-      {name: 'inputQuantityTon', label: '数量（投料/称重/交出吨数；起止可空）', placeholder: '如 6.300'},
-      {name: 'orderId', label: '适用订单编号（可空）'},
-      {name: 'reason', label: '补录原因 *', required: true, placeholder: '如补录已发生且无对应任务的投料'},
-    ]} hint="首笔事实的实际日即归集组首日；跨日事实各填自己的实际日。补录原因与经办人必填。"
-      busy={busy} submitLabel="创建归集并保存首笔"
+      {name: 'materialId', label: '产品', type: 'select', required: true,
+        options: [['1', '铜板'], ['2', 'Φ8 铜杆'], ['3', 'Φ2.6 铜丝']]},
+      {name: 'actualDate', label: '发生日期', type: 'date', required: true},
+      {name: 'inputQuantityTon', label: '数量（吨，起止记录可空）', placeholder: '如 6.300'},
+      {name: 'orderId', label: '关联订单（可空）'},
+      {name: 'reason', label: '原因', required: true, placeholder: '如补录当天实际发生的投料'},
+    ]} hint="首次保存自动建立补录组；跨天的生产分多次登记。"
+      busy={busy} submitLabel="保存首笔登记"
       onSubmit={async values => {
         setBusy(true); setError(null);
         const quantity = values.inputQuantityTon;
@@ -269,7 +289,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
             anchorActualDate: values.actualDate, operatorName: '系统管理员',
             reason: values.reason, fact,
           });
-          onSaved('计划外事实已登记，归集组已建立；后续事实请从实际记录进入同组补录。');
+          onSaved('已登记并建立补录组；同组后续登记请在实际记录中继续追加。');
         } catch (requestError) {
           setError(requestError instanceof ApiError ? requestError.message : '补录失败。');
         } finally {
@@ -298,7 +318,7 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
         `/api/v1/production/workshops/${workshopId}/days/${actualDate}/record-completions`,
         {requestId: newRequestId(), operatorName: '系统管理员',
           expectedVersion: data.version, expectedSourceRevision: data.sourceRevision});
-      setFeedback({ok: true, message: '当日记录已确认录全；后续补录或更正会使该确认失效。'});
+      setFeedback({ok: true, message: '已确认当日记录完整；之后补录或更正会使该确认自动失效。'});
       status.reload();
     } catch (error) {
       setFeedback({ok: false,
@@ -311,7 +331,7 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
   return <section className="panel" aria-label="核对当日记录">
     <div className="panel-heading"><div>
       <h2>核对当日记录<small className="panel-count">{workshopName(workshopId)} · {actualDate}</small></h2>
-      <p>声明范围为当天已经发生的计划内外生产事实；成本缺项不阻塞，但影响产量分母的事实需先补齐。</p>
+      <p>核对当天该车间的生产记录是否登记完整。成本信息缺失不影响确认；产量记录未补齐前不能确认。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
@@ -322,7 +342,7 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
           <option value="2">车间2 · 铜丝</option>
         </select>
       </label>
-      <label className="select-field">实际日期
+      <label className="select-field">发生日期
         <input type="date" value={actualDate} onChange={event => setActualDate(event.target.value)}
           style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
       </label>
@@ -331,14 +351,14 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
     {status.error && <p style={{padding: '0 23px 20px'}}>{status.error}</p>}
     {data && <>
       <div className="ops-detail" style={{gridTemplateColumns: 'repeat(4, minmax(0,1fr))'}}>
-        <div><dt>已知合格量</dt><dd><strong>{data.knownQualifiedQuantityTon ?? '0.000'} 吨</strong></dd></div>
-        <div><dt>来源修订</dt><dd>r{data.sourceRevision}</dd></div>
-        <div><dt>录全状态</dt><dd>{data.recordsComplete
-          ? <span className="ops-tag ops-tag-green">已确认录全</span>
-          : <span className="ops-tag ops-tag-amber">尚未录全</span>}</dd></div>
-        <div><dt>最后确认</dt><dd>{data.confirmedBy
+        <div><dt>当日合格产量</dt><dd><strong>{data.knownQualifiedQuantityTon ?? '0.000'} 吨</strong></dd></div>
+        <div><dt>数据版本</dt><dd>v{data.sourceRevision}</dd></div>
+        <div><dt>核对结果</dt><dd>{data.recordsComplete
+          ? <span className="ops-tag ops-tag-green">已确认完整</span>
+          : <span className="ops-tag ops-tag-amber">尚未确认完整</span>}</dd></div>
+        <div><dt>确认人</dt><dd>{data.confirmedBy
           ? `${data.confirmedBy} · ${data.confirmedAt?.replace('T', ' ').slice(0, 16) ?? ''}`
-          : '未确认'}</dd></div>
+          : '尚未确认'}</dd></div>
       </div>
       {data.blockingItems.length > 0 && <div style={{padding: '10px 23px 4px'}}>
         {data.blockingItems.map(item =>
@@ -348,13 +368,13 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
       {data.missingItems.length > 0 && <div style={{padding: '4px 23px'}}>
         {data.missingItems.map(item =>
           <p key={item.code} style={{fontSize: 11, color: '#8a6a1f', margin: '4px 0'}}>
-            待补：{item.message}</p>)}
+            {item.message}</p>)}
       </div>}
       <div className="ops-form" style={{paddingTop: 10}}>
         <div className="ops-form-actions">
           <button type="button" className="button button-primary" disabled={busy
             || data.blockingItems.length > 0 || data.recordsComplete} onClick={confirm}>
-            {busy ? '提交中…' : data.recordsComplete ? '已确认录全' : '确认当日记录已录全'}
+            {busy ? '提交中…' : data.recordsComplete ? '已确认完整' : '确认当日记录完整'}
           </button>
         </div>
         {feedback && <SaveFeedback feedback={feedback}/>}

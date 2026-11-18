@@ -68,15 +68,18 @@ public class ProductionRepository {
     }
 
     public record TaskOrderRow(long taskOrderId, long taskId, long orderId, String demandKey,
-                               String quantityKind, BigDecimal quantityTon) {
+                               String quantityKind, BigDecimal quantityTon, String orderNo) {
     }
 
     public List<TaskOrderRow> taskOrders(long taskId) {
         return jdbc.query("""
-                SELECT task_order_id, task_id, order_id, demand_key, quantity_kind, quantity_ton
-                FROM p2_task_order WHERE task_id = ? ORDER BY task_order_id
+                SELECT to1.task_order_id, to1.task_id, to1.order_id, to1.demand_key,
+                       to1.quantity_kind, to1.quantity_ton, o.order_no
+                FROM p2_task_order to1
+                JOIN p2_customer_order o ON o.order_id = to1.order_id
+                WHERE to1.task_id = ? ORDER BY to1.task_order_id
                 """, (rs, n) -> new TaskOrderRow(rs.getLong(1), rs.getLong(2), rs.getLong(3),
-                rs.getString(4), rs.getString(5), rs.getBigDecimal(6)), taskId);
+                rs.getString(4), rs.getString(5), rs.getBigDecimal(6), rs.getString(7)), taskId);
     }
 
     public OrderRow findOrder(long orderId) {

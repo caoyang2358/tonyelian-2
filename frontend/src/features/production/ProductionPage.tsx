@@ -3,8 +3,8 @@ import {RecordsTab} from './RecordsTab';
 import {TasksTab} from './TasksTab';
 
 const tabs = [
-  {id: 'tasks', label: '生产任务', hint: '今日两车间任务、详情登记与结束'},
-  {id: 'records', label: '实际记录', hint: '历史时间线、计划外补录与当日录全'},
+  {id: 'tasks', label: '生产任务', hint: '两车间任务查看与实际登记'},
+  {id: 'records', label: '实际记录', hint: '生产记录、计划外补录与当日核对'},
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];

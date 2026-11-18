@@ -24,7 +24,7 @@ export const WEIGHING_STATE_LABELS: Record<string, string> = {
 
 export interface TaskSummary {
   taskId: string; workshopId: string; materialId: string;
-  plannedDate: string; sequenceNo: number; orderIds: string[]; version: number;
+  plannedDate: string; sequenceNo: number; orderIds: string[]; orderNos?: string[]; version: number;
   plannedQualifiedTon: string | null; actualQualifiedTon: string | null; varianceTon: string | null;
   executionState: string; weighingState: string;
 }
@@ -93,6 +93,7 @@ function mapTask(value: Record<string, unknown>): TaskSummary {
     materialId: String(value.materialId), plannedDate: String(value.plannedDate),
     sequenceNo: Number(value.sequenceNo),
     orderIds: Array.isArray(value.orderIds) ? value.orderIds.map(String) : [],
+    orderNos: Array.isArray(value.orderNos) ? value.orderNos.map(String) : [],
     version: Number(value.version),
     plannedQualifiedTon: s(value.plannedQualifiedTon),
     actualQualifiedTon: s(value.actualQualifiedTon),
