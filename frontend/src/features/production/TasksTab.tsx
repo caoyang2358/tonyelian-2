@@ -140,19 +140,21 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
     {task && <>
       <div className="ops-detail ops-detail-padded" style={{display: 'grid',
         gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px 26px'}}>
-        <div><dt>计划 / 顺序</dt><dd>第 {task.sequenceNo} 号任务</dd></div>
-        <div><dt>车间 / 产品</dt><dd>{workshopName(task.workshopId)} · {task.materialName ?? task.materialId}
-          {task.materialSpec ? `（${task.materialSpec}）` : ''}</dd></div>
+        <div><dt>任务顺序</dt><dd>当日第 {task.sequenceNo} 号</dd></div>
+        <div><dt>车间 / 产品</dt><dd>{workshopName(task.workshopId).split(' · ')[0]} ·
+          {(task.materialName ?? task.materialId).replace('Φ', '直径 ')}</dd></div>
         <div><dt>计划日期</dt><dd>{task.plannedDate}</dd></div>
         <div><dt>计划合格量</dt><dd><strong>{task.plannedQualifiedTon} 吨</strong></dd></div>
         <div><dt>实际合格量</dt><dd>{task.actualQualifiedTon == null
           ? <span className="missing-value">待统计</span>
           : <strong>{task.actualQualifiedTon} 吨</strong>}</dd></div>
-        <div><dt>差额</dt><dd>{task.varianceTon ?? '待统计'}</dd></div>
-        <div><dt>计划投料</dt><dd>{task.plannedPlateTon ?? '未安排'} 吨</dd></div>
+        <div><dt>差额</dt><dd>{task.varianceTon == null ? '待统计' : `${task.varianceTon} 吨`}</dd></div>
+        <div><dt>计划投料</dt><dd>{task.plannedPlateTon == null
+          ? <span className="missing-value">未安排投料</span>
+          : `${task.plannedPlateTon} 吨`}</dd></div>
         <div><dt>已录投料</dt><dd>{task.plateInputSummaryTon ?? '无'} 吨（{task.plateInputCount} 笔）</dd></div>
         <div><dt>交接笔数</dt><dd>{task.handoverCount}</dd></div>
-        <div><dt>铜板现货</dt><dd>{task.inventory?.physicalTon ?? '—'} 吨</dd></div>
+        <div><dt>铜板库存</dt><dd>{task.inventory?.physicalTon ?? '—'} 吨</dd></div>
         <div><dt>本任务预留</dt><dd>{task.reservations.length
           ? task.reservations.map(r => `${r.reservedTon} 吨`).join('、')
           : <span className="missing-value">无</span>}</dd></div>
@@ -160,7 +162,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
           ? task.orders.map(o => `${o.orderNo}（${o.customerName}${o.quantityTon ? ` · ${o.quantityTon} 吨` : ''}）`).join('、')
           : <span className="missing-value">无</span>}</dd></div>
         <div><dt>待补事项</dt><dd>{task.missingItems.length
-          ? <span className="ops-tag ops-tag-amber">{task.missingItems.join('、')}</span>
+          ? <span className="ops-tag ops-tag-amber">{task.missingItems.join('；')}</span>
           : '无'}</dd></div>
       </div>
 
@@ -252,7 +254,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
               <tr key={execution.recordId}>
                 <td>{RECORD_TYPE_LABELS.EXECUTION}</td>
                 <td>{execution.actualDate}</td>
-                <td>{trimTime(execution.startedAt) ?? '—'} ~ {trimTime(execution.stoppedAt) ?? '—'}</td>
+                <td>{trimTime(execution.startedAt) ?? '未登记'} ~ {trimTime(execution.stoppedAt) ?? '未登记'}</td>
                 <td>{execution.operatorName}</td>
                 <td>v{execution.version}</td>
               </tr>)}

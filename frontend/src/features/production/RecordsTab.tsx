@@ -6,6 +6,7 @@ import {
   type RecordDetailPayload, type TimelineItem,
 } from '../../lib/productionApi';
 import {SaveFeedback, errorFeedback, workshopName} from './shared';
+import {MATERIAL_LABELS} from './TasksTab';
 
 const today = () => new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'});
 
@@ -126,20 +127,30 @@ function TimelineRow({item, expanded, onToggle}: {item: TimelineItem; expanded: 
 
 /** 记录详情字段的中文展示名。 */
 const DETAIL_FIELD_LABELS: Record<string, string> = {
-  actualDate: '发生日期', actualQuantityTon: '投料数量（吨）', qualifiedQuantityTon: '合格产量（吨）',
+  actualDate: '发生日期', inputQuantityTon: '投料数量（吨）', actualQuantityTon: '投料数量（吨）',
+  qualifiedQuantityTon: '合格产量（吨）',
   sentQuantityTon: '交出重量（吨）', receivedQuantityTon: '实收重量（吨）',
   sentAt: '交出时间', receivedAt: '接收时间', operatorName: '经办人',
   taskId: '任务编号', orderId: '订单编号', notes: '备注', reason: '原因',
-  materialAmountYuan: '材料金额（元）', startedAt: '开始时间', stoppedAt: '停止时间',
+  materialAmountYuan: '材料金额（元）', startedAt: '开工时间', stoppedAt: '停工时间',
   handoverState: '交接状态', errorRate: '误差率', confirmedBy: '确认人',
-  workshopId: '车间', materialId: '产品', source: '来源',
+  workshopId: '车间', materialId: '产品', source: '来源', releaseReason: '放行原因',
 };
 
 /** 库存流水类型的中文展示名。 */
 const MOVEMENT_LABELS: Record<string, string> = {
-  PRODUCTION_ISSUE: '生产投料出库', QUALIFIED_OUTPUT: '合格产出入库', ROD_OUTPUT: '铜杆入库',
+  PRODUCTION_ISSUE: '投料消耗铜板', QUALIFIED_OUTPUT: '合格产出入库', ROD_OUTPUT: '铜杆入库',
   WIRE_OUTPUT: '铜丝入库', CORRECTION: '更正调整', OPENING: '期初库存',
 };
+
+/** 详情字段值的中文化（车间、产品等存的是编号）。 */
+function detailValue(key: string, value: unknown): string {
+  if (key === 'workshopId') return workshopName(String(value));
+  if (key === 'materialId') {
+    return MATERIAL_LABELS[String(value)] ?? String(value);
+  }
+  return String(value);
+}
 
 function RecordDetailInline({recordType, recordId}: {recordType: string; recordId: string}) {
   const load = useCallback((signal: AbortSignal) => fetchRecordDetail(recordType, recordId, signal),
@@ -154,7 +165,7 @@ function RecordDetailInline({recordType, recordId}: {recordType: string; recordI
         .filter(([key, value]) => value != null && value !== '' && key !== 'recordId' && key !== 'requestId')
         .slice(0, 12)
         .map(([key, value]) => <div key={key}><dt>{DETAIL_FIELD_LABELS[key] ?? key}</dt>
-          <dd>{String(value)}</dd></div>)}
+          <dd>{detailValue(key, value)}</dd></div>)}
     </dl>
     {data.movement && <p style={{fontSize: 11, color: '#5c6b57', margin: '4px 0'}}>
       库存变动：{MOVEMENT_LABELS[data.movement.movementType] ?? data.movement.movementType}
@@ -418,7 +429,8 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
     {data && <>
       <div className="ops-detail" style={{gridTemplateColumns: 'repeat(4, minmax(0,1fr))'}}>
         <div><dt>当日合格产量</dt><dd><strong>{data.knownQualifiedQuantityTon ?? '0.000'} 吨</strong></dd></div>
-        <div><dt>数据版本</dt><dd>v{data.sourceRevision}</dd></div>
+        <div><dt>数据版本</dt><dd>v{data.sourceRevision}
+          <small style={{color: '#9aa294', marginLeft: 4}}>每次登记自动加 1</small></dd></div>
         <div><dt>核对结果</dt><dd>{data.recordsComplete
           ? <span className="ops-tag ops-tag-green">已确认完整</span>
           : <span className="ops-tag ops-tag-amber">尚未确认完整</span>}</dd></div>

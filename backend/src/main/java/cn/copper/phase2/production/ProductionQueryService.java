@@ -205,16 +205,16 @@ public class ProductionQueryService {
 
         List<String> missing = new ArrayList<>();
         if (!repo.taskHasWeighing(taskId) && !repo.taskHasNoOutput(taskId)) {
-            missing.add("QUALIFIED_WEIGHING");
+            missing.add("尚未登记合格产量称重，也未确认零产出。");
         }
         for (ProductionRepository.PlateInputRow input : inputs) {
             if (input.materialAmountYuan() == null) {
-                missing.add("materialAmountYuan");
+                missing.add("有投料记录的材料金额未登记，成本核算待补。");
             }
         }
         for (ProductionRepository.HandoverRow handover : handovers) {
             if (handover.receivedTon() == null) {
-                missing.add("receivedQuantityTon");
+                missing.add("有交接记录尚待对方确认接收。");
             }
         }
         data.put("missingItems", missing);
@@ -435,7 +435,7 @@ public class ProductionQueryService {
         data.put("movement", movementSnapshot(row.movementId()));
         List<String> missing = new ArrayList<>();
         if (row.materialAmountYuan() == null) {
-            missing.add("materialAmountYuan");
+            missing.add("材料金额未登记，成本核算待补。");
         }
         data.put("missingItems", missing);
         return data;
@@ -467,8 +467,7 @@ public class ProductionQueryService {
         data.put("movement", movementSnapshot(row.movementId()));
         List<String> missing = new ArrayList<>();
         if (row.receivedTon() == null) {
-            missing.add("receivedQuantityTon");
-            missing.add("receivedAt");
+            missing.add("对方尚未确认接收，等待补录实收重量与接收时间。");
         }
         data.put("missingItems", missing);
         return data;
@@ -542,7 +541,7 @@ public class ProductionQueryService {
                     .map(a -> new BigDecimal(String.valueOf(a.get("quantityTon"))))
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             if (row.qualifiedTon() != null && allocated.compareTo(row.qualifiedTon()) < 0) {
-                missing.add("PUBLIC_QUANTITY_UNALLOCATED");
+                missing.add("部分产量尚未归属到订单，剩余部分进入公共份额。");
             }
         }
         return missing;
