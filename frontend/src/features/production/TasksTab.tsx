@@ -67,7 +67,7 @@ export function TasksTab() {
               style={{cursor: 'pointer'}}>
               <td>{workshopName(task.workshopId)}</td>
               <td>第 {task.sequenceNo} 号</td>
-              <td>{MATERIAL_LABELS[task.materialId] ?? (task.workshopId === '1' ? 'Φ8 铜杆' : '铜丝')}</td>
+              <td>{MATERIAL_LABELS[task.materialId] ?? (task.workshopId === '1' ? '直径 8mm 铜杆' : '铜丝')}</td>
               <td>{(task.orderNos?.length ? task.orderNos : task.orderIds).join('、')
                 || <span className="missing-value">无</span>}</td>
               <td>{task.plannedQualifiedTon} 吨</td>
@@ -207,7 +207,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
             })}/>}
         {openForm === 'WIRE_OUTPUT' && !isRodWorkshop && <FormRow fields={[
           {name: 'materialId', label: '产品', type: 'select', required: true,
-            options: [['3', 'Φ2.6 铜丝']]},
+            options: [['3', '直径 2.6mm 铜丝']]},
           {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'qualifiedQuantityTon', label: '本次合格产量（吨）', required: true},
           {name: 'stoppedAt', label: '停机时间', type: 'datetime-local'},
@@ -273,7 +273,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export const MATERIAL_LABELS: Record<string, string> = {
-  '1': '铜板', '2': 'Φ8 铜杆', '3': 'Φ2.6 铜丝',
+  '1': '铜板', '2': '直径 8mm 铜杆', '3': '直径 2.6mm 铜丝',
 };
 
 function parseAllocations(text: string | undefined): {orderId: string; quantityTon: string}[] {

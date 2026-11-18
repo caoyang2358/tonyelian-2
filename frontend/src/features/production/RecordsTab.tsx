@@ -5,8 +5,7 @@ import {
   newRequestId, postProduction,
   type RecordDetailPayload, type TimelineItem,
 } from '../../lib/productionApi';
-import {FormRow, SaveFeedback, workshopName} from './shared';
-import {ApiError} from '../../lib/api';
+import {SaveFeedback, errorFeedback, workshopName} from './shared';
 
 const today = () => new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'});
 
@@ -239,7 +238,23 @@ function HandoverReceiveInline({recordId, pending}: {
 /** 计划外生产补录（S2-R17）：首笔建组，后续同组追加。 */
 function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (message: string) => void}) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
+  // 事项决定车间与产品（后端要求：车间1 组产品固定铜杆、车间2 固定铜丝），选错不了。
+  const [recordType, setRecordType] = useState('PLATE_INPUT');
+  const [workshopId, setWorkshopId] = useState('1');
+  const typeOptions: [string, string][] = [
+    ['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
+    ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
+    ['EXECUTION', '实际起止（选车间）'],
+  ];
+  const typeWorkshop: Record<string, '1' | '2' | null> = {
+    PLATE_INPUT: '1', ROD_OUTPUT: '1', ROD_HANDOVER: '2', WIRE_OUTPUT: '2', EXECUTION: null,
+  };
+  const productName = workshopId === '1' ? '直径 8mm 铜杆' : '直径 2.6mm 铜丝';
+  const quantityLabel = recordType === 'PLATE_INPUT' ? '投入铜板数量（吨）'
+    : recordType === 'ROD_HANDOVER' ? '交出重量（吨）'
+      : recordType === 'EXECUTION' ? '数量（吨，可空）' : '合格产量（吨）';
+
   return <section className="panel" aria-label="计划外生产补录">
     <div className="panel-heading"><div>
       <h2>计划外生产<small className="panel-count">补录</small></h2>
@@ -247,55 +262,101 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
-    {error && <p style={{padding: '0 23px 12px', color: '#a04a34', fontSize: 11}}>{error}</p>}
-    <FormRow fields={[
-      {name: 'workshopId', label: '车间', type: 'select', required: true,
-        options: [['1', '车间1 · 铜杆'], ['2', '车间2 · 铜丝']]},
-      {name: 'recordType', label: '登记事项', type: 'select', required: true,
-        options: [['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
-          ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
-          ['EXECUTION', '实际起止']]},
-      {name: 'materialId', label: '产品', type: 'select', required: true,
-        options: [['1', '铜板'], ['2', 'Φ8 铜杆'], ['3', 'Φ2.6 铜丝']]},
-      {name: 'actualDate', label: '发生日期', type: 'date', required: true},
-      {name: 'inputQuantityTon', label: '数量（吨，起止记录可空）', placeholder: '如 6.300'},
-      {name: 'orderId', label: '关联订单（可空）'},
-      {name: 'reason', label: '原因', required: true, placeholder: '如补录当天实际发生的投料'},
-    ]} hint="首次保存自动建立补录组；跨天的生产分多次登记。"
-      busy={busy} submitLabel="保存首笔登记"
-      onSubmit={async values => {
-        setBusy(true); setError(null);
-        const quantity = values.inputQuantityTon;
-        const type = values.recordType;
-        const fact: Record<string, unknown> = {actualDate: values.actualDate};
-        if (type === 'EXECUTION') {
-          fact.notes = values.reason;
-        } else if (type === 'PLATE_INPUT') {
-          fact.inputQuantityTon = quantity;
-        } else if (type === 'ROD_OUTPUT') {
-          fact.qualifiedQuantityTon = quantity;
-        } else if (type === 'ROD_HANDOVER') {
-          fact.sentQuantityTon = quantity;
-          fact.sentAt = `${values.actualDate}T08:00:00+08:00`;
-          if (values.orderId) fact.orderId = values.orderId;
-        } else if (type === 'WIRE_OUTPUT') {
-          fact.qualifiedQuantityTon = quantity;
-          fact.allocations = values.orderId
-            ? [{orderId: values.orderId, quantityTon: quantity}] : [];
-        }
-        try {
-          await postProduction('/api/v1/production/unplanned-records', {
-            recordType: type, workshopId: values.workshopId, materialId: values.materialId,
-            anchorActualDate: values.actualDate, operatorName: '系统管理员',
-            reason: values.reason, fact,
-          });
-          onSaved('已登记并建立补录组；同组后续登记请在实际记录中继续追加。');
-        } catch (requestError) {
-          setError(requestError instanceof ApiError ? requestError.message : '补录失败。');
-        } finally {
-          setBusy(false);
-        }
-      }}/>
+    {feedback && <div style={{padding: '0 23px 10px'}}><SaveFeedback feedback={feedback}/></div>}
+    <form className="ops-form" style={{paddingTop: 8}} onSubmit={async event => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const actualDate = String(data.get('actualDate') ?? '').trim();
+      const quantity = String(data.get('inputQuantityTon') ?? '').trim();
+      const reason = String(data.get('reason') ?? '').trim();
+      const orderId = String(data.get('orderId') ?? '').trim();
+      const pickedWorkshop = String(data.get('workshopId') ?? workshopId);
+      if (!actualDate || !reason || (recordType !== 'EXECUTION' && !quantity)) {
+        setFeedback({ok: false, message: '请填写日期、数量与原因。'});
+        return;
+      }
+      setBusy(true); setFeedback(null);
+      const fact: Record<string, unknown> = {actualDate};
+      if (recordType === 'EXECUTION') {
+        fact.notes = reason;
+      } else if (recordType === 'PLATE_INPUT') {
+        fact.inputQuantityTon = quantity;
+      } else if (recordType === 'ROD_OUTPUT') {
+        fact.qualifiedQuantityTon = quantity;
+      } else if (recordType === 'ROD_HANDOVER') {
+        fact.sentQuantityTon = quantity;
+        fact.sentAt = `${actualDate}T08:00:00+08:00`;
+        if (orderId) fact.orderId = orderId;
+      } else if (recordType === 'WIRE_OUTPUT') {
+        fact.qualifiedQuantityTon = quantity;
+        fact.allocations = orderId ? [{orderId, quantityTon: quantity}] : [];
+      }
+      try {
+        await postProduction('/api/v1/production/unplanned-records', {
+          recordType, workshopId: pickedWorkshop, materialId: pickedWorkshop === '1' ? '2' : '3',
+          anchorActualDate: actualDate, operatorName: '系统管理员', reason, fact,
+        });
+        onSaved('已登记并建立补录组；同组后续登记请在实际记录中继续追加。');
+      } catch (requestError) {
+        setFeedback(errorFeedback(requestError));
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <p className="ops-form-context">首次保存自动建立补录组；跨天的生产分多次登记。</p>
+      <div className="ops-form-row">
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>登记事项</span>
+          <select value={recordType} onChange={event => {
+            const next = event.target.value;
+            setRecordType(next);
+            const ws = typeWorkshop[next];
+            if (ws) setWorkshopId(ws);
+          }}>
+            {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        {typeWorkshop[recordType] === null && <label className="select-field"
+          style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>车间</span>
+          <select name="workshopId" value={workshopId}
+            onChange={event => setWorkshopId(event.target.value)}>
+            <option value="1">车间1 · 铜杆</option>
+            <option value="2">车间2 · 铜丝</option>
+          </select>
+        </label>}
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>产品（自动确定）</span>
+          <input value={productName} disabled
+            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px',
+              background: '#f4f6f1', color: '#5c6b57'}}/>
+        </label>
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>发生日期</span>
+          <input name="actualDate" type="date" required defaultValue={today()}
+            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
+        </label>
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>{quantityLabel}</span>
+          <input name="inputQuantityTon" placeholder="如 6.300"
+            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
+        </label>
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>关联订单（可空）</span>
+          <input name="orderId"
+            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px'}}/>
+        </label>
+        <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
+          <span>原因</span>
+          <input name="reason" required placeholder="如补录当天实际发生的投料"
+            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px', minWidth: 180}}/>
+        </label>
+      </div>
+      <div className="ops-form-actions">
+        <button type="submit" className="button button-primary" disabled={busy}>
+          {busy ? '保存中…' : '保存首笔登记'}</button>
+      </div>
+    </form>
   </section>;
 }
 

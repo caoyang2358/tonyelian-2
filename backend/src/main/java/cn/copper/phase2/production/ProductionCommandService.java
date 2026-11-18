@@ -1458,13 +1458,13 @@ public class ProductionCommandService {
         long rodWorkshop = queries.workshopIdByCode("WS-ROD");
         if (workshopId == rodWorkshop) {
             if (materialId != queries.rodMaterialId()) {
-                throw BusinessException.invalid("materialId", "车间一归集组的产出产品固定为 Φ8 铜杆。");
+                throw BusinessException.invalid("materialId", "车间一补录组的产出产品固定为直径 8mm 铜杆。");
             }
             return;
         }
         ProductionRepository.MaterialRow material = repo.findMaterial(materialId);
         if (material == null || !"FINISHED_WIRE".equals(material.type())) {
-            throw BusinessException.invalid("materialId", "车间二归集组的产出产品必须为铜丝规格。");
+            throw BusinessException.invalid("materialId", "车间二补录组的产出产品必须为铜丝规格。");
         }
     }
 
