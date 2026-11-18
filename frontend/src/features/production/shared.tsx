@@ -73,8 +73,8 @@ export function FormRow({fields, hint, busy, onSubmit, submitLabel = '保存'}: 
 export const quantityHint = '数量单位为吨，最多三位小数；金额单位为元，最多两位小数。';
 
 export function workshopName(workshopId: string | null | undefined): string {
-  if (workshopId === '1') return '车间1 · 铜杆';
-  if (workshopId === '2') return '车间2 · 铜丝';
+  if (workshopId === '1') return '车间1（铜杆车间）';
+  if (workshopId === '2') return '车间2（铜丝车间）';
   return workshopId ?? '—';
 }
 
