@@ -239,18 +239,21 @@ function HandoverReceiveInline({recordId, pending}: {
 function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (message: string) => void}) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
-  // 事项决定车间与产品（后端要求：车间1 组产品固定铜杆、车间2 固定铜丝），选错不了。
+  // 产品自行选择，但只列出该车间的合法产出，保证不会选错。
   const [recordType, setRecordType] = useState('PLATE_INPUT');
   const [workshopId, setWorkshopId] = useState('1');
+  const [materialId, setMaterialId] = useState('2');
   const typeOptions: [string, string][] = [
     ['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
     ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
-    ['EXECUTION', '实际起止（选车间）'],
+    ['EXECUTION', '开工与停工记录（需选车间）'],
   ];
   const typeWorkshop: Record<string, '1' | '2' | null> = {
     PLATE_INPUT: '1', ROD_OUTPUT: '1', ROD_HANDOVER: '2', WIRE_OUTPUT: '2', EXECUTION: null,
   };
-  const productName = workshopId === '1' ? '直径 8mm 铜杆' : '直径 2.6mm 铜丝';
+  const productOptions: [string, string][] = workshopId === '1'
+    ? [['2', '直径 8mm 铜杆']]
+    : [['3', '直径 2.6mm 铜丝']];
   const quantityLabel = recordType === 'PLATE_INPUT' ? '投入铜板数量（吨）'
     : recordType === 'ROD_HANDOVER' ? '交出重量（吨）'
       : recordType === 'EXECUTION' ? '数量（吨，可空）' : '合格产量（吨）';
@@ -293,7 +296,8 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
       }
       try {
         await postProduction('/api/v1/production/unplanned-records', {
-          recordType, workshopId: pickedWorkshop, materialId: pickedWorkshop === '1' ? '2' : '3',
+          requestId: newRequestId(),
+          recordType, workshopId: pickedWorkshop, materialId,
           anchorActualDate: actualDate, operatorName: '系统管理员', reason, fact,
         });
         onSaved('已登记并建立补录组；同组后续登记请在实际记录中继续追加。');
@@ -311,7 +315,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
             const next = event.target.value;
             setRecordType(next);
             const ws = typeWorkshop[next];
-            if (ws) setWorkshopId(ws);
+            if (ws) {setWorkshopId(ws); setMaterialId(ws === '1' ? '2' : '3');}
           }}>
             {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
@@ -319,17 +323,18 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
         {typeWorkshop[recordType] === null && <label className="select-field"
           style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
           <span>车间</span>
-          <select name="workshopId" value={workshopId}
-            onChange={event => setWorkshopId(event.target.value)}>
+          <select value={workshopId}
+            onChange={event => {setWorkshopId(event.target.value);
+              setMaterialId(event.target.value === '1' ? '2' : '3');}}>
             <option value="1">车间1 · 铜杆</option>
             <option value="2">车间2 · 铜丝</option>
           </select>
         </label>}
         <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-          <span>产品（自动确定）</span>
-          <input value={productName} disabled
-            style={{height: 36, border: '1px solid #e1e7dc', borderRadius: 5, padding: '0 11px',
-              background: '#f4f6f1', color: '#5c6b57'}}/>
+          <span>产品</span>
+          <select value={materialId} onChange={event => setMaterialId(event.target.value)}>
+            {productOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
         </label>
         <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
           <span>发生日期</span>

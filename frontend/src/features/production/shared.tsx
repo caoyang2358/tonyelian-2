@@ -78,11 +78,19 @@ export function workshopName(workshopId: string | null | undefined): string {
   return workshopId ?? '—';
 }
 
+/** 校验错误字段名的中文展示名。 */
+const FIELD_NAME_LABELS: Record<string, string> = {
+  requestId: '请求编号', operatorName: '经办人', reason: '原因', materialId: '产品',
+  workshopId: '车间', actualDate: '发生日期', inputQuantityTon: '投料数量',
+  qualifiedQuantityTon: '合格产量', sentQuantityTon: '交出重量', receivedQuantityTon: '实收重量',
+  expectedVersion: '数据版本', fact: '登记内容', recordType: '登记事项', orderId: '订单编号',
+};
+
 export function formatFields(fields: Record<string, string> | undefined): ReactNode {
   if (!fields || !Object.keys(fields).length) return null;
   return <ul style={{margin: '6px 0 0', paddingLeft: 18, fontSize: 10}}>
     {Object.entries(fields).map(([field, message]) =>
-      <li key={field}><strong>{field}</strong>：{message}</li>)}
+      <li key={field}><strong>{FIELD_NAME_LABELS[field] ?? field}</strong>：{message}</li>)}
   </ul>;
 }
 

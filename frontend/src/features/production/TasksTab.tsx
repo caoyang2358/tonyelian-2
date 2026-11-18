@@ -267,7 +267,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  EXECUTION_RECORD: '登记实际起止', PLATE_INPUT: '登记投料', ROD_OUTPUT: '铜杆称重',
+  EXECUTION_RECORD: '登记开工与停工时间', PLATE_INPUT: '登记投料', ROD_OUTPUT: '铜杆称重',
   ROD_HANDOVER: '登记交出', WIRE_OUTPUT: '铜丝称重', NO_OUTPUT_CONFIRMATION: '确认无合格产出',
   TASK_COMPLETION: '结束日任务',
 };
