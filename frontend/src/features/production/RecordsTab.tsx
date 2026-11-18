@@ -114,9 +114,7 @@ function TimelineRow({item, expanded, onToggle}: {item: TimelineItem; expanded: 
       <td>{workshopName(item.workshopId)}</td>
       <td>{item.voidedAt ? <span className="ops-tag ops-tag-red">已作废</span> : quantity}</td>
       <td><span className={`ops-tag ${item.source === 'UNPLANNED' ? 'ops-tag-amber' : 'ops-tag-blue'}`}>
-        {item.source === 'UNPLANNED' ? '计划外' : '计划内'}</span>
-        {item.productionGroupId && <small style={{marginLeft: 5, color: '#9aa294'}}>组 {item.productionGroupId}</small>}
-      </td>
+        {item.source === 'UNPLANNED' ? '计划外' : '计划内'}</span></td>
       <td>{item.operatorName}</td>
     </tr>
     {expanded && <tr><td colSpan={7} style={{height: 'auto'}}>
@@ -246,7 +244,7 @@ function HandoverReceiveInline({recordId, pending}: {
   </form>;
 }
 
-/** 计划外生产补录（S2-R17）：首笔建组，后续同组追加。 */
+/** 计划外生产补录：每次登记一条独立记录，供没有计划任务的生产补录使用。 */
 function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (message: string) => void}) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
