@@ -260,7 +260,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
   const [materialId, setMaterialId] = useState('2');
   const typeOptions: [string, string][] = [
     ['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
-    ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
+    ['ROD_HANDOVER', '接收铜杆（车间2 · 领取车间1交来的杆）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
   ];
   const typeWorkshop: Record<string, '1' | '2'> = {
     PLATE_INPUT: '1', ROD_OUTPUT: '1', ROD_HANDOVER: '2', WIRE_OUTPUT: '2',
@@ -405,8 +405,8 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
     <div className="filters" style={{paddingBottom: 12}}>
       <label className="select-field">车间
         <select value={workshopId} onChange={event => setWorkshopId(event.target.value)}>
-          <option value="1">车间1（铜杆车间）</option>
-          <option value="2">车间2（铜丝车间）</option>
+          <option value="1">车间1 · 铜杆</option>
+          <option value="2">车间2 · 铜丝</option>
         </select>
       </label>
       <label className="select-field">发生日期

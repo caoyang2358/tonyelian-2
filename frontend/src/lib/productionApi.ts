@@ -10,7 +10,7 @@ export const RECORD_TYPES = ['EXECUTION', 'PLATE_INPUT', 'ROD_HANDOVER', 'ROD_OU
 export type RecordType = (typeof RECORD_TYPES)[number];
 
 export const RECORD_TYPE_LABELS: Record<RecordType, string> = {
-  EXECUTION: '开工停工记录', PLATE_INPUT: '铜板投料', ROD_HANDOVER: '领杆交接',
+  EXECUTION: '开工停工记录', PLATE_INPUT: '铜板投料', ROD_HANDOVER: '接收铜杆',
   ROD_OUTPUT: '铜杆称重', WIRE_OUTPUT: '铜丝称重', NO_OUTPUT: '零产出确认',
 };
 

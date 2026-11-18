@@ -37,8 +37,8 @@ export function TasksTab() {
         <label className="select-field">车间
           <select value={workshopId} onChange={event => setWorkshopId(event.target.value)}>
             <option value="">全部车间</option>
-            <option value="1">车间1（铜杆车间）</option>
-            <option value="2">车间2（铜丝车间）</option>
+            <option value="1">车间1 · 铜杆</option>
+            <option value="2">车间2 · 铜丝</option>
           </select>
         </label>
         <label className="select-field">执行状态
