@@ -130,7 +130,7 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
 
   return <section className="panel" aria-label="任务详情">
     <div className="panel-heading"><div>
-      <h2>任务详情<small className="panel-count">{taskId}</small></h2>
+      <h2>任务详情<small className="panel-count">{task?.plannedDate}</small></h2>
       <p>任务计划摘要与登记入口。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
@@ -247,16 +247,15 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
       <div className="ops-form" style={{paddingTop: 0}}>
         <h3 style={{fontSize: 13, color: '#354c39', margin: '8px 0 10px'}}>实际记录时间线</h3>
         <div className="table-region"><table style={{minWidth: 480}}>
-          <thead><tr><th>类型</th><th>实际日</th><th>起止</th><th>经办人</th><th>版本</th></tr></thead>
+          <thead><tr><th>类型</th><th>实际日</th><th>起止</th><th>经办人</th></tr></thead>
           <tbody>
-            {!task.executions.length && <tr><td colSpan={5}>本任务暂无执行片段。</td></tr>}
+            {!task.executions.length && <tr><td colSpan={4}>本任务暂无执行片段。</td></tr>}
             {task.executions.map(execution =>
               <tr key={execution.recordId}>
                 <td>{RECORD_TYPE_LABELS.EXECUTION}</td>
                 <td>{execution.actualDate}</td>
                 <td>{trimTime(execution.startedAt) ?? '未登记'} ~ {trimTime(execution.stoppedAt) ?? '未登记'}</td>
                 <td>{execution.operatorName}</td>
-                <td>v{execution.version}</td>
               </tr>)}
           </tbody>
         </table></div>

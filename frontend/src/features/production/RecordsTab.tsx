@@ -135,6 +135,11 @@ const DETAIL_FIELD_LABELS: Record<string, string> = {
   workshopId: '车间', materialId: '产品', source: '来源', releaseReason: '放行原因',
 };
 
+/** 交接状态的中文展示名。 */
+const HANDOVER_STATE_LABELS: Record<string, string> = {
+  PENDING_RECEIPT: '待对方接收', CONFIRMED: '已确认接收', RELEASED: '超差放行',
+};
+
 /** 库存流水类型的中文展示名。 */
 const MOVEMENT_LABELS: Record<string, string> = {
   PRODUCTION_ISSUE: '投料消耗铜板', QUALIFIED_OUTPUT: '合格产出入库', ROD_OUTPUT: '铜杆入库',
@@ -173,13 +178,14 @@ function RecordDetailInline({recordType, recordId}: {recordType: string; recordI
       订单归属：{data.allocations.map(a => `${a.orderNo} ${a.quantityTon} 吨`).join('、')}
     </p> : null}
     {data.handoverState && <p style={{fontSize: 11, color: '#5c6b57', margin: '4px 0'}}>
-      交接状态 {data.handoverState}{data.errorRate ? ` · 误差率 ${(Number(data.errorRate) * 100).toFixed(2)}%` : ''}
+      交接状态：{HANDOVER_STATE_LABELS[data.handoverState] ?? data.handoverState}
+      {data.errorRate ? ` · 误差率 ${(Number(data.errorRate) * 100).toFixed(2)}%` : ''}
     </p>}
     {data.missingItems.length > 0 && <p style={{fontSize: 11, color: '#8a6a1f', margin: '4px 0'}}>
       {data.missingItems.join('；')}
     </p>}
     <p style={{fontSize: 10, color: '#9aa294', margin: '8px 0 0'}}>
-      更正历史 {data.corrections.length} 条 · 当前版本 v{data.version}
+      更正历史 {data.corrections.length} 条
       {data.corrections.length > 0 && <>　最近：{data.corrections[0].operatorName} ·
         {data.corrections[0].reason ?? '（无原因记录）'}</>}
     </p>
@@ -427,8 +433,8 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
     {data && <>
       <div className="ops-detail" style={{gridTemplateColumns: 'repeat(4, minmax(0,1fr))'}}>
         <div><dt>当日合格产量</dt><dd><strong>{data.knownQualifiedQuantityTon ?? '0.000'} 吨</strong></dd></div>
-        <div><dt>数据版本</dt><dd>v{data.sourceRevision}
-          <small style={{color: '#9aa294', marginLeft: 4}}>每次登记自动加 1</small></dd></div>
+        <div><dt>当日登记次数</dt><dd><strong>{data.sourceRevision}</strong>
+          <small style={{color: '#9aa294', marginLeft: 4}}>每次登记或更正自动加 1</small></dd></div>
         <div><dt>核对结果</dt><dd>{data.recordsComplete
           ? <span className="ops-tag ops-tag-green">已确认完整</span>
           : <span className="ops-tag ops-tag-amber">尚未确认完整</span>}</dd></div>
