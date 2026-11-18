@@ -370,7 +370,7 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
       </div>
       <div className="ops-form-actions">
         <button type="submit" className="button button-primary" disabled={busy}>
-          {busy ? '保存中…' : '保存这条登记'}</button>
+          {busy ? '保存中…' : '保存'}</button>
       </div>
     </form>
   </section>;
