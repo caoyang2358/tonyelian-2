@@ -261,17 +261,15 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
   const typeOptions: [string, string][] = [
     ['PLATE_INPUT', '铜板投料（车间1）'], ['ROD_OUTPUT', '铜杆称重（车间1）'],
     ['ROD_HANDOVER', '领杆交接（车间2）'], ['WIRE_OUTPUT', '铜丝称重（车间2）'],
-    ['EXECUTION', '开工与停工记录（需选车间）'],
   ];
-  const typeWorkshop: Record<string, '1' | '2' | null> = {
-    PLATE_INPUT: '1', ROD_OUTPUT: '1', ROD_HANDOVER: '2', WIRE_OUTPUT: '2', EXECUTION: null,
+  const typeWorkshop: Record<string, '1' | '2'> = {
+    PLATE_INPUT: '1', ROD_OUTPUT: '1', ROD_HANDOVER: '2', WIRE_OUTPUT: '2',
   };
   const productOptions: [string, string][] = workshopId === '1'
     ? [['2', '直径 8mm 铜杆']]
     : [['3', '直径 2.6mm 铜丝']];
   const quantityLabel = recordType === 'PLATE_INPUT' ? '投入铜板数量（吨）'
-    : recordType === 'ROD_HANDOVER' ? '交出重量（吨）'
-      : recordType === 'EXECUTION' ? '数量（吨，可空）' : '合格产量（吨）';
+    : recordType === 'ROD_HANDOVER' ? '交出重量（吨）' : '合格产量（吨）';
 
   return <section className="panel" aria-label="计划外生产补录">
     <div className="panel-heading"><div>
@@ -289,15 +287,13 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
       const reason = String(data.get('reason') ?? '').trim();
       const orderId = String(data.get('orderId') ?? '').trim();
       const pickedWorkshop = String(data.get('workshopId') ?? workshopId);
-      if (!actualDate || !reason || (recordType !== 'EXECUTION' && !quantity)) {
+      if (!actualDate || !reason || !quantity) {
         setFeedback({ok: false, message: '请填写日期、数量与原因。'});
         return;
       }
       setBusy(true); setFeedback(null);
       const fact: Record<string, unknown> = {actualDate};
-      if (recordType === 'EXECUTION') {
-        fact.notes = reason;
-      } else if (recordType === 'PLATE_INPUT') {
+      if (recordType === 'PLATE_INPUT') {
         fact.inputQuantityTon = quantity;
       } else if (recordType === 'ROD_OUTPUT') {
         fact.qualifiedQuantityTon = quantity;
@@ -335,16 +331,6 @@ function UnplannedPanel({onClose, onSaved}: {onClose: () => void; onSaved: (mess
             {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
-        {typeWorkshop[recordType] === null && <label className="select-field"
-          style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
-          <span>车间</span>
-          <select value={workshopId}
-            onChange={event => {setWorkshopId(event.target.value);
-              setMaterialId(event.target.value === '1' ? '2' : '3');}}>
-            <option value="1">车间1 · 铜杆</option>
-            <option value="2">车间2 · 铜丝</option>
-          </select>
-        </label>}
         <label className="select-field" style={{flexDirection: 'column', alignItems: 'flex-start', gap: 4}}>
           <span>产品</span>
           <select value={materialId} onChange={event => setMaterialId(event.target.value)}>
