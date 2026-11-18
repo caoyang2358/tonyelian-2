@@ -377,6 +377,12 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
   const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
   const data = status.data;
 
+  // 当天该车间已登记的记录清单，让人看到系统收到了什么。
+  const dayRecords = useResource(useCallback(
+    (signal: AbortSignal) => fetchRecords(
+      {actualFrom: actualDate, actualTo: actualDate, workshopId, page: 1}, signal),
+    [actualDate, workshopId]));
+
   const confirm = useCallback(async () => {
     if (!data) return;
     setBusy(true); setFeedback(null);
@@ -428,6 +434,23 @@ function DayCheckPanel({onClose, defaultDate}: {onClose: () => void; defaultDate
           ? `${data.confirmedBy} · ${data.confirmedAt?.replace('T', ' ').slice(0, 16) ?? ''}`
           : '尚未确认'}</dd></div>
       </div>
+      {dayRecords.loading && <p style={{padding: '10px 23px 0', fontSize: 11, color: '#5c6b57'}}>
+        正在读取当天记录…</p>}
+      {dayRecords.data && <div style={{padding: '10px 23px 0'}}>
+        <p style={{fontSize: 12, color: '#354c39', margin: '0 0 6px'}}>
+          <strong>当天已登记 {dayRecords.data.total} 条记录</strong>
+          {dayRecords.data.total === 0 && '——还没有任何投料、称重或交接。'}</p>
+        {dayRecords.data.items.length > 0 && <ul style={{margin: 0, paddingLeft: 18, fontSize: 11}}>
+          {dayRecords.data.items.map(item => {
+            const quantity = item.quantityTon || item.sentQuantityTon || item.receivedQuantityTon;
+            return <li key={`${item.recordType}-${item.recordId}`} style={{margin: '2px 0'}}>
+              {item.actualDate} · {RECORD_TYPE_LABELS[item.recordType] ?? item.recordType}
+              {quantity ? ` · ${quantity} 吨` : ''}
+              {item.voidedAt ? '（已作废）' : ''} · {item.operatorName}
+            </li>;
+          })}
+        </ul>}
+      </div>}
       {data.blockingItems.length > 0 && <div style={{padding: '10px 23px 4px'}}>
         {data.blockingItems.map(item =>
           <p key={item.code} style={{fontSize: 11, color: '#a04a34', margin: '4px 0'}}>
