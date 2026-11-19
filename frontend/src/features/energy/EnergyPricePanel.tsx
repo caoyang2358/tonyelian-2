@@ -110,6 +110,11 @@ export function EnergyPricePanel() {
 
   const matched = data?.matchedPrice ?? null;
   const totalPages = data ? Math.max(1, Math.ceil(Number(data.total ?? 0) / Number(data.pageSize || 20))) : 1;
+  // 列表为空时必须是「筛选没命中」还是「一条都没录过」：两者给同一句话会误导——
+  // 上面按用能日能查到价，下面却说「尚未录入」，明显自相矛盾。
+  const scopedByMatch = Boolean(matchWorkshop && matchDate && filters.energyType);
+  const hasFilter = Boolean(filters.energyType || filters.scope || filters.effectiveFrom
+    || filters.effectiveTo || filters.includeHistory || scopedByMatch);
   const workshopName = useMemo(
     () => (id: string | null) => {
       if (!id) return '全部车间';
@@ -236,7 +241,13 @@ export function EnergyPricePanel() {
             )}
             {!loading && data && data.items.length === 0 && (
               <tr><td colSpan={8} className="en-empty">
-                尚未录入价格。建议先建通用价，再按车间细化；没有价格时，用能记录停留在待核算。
+                {hasFilter
+                  ? <>
+                      当前筛选条件下没有价格记录。上方的适用价按实际用能日单独匹配，不受这里筛选影响；
+                      可放宽能源类型、价格范围或生效日
+                      {scopedByMatch ? '，或点「清除」恢复全部车间' : ''}后再看。
+                    </>
+                  : '尚未录入价格。建议先建通用价，再按车间细化；没有价格时，用能记录停留在待核算。'}
               </td></tr>
             )}
             {data?.items.map(row => (
