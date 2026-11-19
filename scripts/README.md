@@ -38,7 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Add-AlertEvent.ps1
 
 接口层面：`POST /api/v1/alert-events`（S1-A05）。同一参数同时只能有一条未结束事件，重复补录返回 409 `EVENT_ALREADY_ACTIVE`；参数从未配过规则时，会按参数定义里的阈值补一条第 1 版规则（事件表的 `rule_version_id` 是非空外键）。
 
-## 重建库后补录设备建档记录
+## 重建库后补齐设备建档记录
 
 `database/dev/002_demo_metadata_seed.sql` 是直接 `INSERT` 8 台设备的，不经过 `POST /equipment`（S1-E03），所以**新库的 `p2_change_log` 里只有更正、没有「新增」**，设备详情的变更记录时间线缺起点，「首次新增纳入变更历史」这条就退化回未完成。
 
@@ -50,7 +50,7 @@ python .\scripts\backfill_equipment_create_log.py --apply    # 写入 8 条 CREA
 python .\scripts\backfill_equipment_create_log.py --revert    # 按 request_id 前缀撤回
 ```
 
-规则与依据见[数据来源说明](../docs/数据来源说明.md)「2026-11-16 补录建档记录」。要点：`recorded_at` 取 `dim_equipment.created_time`（排在所有更正之前）、`after_value` 取该设备第一条更正的前置快照（即建档时档案全空，不重新构造）、`operator_name` 记「系统初始化」而不写人名、`request_id` 为 `backfill-create-<id>` 可识别可撤回。只补不改，不动既有记录。
+规则与依据见[数据来源说明](../docs/数据来源说明.md)「2026-11-16 补齐建档记录」。要点：`recorded_at` 取 `dim_equipment.created_time`（排在所有更正之前）、`after_value` 取该设备第一条更正的前置快照（即建档时档案全空，不重新构造）、`operator_name` 记「系统初始化」而不写人名、`reason` 统一为「设备档案随一期设备台账导入建立」、`request_id` 为 `backfill-create-<id>`（这批记录后补的唯一技术标识，也是 `--revert` 的删除依据）。只补不改，不动既有记录。
 
 ## 验收脚本的数据库连接
 
