@@ -99,8 +99,8 @@ public final class CostModels {
 
     public static String message(String code) {
         return switch (code) {
-            case CODE_OPENING_COST_MISSING -> "期初只有数量没有金额：流水表暂无成本列，期初总成本待库存模块登记。";
-            case CODE_RECEIPT_AMOUNT_MISSING -> "到货只有数量没有金额：到货单金额未录入或未接入。";
+            case CODE_OPENING_COST_MISSING -> "期初只有数量没有成本金额：请在库存流水登记期初成本，未登记时均价不可得。";
+            case CODE_RECEIPT_AMOUNT_MISSING -> "到货只有数量没有成本金额：请在库存流水登记到货金额，未登记时均价不可得。";
             case CODE_MATERIAL_AMOUNT_MISSING -> "本次投料材料金额未录入，入库成本只能按已知部分入账。";
             case CODE_WORKSHOP1_ENERGY_MISSING -> "车间一能源尚未按日归集，入库成本缺这一部分。";
             case CODE_WORKSHOP2_ENERGY_MISSING -> "车间二能源尚未分摊到本次产出，入库成本缺这一部分。";

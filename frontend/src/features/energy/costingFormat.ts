@@ -86,8 +86,8 @@ export const TRIGGER_TYPE_LABELS: Record<string, string> = {
  * 不该随文案改版而变），那份只能靠这张表翻。两者不可互相替代。</p>
  */
 export const COST_MISSING_LABELS: Record<string, string> = {
-  OPENING_COST_MISSING: '期初只有数量没有金额',
-  RECEIPT_AMOUNT_MISSING: '到货只有数量没有金额',
+  OPENING_COST_MISSING: '期初成本未登记',
+  RECEIPT_AMOUNT_MISSING: '到货成本未登记',
   MATERIAL_AMOUNT_MISSING: '投料金额未录入',
   WORKSHOP1_ENERGY_MISSING: '车间一能源未归集',
   WORKSHOP2_ENERGY_MISSING: '车间二能源未分摊',

@@ -295,12 +295,37 @@ class CostEngineTest {
                 });
     }
 
+    @Test
+    @DisplayName("期初登记了成本：按登记金额入账，均价可用、不再报期初缺项")
+    void openingWithRegisteredCostIsUsable() {
+        CostEngine.Inputs inputs = new CostEngine.Inputs(
+                List.of(PLATE),
+                List.of(movementWithCost(50, 1, null, null, "OPENING", "2026-11-01", "20.000", "1200000.00")),
+                List.of(), List.of(), List.of(), List.of());
+
+        CostEngine.Outcome outcome = CostEngine.replay(inputs);
+
+        CostEngine.MaterialResult plate = material(outcome, 1);
+        assertThat(plate.ledger().get(0).costDeltaYuan()).isEqualByComparingTo("1200000.00");
+        assertThat(plate.ledger().get(0).unitCostYuanPerTon()).isEqualByComparingTo("60000");
+        assertThat(plate.ledger().get(0).missingItems()).isEmpty();
+        assertThat(plate.complete()).isTrue();
+    }
+
     // ---------------------------------------------------------------- 构造器
 
     private static CostEngine.Movement movement(long movementId, long materialId, Long orderId, Long taskId,
                                                 String type, String date, String delta) {
         return new CostEngine.Movement(movementId, materialId, orderId, taskId, type,
-                "TEST", String.valueOf(movementId), LocalDate.parse(date), new BigDecimal(delta), null);
+                "TEST", String.valueOf(movementId), LocalDate.parse(date), new BigDecimal(delta), null, null);
+    }
+
+    /** 期初/到货带登记的金额；其余字段与 {@link #movement} 一致。 */
+    private static CostEngine.Movement movementWithCost(long movementId, long materialId, Long orderId, Long taskId,
+                                                        String type, String date, String delta, String cost) {
+        return new CostEngine.Movement(movementId, materialId, orderId, taskId, type,
+                "TEST", String.valueOf(movementId), LocalDate.parse(date), new BigDecimal(delta), null,
+                new BigDecimal(cost));
     }
 
     private static CostEngine.OutputFact output(long outputId, long materialId, Long taskId, String groupKey,

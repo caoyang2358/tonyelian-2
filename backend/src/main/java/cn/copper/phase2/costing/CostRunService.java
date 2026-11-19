@@ -284,7 +284,8 @@ public class CostRunService {
         List<CostEngine.Movement> movements = movementRows.stream()
                 .map(row -> new CostEngine.Movement(row.movementId(), row.materialId(), row.orderId(),
                         row.taskId(), row.movementType(), row.sourceType(), row.sourceId(),
-                        row.businessDate(), row.quantityDelta(), row.correctsMovementId()))
+                        row.businessDate(), row.quantityDelta(), row.correctsMovementId(),
+                        row.costAmountYuan()))
                 .toList();
 
         Set<Long> movementIds = new LinkedHashSet<>();

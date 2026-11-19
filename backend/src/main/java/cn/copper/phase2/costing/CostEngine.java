@@ -38,10 +38,14 @@ public final class CostEngine {
         }
     }
 
-    /** 一条数量事实。金额不在这里——它由成本规则另行推导。 */
+    /**
+     * 一条数量事实。金额默认不在这里——它由成本规则推导；
+     * {@code costAmountYuan} 只用于期初与到货：这两类没有上游依据，金额必须由库存登记提供。
+     */
     public record Movement(long movementId, long materialId, Long orderId, Long taskId,
                            String movementType, String sourceType, String sourceId,
-                           LocalDate businessDate, BigDecimal quantityDelta, Long correctsMovementId) {
+                           LocalDate businessDate, BigDecimal quantityDelta, Long correctsMovementId,
+                           BigDecimal costAmountYuan) {
     }
 
     /** 铜丝称重引用的领杆份额。 */
@@ -330,9 +334,9 @@ public final class CostEngine {
             return StockValuation.Event.out(key, quantity);
         }
         return switch (movement.movementType()) {
-            case "OPENING" -> StockValuation.Event.inWithUnknownCost(key, quantity,
+            case "OPENING" -> inWithRegisteredCost(movement, key, quantity,
                     CostModels.CODE_OPENING_COST_MISSING);
-            case "PLATE_RECEIPT" -> StockValuation.Event.inWithUnknownCost(key, quantity,
+            case "PLATE_RECEIPT" -> inWithRegisteredCost(movement, key, quantity,
                     CostModels.CODE_RECEIPT_AMOUNT_MISSING);
             case "PRODUCTION_RECEIPT" -> productionReceipt(key, quantity, movement, material, groups,
                     outputByMovement, handoverById, rodUnitCostByMovement,
@@ -342,6 +346,20 @@ public final class CostEngine {
             default -> StockValuation.Event.inWithUnknownCost(key, quantity,
                     CostModels.CODE_COST_CARRY_MISSING);
         };
+    }
+
+    /**
+     * 期初与到货的成本由库存登记提供：登记了就按金额入账，没登记仍按未知处理。
+     *
+     * <p>空与 0 是两件事：空是「还没登记」，0 是「明确为零成本」。前者必须继续报缺项，
+     * 否则缺金额会被当成免费，均价和下游铜丝成本都会偏低。</p>
+     */
+    private static StockValuation.Event inWithRegisteredCost(Movement movement, String key,
+                                                             String quantity, String missingCode) {
+        if (movement.costAmountYuan() == null) {
+            return StockValuation.Event.inWithUnknownCost(key, quantity, missingCode);
+        }
+        return StockValuation.Event.in(key, quantity, movement.costAmountYuan().toPlainString());
     }
 
     /**

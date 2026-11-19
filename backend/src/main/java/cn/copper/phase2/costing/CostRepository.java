@@ -61,7 +61,8 @@ public class CostRepository {
 
     public record MovementRow(long movementId, long materialId, Long orderId, Long taskId,
                               String movementType, String sourceType, String sourceId,
-                              LocalDate businessDate, BigDecimal quantityDelta, Long correctsMovementId) {
+                              LocalDate businessDate, BigDecimal quantityDelta, Long correctsMovementId,
+                              BigDecimal costAmountYuan) {
     }
 
     public record OutputRow(long outputId, long materialId, Long taskId, String groupKey,
@@ -118,7 +119,8 @@ public class CostRepository {
             rs.getLong("movement_id"), rs.getLong("material_id"), nullableLong(rs, "order_id"),
             nullableLong(rs, "task_id"), rs.getString("movement_type"), rs.getString("source_type"),
             rs.getString("source_id"), rs.getDate("business_date").toLocalDate(),
-            rs.getBigDecimal("quantity_delta_ton"), nullableLong(rs, "corrects_movement_id"));
+            rs.getBigDecimal("quantity_delta_ton"), nullableLong(rs, "corrects_movement_id"),
+            rs.getBigDecimal("cost_amount_yuan"));
 
     private static final RowMapper<RunRow> RUN = (rs, rowNum) -> new RunRow(
             rs.getLong("cost_run_id"), nullableLong(rs, "previous_cost_run_id"), rs.getString("status"),
@@ -171,7 +173,8 @@ public class CostRepository {
     public List<MovementRow> movements(Scope scope) {
         StringBuilder sql = new StringBuilder("""
                 SELECT movement_id, material_id, order_id, task_id, movement_type, source_type,
-                       source_id, business_date, quantity_delta_ton, corrects_movement_id
+                       source_id, business_date, quantity_delta_ton, corrects_movement_id,
+                       cost_amount_yuan
                   FROM p2_stock_movement WHERE 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
@@ -194,7 +197,8 @@ public class CostRepository {
         }
         StringBuilder sql = new StringBuilder("""
                 SELECT movement_id, material_id, order_id, task_id, movement_type, source_type,
-                       source_id, business_date, quantity_delta_ton, corrects_movement_id
+                       source_id, business_date, quantity_delta_ton, corrects_movement_id,
+                       cost_amount_yuan
                   FROM p2_stock_movement WHERE movement_id IN (
                 """);
         appendPlaceholders(sql, movementIds.size());
