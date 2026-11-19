@@ -357,7 +357,7 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
       <dl className="en-run-grid">
         <div><dt>成本台账行数</dt><dd className="en-mono">{run.result.ledgerRows}</dd></div>
         <div><dt>订单计费项行数</dt><dd className="en-mono">{run.result.orderItemRows}</dd></div>
-        <div><dt>成本金额合计</dt><dd className="en-mono">{money(run.result.costDeltaYuan)}</dd></div>
+        <div><dt>期末在库价值合计</dt><dd className="en-mono">{money(run.result.costDeltaYuan)}</dd></div>
         <div><dt>订单成本合计</dt><dd className="en-mono">{money(run.result.orderAmountYuan)}</dd></div>
         <div><dt>涉及物料</dt><dd className="en-mono">{run.result.materialCount} 件</dd></div>
         <div>
