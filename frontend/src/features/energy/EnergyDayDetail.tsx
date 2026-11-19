@@ -215,11 +215,13 @@ export function EnergyDayDetail({workshopId, actualDate, onClose}: {
                         </thead>
                         <tbody>
                           {shares.map(share => (
-                            <tr key={share.targetType === 'PUBLIC' ? 'PUBLIC' : `ORDER-${share.orderId}`}>
+                            <tr key={`${share.targetType}-${share.targetKey ?? share.orderId ?? 'PUBLIC'}`}>
                               <td>
                                 {share.targetType === 'PUBLIC'
                                   ? <strong>公共份额</strong>
-                                  : <>{share.orderNo ?? `订单 ${share.orderId}`}</>}
+                                  : share.targetType === 'ROD_STOCK'
+                                    ? <>产出入库 #{share.targetKey}</>
+                                    : <>{share.orderNo ?? `订单 ${share.orderId}`}</>}
                               </td>
                               <td className="en-mono">
                                 {share.qualifiedQuantityTon
@@ -331,7 +333,7 @@ function emptyShareText(data: EnergyWorkshopDayAllocation): string {
     return '当日确认无合格产出，能源按车间费用归集，不产生订单份额。';
   }
   if (data.allocationBasis === 'STOCK_COST') {
-    return '车间一按库存成本归集，本版未接入库存成本台账，暂无分摊结果。';
+    return '车间一按库存成本归集，当日没有逐次称重明细，能源无法归集到产出入库。';
   }
   if (!data.denominator.quantityTon) {
     return '当日未建立分摊分母，暂不能分摊。';

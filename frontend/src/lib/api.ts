@@ -1303,9 +1303,10 @@ export interface EnergyShareEnergy {
   amountYuan: string | null;
 }
 
-/** 一个分摊对象；订单与公共份额同构，靠 targetType 区分。 */
+/** 一个分摊对象；订单、公共份额与产出入库同构，靠 targetType 区分。 */
 export interface EnergyAllocationShare {
   targetType: string;
+  targetKey: string | null;
   orderId: string | null;
   orderNo: string | null;
   qualifiedQuantityTon: string | null;
@@ -1506,6 +1507,7 @@ function mapAllocationShare(value: unknown): EnergyAllocationShare {
   const energies = Array.isArray(row.energies) ? row.energies : [];
   return {
     targetType: str(row.targetType, '分摊对象类型'),
+    targetKey: nullableStr(row.targetKey, '分摊对象标识'),
     orderId: row.orderId == null ? null : id(row.orderId, '订单ID'),
     orderNo: nullableStr(row.orderNo, '订单号'),
     qualifiedQuantityTon: nullableStr(row.qualifiedQuantityTon, '归属合格量'),
