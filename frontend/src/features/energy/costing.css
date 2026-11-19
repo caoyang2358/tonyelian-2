@@ -1,0 +1,41 @@
+/* 库存成本与订单核算两个视图的补充样式。前缀 en-cost- 与其他统计视图同族。
+   表格、抽屉、缺项清单沿用 energy.css 的公共类，这里只补成本特有的几处。 */
+
+.en-cost { padding-top: 16px; }
+
+/* 核算运行横幅：一行说明「这些数字是谁算的」，不做成卡片，避免抢表格的注意力。 */
+.en-cost-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  background: #f7f9f6;
+  border: 1px solid #e6ece4;
+  border-radius: 9px;
+  color: #3a4a42;
+  font-size: 12.5px;
+}
+
+/* 缺项清单在单元格里时不能再带外边距，否则行高会被撑开。 */
+.en-cost-missing { margin: 0; }
+
+/* 说明列允许换行：原因码翻译过来是一句人话，截断就失去意义。 */
+.en-cost-note {
+  max-width: 260px;
+  color: #5a6a61;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* 抽屉标题下的一行：运行号徽标与说明并排，靠 gap 分开而不是靠全角空格。 */
+.en-cost-runline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 缺项徽标与折行明细竖排，避免「金额完整」和缺项挤在同一行。 */
+.en-cost-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

@@ -1577,6 +1577,349 @@ export function mapWorkshopDayAllocation(value: unknown): EnergyWorkshopDayAlloc
   };
 }
 
+// ------------------------------------------------ 库存成本与订单核算（S2-K01—K04）
+
+/**
+ * 成本模块的缺项只有码和中文说明，不带能源缺项那套来源范围。
+ * 说明由后端按码给，前端不再自建一套文案——否则同一个码在页面和接口里两种说法。
+ */
+export interface CostMissingItem { code: string; message: string }
+
+export interface CostRunSummary {
+  costRunId: string | null;
+  /** NOT_RUN 是「还没跑过」，与跑过但失败不是一回事。 */
+  status: string;
+  ruleVersion: string | null;
+  completedAt: string | null;
+}
+
+export type CostMaterialType = 'COPPER_PLATE' | 'COPPER_ROD' | 'FINISHED_WIRE';
+
+export const COST_MATERIAL_TYPES: {code: CostMaterialType; label: string}[] = [
+  {code: 'COPPER_PLATE', label: '铜板'},
+  {code: 'COPPER_ROD', label: '铜杆'},
+  {code: 'FINISHED_WIRE', label: '铜丝'},
+];
+
+/** 一件物料的成本视图。金额与均价为 null 表示「算不出来」，不是「零」。 */
+export interface CostStockItem {
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  materialType: string;
+  specification: string | null;
+  physicalQuantityTon: string;
+  reservedQuantityTon: string;
+  availableQuantityTon: string;
+  knownValueYuan: string;
+  /** 只有完整时才给总额与均价；否则页面必须显示「已知」而不是这个数。 */
+  totalValueYuan: string | null;
+  unitCostYuanPerTon: string | null;
+  knownOnly: boolean;
+  costRunId: string | null;
+  balanceVersion: number;
+  /** 成品铜丝的公共自由池至今没有按规格记账，这三个字段固定为 null。 */
+  freePublicQuantityTon: string | null;
+  freePublicValueYuan: string | null;
+  freePublicUnitCostYuanPerTon: string | null;
+  missingItems: CostMissingItem[];
+}
+
+export interface CostStockPage extends PageResult<CostStockItem> {
+  costRun: CostRunSummary;
+  unitCostBasis: string;
+  missingItems: CostMissingItem[];
+}
+
+export interface CostStockQuery { materialId?: string; materialType?: string; page?: number; pageSize?: number }
+
+/** 一行成本流水：价值怎么流进来的、流到哪去，数量事实仍以库存流水为准。 */
+export interface CostLedgerItem {
+  stockCostLedgerId: string;
+  costRunId: string;
+  materialId: string;
+  orderId: string | null;
+  movementId: string | null;
+  entryType: string;
+  sourceType: string;
+  sourceId: string;
+  shareKey: string;
+  businessDate: string;
+  quantityBasisTon: string;
+  unitCostYuanPerTon: string | null;
+  /** 本行计入库存价值的金额；缺项时只是已知部分。 */
+  costDeltaYuan: string | null;
+  missingItems: CostMissingItem[];
+  missingReason: string | null;
+}
+
+export interface CostLedgerPage extends PageResult<CostLedgerItem> {
+  costRunId: string | null;
+  missingItems?: CostMissingItem[];
+}
+
+export interface CostLedgerQuery {
+  costRunId?: string; materialId?: string; orderId?: string; entryType?: string;
+  from?: string; to?: string; page?: number; pageSize?: number;
+}
+
+/** 一张订单的核算行。profitDisplayable 为 false 时利润必须留空并说明原因。 */
+export interface CostOrderItem {
+  orderId: string;
+  orderNo: string;
+  customerName: string;
+  wireMaterialId: string;
+  requiredQuantityTon: string;
+  dueDate: string;
+  productionResult: string;
+  deliveryResult: string;
+  accountingState: string;
+  contractAmountYuan: string | null;
+  agreedAmountYuan: string | null;
+  amountConfirmed: boolean;
+  /** 已确认的约定金额优先，未确认时退回合同金额，都没有才是 null。 */
+  applicableAmountYuan: string | null;
+  knownCostAmountYuan: string | null;
+  totalCostAmountYuan: string | null;
+  estimatedProfitYuan: string | null;
+  profitDisplayable: boolean;
+  profitBlockedReason: string | null;
+  costItemCount: number;
+  costRunId: string | null;
+  version: number;
+  missingItems: CostMissingItem[];
+}
+
+export interface CostOrderPage extends PageResult<CostOrderItem> {
+  costRun: CostRunSummary;
+  calculationScope: string;
+}
+
+export interface CostOrderQuery { orderId?: string; accountingState?: string; page?: number; pageSize?: number }
+
+/** 订单下的一条计费项：领杆或车间能源，金额即该项计入订单的成本。 */
+export interface CostOrderCostItem {
+  orderCostItemId: string;
+  itemType: string;
+  sourceKey: string;
+  businessDate: string;
+  amountYuan: string | null;
+  stockCostLedgerId: string | null;
+  energyAllocationId: string | null;
+  missingItems: CostMissingItem[];
+}
+
+export interface CostOrderDetail {
+  orderId: string;
+  orderNo: string;
+  customerName: string;
+  wireMaterialId: string;
+  requiredQuantityTon: string;
+  dueDate: string;
+  productionResult: string;
+  deliveryResult: string;
+  accountingState: string;
+  cancelled: boolean;
+  amount: {
+    contractAmountYuan: string | null;
+    agreedAmountYuan: string | null;
+    confirmed: boolean;
+    applicableAmountYuan: string | null;
+  };
+  cost: {knownCostAmountYuan: string | null; totalCostAmountYuan: string | null; costRunId: string | null};
+  costItems: CostOrderCostItem[];
+  missingItems: CostMissingItem[];
+  /** 完整成本仍缺项时为 true：页面据此说明「补齐后重算」而不是「成本为零」。 */
+  recalculationPending: boolean;
+  calculationScope: string;
+  version: number;
+}
+
+function mapCostMissing(value: unknown): CostMissingItem[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new ApiError('成本缺项列表格式不符合接口约定。', 'INVALID_RESPONSE');
+  return value.map((entry: unknown) => {
+    const row = record(entry, '成本缺项');
+    return {code: str(row.code, '缺项代码'), message: str(row.message, '缺项说明')};
+  });
+}
+
+function mapCostRun(value: unknown): CostRunSummary {
+  if (value == null) return {costRunId: null, status: 'NOT_RUN', ruleVersion: null, completedAt: null};
+  const row = record(value, '核算运行');
+  return {
+    costRunId: row.costRunId == null ? null : id(row.costRunId, '核算运行ID'),
+    status: row.status == null ? 'NOT_RUN' : str(row.status, '核算运行状态'),
+    ruleVersion: nullableStr(row.ruleVersion, '规则版本'),
+    completedAt: nullableStr(row.completedAt, '完成时间'),
+  };
+}
+
+export function mapCostStockPage(value: unknown): CostStockPage {
+  const data = record(value, '库存成本');
+  if (!Array.isArray(data.items)) throw new ApiError('库存成本缺少物料列表。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((entry: unknown) => {
+      const row = record(entry, '物料成本');
+      return {
+        materialId: id(row.materialId, '物料ID'),
+        materialCode: str(row.materialCode, '物料编码'),
+        materialName: str(row.materialName, '物料名称'),
+        materialType: str(row.materialType, '物料类型'),
+        specification: optional(row.specification, '规格'),
+        physicalQuantityTon: str(row.physicalQuantityTon, '实物量'),
+        reservedQuantityTon: str(row.reservedQuantityTon, '有效预留'),
+        availableQuantityTon: str(row.availableQuantityTon, '可用量'),
+        knownValueYuan: str(row.knownValueYuan, '已知在库价值'),
+        totalValueYuan: nullableStr(row.totalValueYuan, '总在库价值'),
+        unitCostYuanPerTon: nullableStr(row.unitCostYuanPerTon, '均价'),
+        knownOnly: boolean(row.knownOnly, '仅已知部分'),
+        costRunId: row.costRunId == null ? null : id(row.costRunId, '核算运行ID'),
+        balanceVersion: integer(row.balanceVersion, '余额版本'),
+        freePublicQuantityTon: nullableStr(row.freePublicQuantityTon, '自由公共数量'),
+        freePublicValueYuan: nullableStr(row.freePublicValueYuan, '自由公共价值'),
+        freePublicUnitCostYuanPerTon: nullableStr(row.freePublicUnitCostYuanPerTon, '自由公共均价'),
+        missingItems: mapCostMissing(row.missingItems),
+      };
+    }),
+    page: count(data.page, '页码'),
+    pageSize: count(data.pageSize, '每页条数'),
+    total: count(data.total, '总数'),
+    costRun: mapCostRun(data.costRun),
+    unitCostBasis: str(data.unitCostBasis, '均价口径'),
+    missingItems: mapCostMissing(data.missingItems),
+  };
+}
+
+/**
+ * 成本流水的来源 ID 允许为 0：`source_id` 是 NOT NULL 列，期初与领用这类行没有外部来源，
+ * 落库时就写 0 作为「无来源」的占位。用通用的 id() 会把它判成非法值，
+ * 整页成本流水因此报错——所以这里单独放宽到 0。
+ */
+function costSourceId(value: unknown): string {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === 'string' && value.trim()) return value;
+  throw new ApiError('来源ID缺失或格式有误。', 'INVALID_RESPONSE');
+}
+
+export function mapCostLedgerPage(value: unknown): CostLedgerPage {
+  const data = record(value, '成本流水');
+  if (!Array.isArray(data.items)) throw new ApiError('成本流水缺少明细列表。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((entry: unknown) => {
+      const row = record(entry, '成本流水行');
+      return {
+        stockCostLedgerId: id(row.stockCostLedgerId, '成本流水ID'),
+        costRunId: id(row.costRunId, '核算运行ID'),
+        materialId: id(row.materialId, '物料ID'),
+        orderId: row.orderId == null ? null : id(row.orderId, '订单ID'),
+        movementId: row.movementId == null ? null : id(row.movementId, '库存流水ID'),
+        entryType: str(row.entryType, '流水类型'),
+        sourceType: str(row.sourceType, '来源类型'),
+        sourceId: costSourceId(row.sourceId),
+        shareKey: str(row.shareKey, '份额键'),
+        businessDate: str(row.businessDate, '业务日期'),
+        quantityBasisTon: str(row.quantityBasisTon, '数量依据'),
+        unitCostYuanPerTon: nullableStr(row.unitCostYuanPerTon, '单价'),
+        costDeltaYuan: nullableStr(row.costDeltaYuan, '本行金额'),
+        missingItems: mapCostMissing(row.missingItems),
+        missingReason: nullableStr(row.missingReason, '缺项说明'),
+      };
+    }),
+    page: count(data.page, '页码'),
+    pageSize: count(data.pageSize, '每页条数'),
+    total: count(data.total, '总数'),
+    costRunId: data.costRunId == null ? null : id(data.costRunId, '核算运行ID'),
+    missingItems: mapCostMissing(data.missingItems),
+  };
+}
+
+export function mapCostOrderPage(value: unknown): CostOrderPage {
+  const data = record(value, '订单核算');
+  if (!Array.isArray(data.items)) throw new ApiError('订单核算缺少列表。', 'INVALID_RESPONSE');
+  return {
+    items: data.items.map((entry: unknown) => {
+      const row = record(entry, '订单核算行');
+      return {
+        orderId: id(row.orderId, '订单ID'),
+        orderNo: str(row.orderNo, '订单号'),
+        customerName: str(row.customerName, '客户'),
+        wireMaterialId: id(row.wireMaterialId, '成品物料ID'),
+        requiredQuantityTon: str(row.requiredQuantityTon, '需求吨数'),
+        dueDate: str(row.dueDate, '交期'),
+        productionResult: str(row.productionResult, '生产结果'),
+        deliveryResult: str(row.deliveryResult, '交付结果'),
+        accountingState: str(row.accountingState, '核算状态'),
+        contractAmountYuan: nullableStr(row.contractAmountYuan, '合同金额'),
+        agreedAmountYuan: nullableStr(row.agreedAmountYuan, '约定金额'),
+        amountConfirmed: boolean(row.amountConfirmed, '金额是否确认'),
+        applicableAmountYuan: nullableStr(row.applicableAmountYuan, '适用金额'),
+        knownCostAmountYuan: nullableStr(row.knownCostAmountYuan, '已知成本'),
+        totalCostAmountYuan: nullableStr(row.totalCostAmountYuan, '完整成本'),
+        estimatedProfitYuan: nullableStr(row.estimatedProfitYuan, '估算盈亏'),
+        profitDisplayable: boolean(row.profitDisplayable, '是否可展示盈亏'),
+        profitBlockedReason: nullableStr(row.profitBlockedReason, '盈亏缺项原因'),
+        costItemCount: integer(row.costItemCount, '计费项数量'),
+        costRunId: row.costRunId == null ? null : id(row.costRunId, '核算运行ID'),
+        version: integer(row.version, '版本'),
+        missingItems: mapCostMissing(row.missingItems),
+      };
+    }),
+    page: count(data.page, '页码'),
+    pageSize: count(data.pageSize, '每页条数'),
+    total: count(data.total, '总数'),
+    costRun: mapCostRun(data.costRun),
+    calculationScope: str(data.calculationScope, '核算范围'),
+  };
+}
+
+export function mapCostOrderDetail(value: unknown): CostOrderDetail {
+  const data = record(value, '订单核算依据');
+  const amount = record(data.amount, '金额块');
+  const cost = record(data.cost, '成本块');
+  if (!Array.isArray(data.costItems)) throw new ApiError('订单核算依据缺少计费项列表。', 'INVALID_RESPONSE');
+  return {
+    orderId: id(data.orderId, '订单ID'),
+    orderNo: str(data.orderNo, '订单号'),
+    customerName: str(data.customerName, '客户'),
+    wireMaterialId: id(data.wireMaterialId, '成品物料ID'),
+    requiredQuantityTon: str(data.requiredQuantityTon, '需求吨数'),
+    dueDate: str(data.dueDate, '交期'),
+    productionResult: str(data.productionResult, '生产结果'),
+    deliveryResult: str(data.deliveryResult, '交付结果'),
+    accountingState: str(data.accountingState, '核算状态'),
+    cancelled: boolean(data.cancelled, '是否取消'),
+    amount: {
+      contractAmountYuan: nullableStr(amount.contractAmountYuan, '合同金额'),
+      agreedAmountYuan: nullableStr(amount.agreedAmountYuan, '约定金额'),
+      confirmed: boolean(amount.confirmed, '金额是否确认'),
+      applicableAmountYuan: nullableStr(amount.applicableAmountYuan, '适用金额'),
+    },
+    cost: {
+      knownCostAmountYuan: nullableStr(cost.knownCostAmountYuan, '已知成本'),
+      totalCostAmountYuan: nullableStr(cost.totalCostAmountYuan, '完整成本'),
+      costRunId: cost.costRunId == null ? null : id(cost.costRunId, '核算运行ID'),
+    },
+    costItems: data.costItems.map((entry: unknown) => {
+      const row = record(entry, '订单计费项');
+      return {
+        orderCostItemId: id(row.orderCostItemId, '计费项ID'),
+        itemType: str(row.itemType, '计费项类型'),
+        sourceKey: str(row.sourceKey, '来源标识'),
+        businessDate: str(row.businessDate, '业务日期'),
+        amountYuan: nullableStr(row.amountYuan, '金额'),
+        stockCostLedgerId: row.stockCostLedgerId == null ? null : id(row.stockCostLedgerId, '成本流水ID'),
+        energyAllocationId: row.energyAllocationId == null ? null : id(row.energyAllocationId, '能源分摊ID'),
+        missingItems: mapCostMissing(row.missingItems),
+      };
+    }),
+    missingItems: mapCostMissing(data.missingItems),
+    recalculationPending: boolean(data.recalculationPending, '是否待补算'),
+    calculationScope: str(data.calculationScope, '核算范围'),
+    version: integer(data.version, '版本'),
+  };
+}
+
 export const api = {
   equipment: (query: EquipmentQuery = {}, signal?: AbortSignal) => requestApi(`/api/v1/equipment${queryString(query)}`, mapEquipmentPage, {signal}),
   equipmentDetail: (equipmentId: string, signal?: AbortSignal) => requestApi(`/api/v1/equipment/${encodeURIComponent(equipmentId)}`, mapEquipmentDetail, {signal}),
@@ -1791,6 +2134,42 @@ export const api = {
   energyDayAllocation: (workshopId: string, actualDate: string, signal?: AbortSignal) =>
     requestApi(`/api/v1/energy/workshops/${encodeURIComponent(workshopId)}`
       + `/days/${encodeURIComponent(actualDate)}/allocations`, mapWorkshopDayAllocation, {signal}),
+  /** S2-K01 物料成本视图。没有核算运行时仍返回物料与数量，金额与均价为空。 */
+  costingStocks: (query: CostStockQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.materialId) params.set('materialId', query.materialId);
+    if (query.materialType) params.set('materialType', query.materialType);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/costing/stocks${text ? `?${text}` : ''}`, mapCostStockPage, {signal});
+  },
+  /** S2-K02 成本流水。省略 costRunId 时取最近一次已提交运行。 */
+  costingStockLedger: (query: CostLedgerQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.costRunId) params.set('costRunId', query.costRunId);
+    if (query.materialId) params.set('materialId', query.materialId);
+    if (query.orderId) params.set('orderId', query.orderId);
+    if (query.entryType) params.set('entryType', query.entryType);
+    if (query.from) params.set('from', query.from);
+    if (query.to) params.set('to', query.to);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    return requestApi(`/api/v1/costing/stock-ledger?${params.toString()}`, mapCostLedgerPage, {signal});
+  },
+  /** S2-K03 订单核算列表。利润是否可展示由后端判定，前端不改写这个结论。 */
+  costingOrders: (query: CostOrderQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.orderId) params.set('orderId', query.orderId);
+    if (query.accountingState) params.set('accountingState', query.accountingState);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize));
+    const text = params.toString();
+    return requestApi(`/api/v1/costing/orders${text ? `?${text}` : ''}`, mapCostOrderPage, {signal});
+  },
+  /** S2-K04 单订单核算依据：计费项、来源引用与缺项。 */
+  costingOrderDetail: (orderId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/costing/orders/${encodeURIComponent(orderId)}`, mapCostOrderDetail, {signal}),
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),
