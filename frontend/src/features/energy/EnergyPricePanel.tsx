@@ -92,7 +92,10 @@ export function EnergyPricePanel() {
       // 匹配要能源、车间、用能日三者齐备。能源复用列表筛选的那个值——接口的 energyType
       // 同时作用于列表与匹配，分开设两个下拉必然出现"列表看电、匹配算水"的矛盾。
       actualDate: matchDate && matchWorkshop && filters.energyType ? matchDate : undefined,
-      workshopId: matchDate && matchWorkshop && filters.energyType ? matchWorkshop : undefined,
+      // 通用价不属于任何车间：范围选通用时不能再带 workshopId，
+      // 否则后端会按「通用 + 指定车间」判为互斥参数而拒绝整个请求。
+      workshopId: matchDate && matchWorkshop && filters.energyType && filters.scope !== 'GENERAL'
+        ? matchWorkshop : undefined,
       page: nextPage,
       pageSize: 20,
     }, current.signal)
@@ -113,6 +116,7 @@ export function EnergyPricePanel() {
   // 列表为空时必须是「筛选没命中」还是「一条都没录过」：两者给同一句话会误导——
   // 上面按用能日能查到价，下面却说「尚未录入」，明显自相矛盾。
   const scopedByMatch = Boolean(matchWorkshop && matchDate && filters.energyType);
+  const filtersByWorkshop = scopedByMatch && filters.scope !== 'GENERAL';
   const hasFilter = Boolean(filters.energyType || filters.scope || filters.effectiveFrom
     || filters.effectiveTo || filters.includeHistory || scopedByMatch);
   const workshopName = useMemo(
@@ -169,6 +173,10 @@ export function EnergyPricePanel() {
         </button>
       </div>
 
+      <p className="en-hint en-scope-note">
+        「通用」对所有车间生效，作为兜底价；「车间专用」只对所选车间生效，匹配时优先于通用价。
+      </p>
+
       <div className="en-match">
         <p className="en-match-title">按实际用能日查适用价</p>
         <div className="en-match-controls">
@@ -211,7 +219,9 @@ export function EnergyPricePanel() {
         </div>
         {matchWorkshop && matchDate && filters.energyType && (
           <p className="en-match-hint">
-            选定车间后，下方列表只显示该车间的价格；点「清除」恢复全部车间。
+            {filters.scope === 'GENERAL'
+              ? '当前范围选的是通用价，下方列表不再按车间过滤；要只看该车间的专价，把「价格范围」改为车间专用。'
+              : '选定车间后，下方列表只显示该车间的价格；点「清除」恢复全部车间。'}
           </p>
         )}
       </div>
@@ -245,7 +255,7 @@ export function EnergyPricePanel() {
                   ? <>
                       当前筛选条件下没有价格记录。上方的适用价按实际用能日单独匹配，不受这里筛选影响；
                       可放宽能源类型、价格范围或生效日
-                      {scopedByMatch ? '，或点「清除」恢复全部车间' : ''}后再看。
+                      {filtersByWorkshop ? '，或点「清除」恢复全部车间' : ''}后再看。
                     </>
                   : '尚未录入价格。建议先建通用价，再按车间细化；没有价格时，用能记录停留在待核算。'}
               </td></tr>
