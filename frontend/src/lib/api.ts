@@ -1735,6 +1735,173 @@ export interface CostOrderDetail {
   version: number;
 }
 
+/** 一次补算的受影响范围。空数组与空日期都表示「不限定」，不是「没有」。 */
+export interface CostAffectedScope {
+  materialIds: string[];
+  orderIds: string[];
+  from: string | null;
+  to: string | null;
+  /** 只记条数：来源引用是调用方的追溯线索，页面不展开内部结构。 */
+  sourceReferenceCount: number;
+}
+
+/** 快照里一件物料的期末状态。金额为 null 表示算不出，不是零。 */
+export interface CostSnapshotMaterial {
+  materialId: string;
+  endQuantityTon: string | null;
+  knownValueYuan: string | null;
+  complete: boolean;
+  /** 快照只存缺项代码，没有说明文字——由页面按码翻译。 */
+  missingItems: string[];
+}
+
+/** 运行读到的输入规模。用来解释「这次为什么这个结果」，不是业务指标。 */
+export interface CostInputSnapshot {
+  ruleVersion: string | null;
+  movementCount: number | null;
+  outputCount: number | null;
+  plateInputCount: number | null;
+  handoverCount: number | null;
+  valuationOrder: string | null;
+  materials: CostSnapshotMaterial[];
+}
+
+/**
+ * K05 回执。本版是同步补算：返回时结果已提交，`status` 只可能是 `COMPLETED` 或
+ * `INCOMPLETE`，不会有 `RUNNING`，也不会出现 `FAILED`。
+ */
+export interface CostRecalcReceipt {
+  costRunId: string;
+  previousCostRunId: string | null;
+  status: string;
+  ruleVersion: string;
+  affectedScope: CostAffectedScope;
+  missingItems: CostMissingItem[];
+  ledgerRows: number;
+  orderItemRows: number;
+  /** 本次写入的分摊行数；为 0 表示这次没有可分摊的日区间。 */
+  energyAllocationRows: number;
+  /** 请求里带了并发版本参数才非 null；本版没有来源修订号，值恒为 false。 */
+  sourceRevisionChecked: boolean | null;
+  note: string;
+}
+
+/** K06 运行详情。 */
+export interface CostRunDetail {
+  costRunId: string;
+  previousCostRunId: string | null;
+  nextCostRunId: string | null;
+  status: string;
+  /** 只有 FAILED 与 INCOMPLETE 为 true；同步补算下 FAILED 不会出现。 */
+  retryable: boolean;
+  triggerType: string;
+  ruleVersion: string;
+  affectedScope: CostAffectedScope;
+  inputSnapshot: CostInputSnapshot;
+  missingItems: CostMissingItem[];
+  reason: string | null;
+  operatorName: string;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  version: number;
+  result: {
+    ledgerRows: number;
+    costDeltaYuan: string | null;
+    missingRows: number;
+    materialCount: number;
+    orderItemRows: number;
+    orderAmountYuan: string | null;
+  };
+}
+
+function mapCostAffectedScope(value: unknown): CostAffectedScope {
+  if (value == null) return {materialIds: [], orderIds: [], from: null, to: null, sourceReferenceCount: 0};
+  const row = record(value, '补算范围');
+  return {
+    materialIds: Array.isArray(row.materialIds) ? row.materialIds.map(entry => id(entry, '物料ID')) : [],
+    orderIds: Array.isArray(row.orderIds) ? row.orderIds.map(entry => id(entry, '订单ID')) : [],
+    from: nullableStr(row.from, '起始日期'),
+    to: nullableStr(row.to, '结束日期'),
+    sourceReferenceCount: Array.isArray(row.sourceReferences) ? row.sourceReferences.length : 0,
+  };
+}
+
+function mapInputSnapshot(value: unknown): CostInputSnapshot {
+  const row = value == null ? {} : record(value, '输入快照');
+  return {
+    ruleVersion: nullableStr(row.ruleVersion, '规则版本'),
+    movementCount: row.movementCount == null ? null : count(row.movementCount, '流水条数'),
+    outputCount: row.outputCount == null ? null : count(row.outputCount, '产出条数'),
+    plateInputCount: row.plateInputCount == null ? null : count(row.plateInputCount, '投料条数'),
+    handoverCount: row.handoverCount == null ? null : count(row.handoverCount, '交接条数'),
+    valuationOrder: nullableStr(row.valuationOrder, '计价顺序'),
+    materials: Array.isArray(row.materials) ? row.materials.map((entry: unknown) => {
+      const item = record(entry, '快照物料');
+      return {
+        materialId: id(item.materialId, '物料ID'),
+        endQuantityTon: nullableStr(item.endQuantityTon, '期末数量'),
+        knownValueYuan: nullableStr(item.knownValueYuan, '已知价值'),
+        complete: boolean(item.complete, '是否完整'),
+        // 快照写的是纯代码数组；兼容写成对象的情况，但不额外编造说明文字。
+        missingItems: Array.isArray(item.missingItems)
+          ? item.missingItems.map(code => typeof code === 'string'
+            ? code : str(record(code, '快照缺项').code, '缺项代码'))
+          : [],
+      };
+    }) : [],
+  };
+}
+
+function mapCostRecalcReceipt(value: unknown): CostRecalcReceipt {
+  const data = record(value, '补算回执');
+  return {
+    costRunId: id(data.costRunId, '核算运行ID'),
+    previousCostRunId: data.previousCostRunId == null ? null : id(data.previousCostRunId, '上一次运行ID'),
+    status: str(data.status, '运行状态'),
+    ruleVersion: str(data.ruleVersion, '规则版本'),
+    affectedScope: mapCostAffectedScope(data.affectedScope),
+    missingItems: mapCostMissing(data.missingItems),
+    ledgerRows: integer(data.ledgerRows, '成本台账行数'),
+    orderItemRows: integer(data.orderItemRows, '订单计费项行数'),
+    energyAllocationRows: integer(data.energyAllocationRows, '分摊行数'),
+    sourceRevisionChecked: data.sourceRevisionChecked == null
+      ? null : boolean(data.sourceRevisionChecked, '来源修订号是否核过'),
+    note: str(data.note, '结果说明'),
+  };
+}
+
+export function mapCostRunDetail(value: unknown): CostRunDetail {
+  const data = record(value, '核算运行');
+  const result = data.result == null ? {} : record(data.result, '运行结果');
+  return {
+    costRunId: id(data.costRunId, '核算运行ID'),
+    previousCostRunId: data.previousCostRunId == null ? null : id(data.previousCostRunId, '上一次运行ID'),
+    nextCostRunId: data.nextCostRunId == null ? null : id(data.nextCostRunId, '下一次运行ID'),
+    status: str(data.status, '运行状态'),
+    retryable: boolean(data.retryable, '是否可重试'),
+    triggerType: str(data.triggerType, '触发方式'),
+    ruleVersion: str(data.ruleVersion, '规则版本'),
+    affectedScope: mapCostAffectedScope(data.affectedScope),
+    inputSnapshot: mapInputSnapshot(data.inputSnapshot),
+    missingItems: mapCostMissing(data.missingItems),
+    reason: nullableStr(data.reason, '补算原因'),
+    operatorName: str(data.operatorName, '经办人'),
+    requestedAt: str(data.requestedAt, '请求时间'),
+    startedAt: nullableStr(data.startedAt, '开始时间'),
+    completedAt: nullableStr(data.completedAt, '完成时间'),
+    version: integer(data.version, '版本'),
+    result: {
+      ledgerRows: integer(result.ledgerRows, '台账行数'),
+      costDeltaYuan: nullableStr(result.costDeltaYuan, '成本金额'),
+      missingRows: integer(result.missingRows, '缺项行数'),
+      materialCount: integer(result.materialCount, '物料数'),
+      orderItemRows: integer(result.orderItemRows, '计费项行数'),
+      orderAmountYuan: nullableStr(result.orderAmountYuan, '订单成本合计'),
+    },
+  };
+}
+
 function mapCostMissing(value: unknown): CostMissingItem[] {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new ApiError('成本缺项列表格式不符合接口约定。', 'INVALID_RESPONSE');
@@ -2170,6 +2337,20 @@ export const api = {
   /** S2-K04 单订单核算依据：计费项、来源引用与缺项。 */
   costingOrderDetail: (orderId: string, signal?: AbortSignal) =>
     requestApi(`/api/v1/costing/orders/${encodeURIComponent(orderId)}`, mapCostOrderDetail, {signal}),
+  /**
+   * S2-K05 受控补算。影响范围由后端沿真实引用推导，这里只能收窄范围：
+   * 范围字段必须放在 `requestedScope` 里，顶层传 from/to 不会被读取（会静默算全区间）。
+   */
+  costingRecalculate: (body: {
+    requestId?: string;
+    operatorName: string;
+    reason: string;
+    requestedScope?: {materialIds?: string[]; orderIds?: string[]; from?: string; to?: string};
+  }, signal?: AbortSignal) =>
+    requestApi('/api/v1/costing/recalculations', mapCostRecalcReceipt, {method: 'POST', body, signal}),
+  /** S2-K06 运行详情。没有运行列表接口，只能按运行号查。 */
+  costingRun: (costRunId: string, signal?: AbortSignal) =>
+    requestApi(`/api/v1/costing/runs/${encodeURIComponent(costRunId)}`, mapCostRunDetail, {signal}),
   overview: (signal?: AbortSignal) => fetchApi('/api/v1/bootstrap/overview', mapOverview, signal),
   live: (signal?: AbortSignal) => fetchApi('/api/v1/health/live', mapHealth, signal),
   ready: (signal?: AbortSignal) => fetchApi('/api/v1/health/ready', mapHealth, signal),

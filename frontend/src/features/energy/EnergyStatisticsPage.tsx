@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Page } from '../../components/Icon';
 import { CostingOrdersPanel } from './CostingOrdersPanel';
+import { CostingRunsPanel } from './CostingRunsPanel';
 import { CostingStocksPanel } from './CostingStocksPanel';
 import { EnergyPricePanel } from './EnergyPricePanel';
 import { EnergyTotalsPanel } from './EnergyTotalsPanel';
@@ -9,15 +10,17 @@ import './energy.css';
 /**
  * 系统二 · 生产与能源统计。
  *
- * <p>视图划分按《页面与交互规格》第 1 节：总量统计、订单核算、库存成本、能源价格。
- * 每日分摊不单独占页签——它是总量的详情，从某车间某日点进去看。</p>
+ * <p>视图划分按《页面与交互规格》第 1 节：总量统计、订单核算、库存成本、能源价格，
+ * 外加核算运行。每日分摊不单独占页签——它是总量的详情，从某车间某日点进去看。</p>
  *
- * <p>四个视图背后都是真实接口：E01/E02 用量与日来源、E03 当日分摊、E04—E06 价格、
- * K01/K02 库存成本、K03/K04 订单核算。补算（K05/K06）暂时只在接口层，没有页面入口——
- * 「补算」是对全区间重跑一次成本，误点的代价比少一个按钮大，等运行查询与失败重试一起做。</p>
+ * <p>五个视图背后都是真实接口：E01/E02 用量与日来源、E03 当日分摊、E04—E06 价格、
+ * K01/K02 库存成本、K03/K04 订单核算、K05/K06 补算与运行查询。</p>
+ *
+ * <p>补算放在独立页签而不是塞进订单核算：它对全区间重算一次成本，有副作用，
+ * 且需要单独写清「同步执行、无发布指针、来源修订号未追踪」这三条边界。</p>
  */
 
-type ViewId = 'totals' | 'costing' | 'stock' | 'price';
+type ViewId = 'totals' | 'costing' | 'stock' | 'price' | 'runs';
 
 interface View {
   id: ViewId;
@@ -48,7 +51,22 @@ const VIEWS: View[] = [
     label: '能源价格',
     hint: '通用与车间专用单价、按用能日生效',
   },
+  {
+    id: 'runs',
+    label: '核算运行',
+    hint: '触发受控补算，按运行号查看状态、受影响范围与输入快照',
+  },
 ];
+
+function renderView(view: ViewId) {
+  switch (view) {
+    case 'totals': return <EnergyTotalsPanel />;
+    case 'costing': return <CostingOrdersPanel />;
+    case 'stock': return <CostingStocksPanel />;
+    case 'price': return <EnergyPricePanel />;
+    case 'runs': return <CostingRunsPanel />;
+  }
+}
 
 export interface EnergyStatisticsPageProps {
   item: {id: Exclude<Page, 'equipment'>; label: string; description: string; features: string[]};
@@ -92,13 +110,7 @@ export function EnergyStatisticsPage({item}: EnergyStatisticsPageProps) {
               回到总量统计
             </button>
           </div>
-        : view === 'totals'
-          ? <EnergyTotalsPanel />
-          : view === 'costing'
-            ? <CostingOrdersPanel />
-            : view === 'stock'
-              ? <CostingStocksPanel />
-              : <EnergyPricePanel />}
+        : renderView(view)}
     </section>
   );
 }

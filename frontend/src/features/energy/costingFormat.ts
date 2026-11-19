@@ -74,6 +74,33 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
   FAILED: '失败',
 };
 
+/** 运行是怎么起来的。本版只有手工补算，其余留给后续触发方式。 */
+export const TRIGGER_TYPE_LABELS: Record<string, string> = {
+  MANUAL_RECALCULATION: '手工补算',
+};
+
+/**
+ * 缺项码的短名。
+ *
+ * <p>完整说明由后端随缺项一起给，但**输入快照里只存代码**（快照是历史记录，
+ * 不该随文案改版而变），那份只能靠这张表翻。两者不可互相替代。</p>
+ */
+export const COST_MISSING_LABELS: Record<string, string> = {
+  OPENING_COST_MISSING: '期初只有数量没有金额',
+  RECEIPT_AMOUNT_MISSING: '到货只有数量没有金额',
+  MATERIAL_AMOUNT_MISSING: '投料金额未录入',
+  WORKSHOP1_ENERGY_MISSING: '车间一能源未归集',
+  WORKSHOP2_ENERGY_MISSING: '车间二能源未分摊',
+  ROD_COST_MISSING: '领杆成本未关联',
+  CORRECTION_COST_MISSING: '更正成本依据缺失',
+  ORDER_ATTRIBUTION_MISSING: '领用未归属订单',
+  PUBLIC_POOL_NOT_TRACKED: '公共成品池未记账',
+  SOURCE_REVISION_NOT_TRACKED: '来源修订号未追踪',
+  COST_CARRY_MISSING: '上游成本断链',
+  COST_RUN_MISSING: '尚无核算运行',
+  QUANTITY_MISMATCH: '数量与余额不一致',
+};
+
 const numberFormat = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,

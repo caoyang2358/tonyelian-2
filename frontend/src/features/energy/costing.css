@@ -39,3 +39,127 @@
 
 /* 缺项徽标与折行明细竖排，避免「金额完整」和缺项挤在同一行。 */
 .en-cost-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* ---------------------------------------------------------- 核算运行视图 */
+
+/* 长段说明用块级，不能复用 .en-notice（那是 flex，面向「提示 + 按钮」）。 */
+.en-run-note {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px solid #cfe4d7;
+  border-radius: 8px;
+  background: #eef6f1;
+  color: #245a43;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.en-run-note b { font-weight: 600; }
+
+/* 补算表单做成一个区块：它是有副作用的操作，不该和查询区混在一起。 */
+.en-run-form {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #e6ece4;
+  border-radius: 12px;
+  background: #fbfcfa;
+}
+
+.en-run-form-head h3 { margin: 0 0 4px; font-size: 14px; }
+.en-run-form-head p { margin: 0 0 12px; color: #5a6a61; font-size: 12.5px; line-height: 1.6; }
+
+/* 自适应列：窗口窄时自动降为单列，不出现横向滚动。 */
+.en-run-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 14px;
+  align-items: start;
+}
+
+.en-run-advanced {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8df;
+}
+.en-run-advanced > summary {
+  cursor: pointer;
+  color: #3a4a42;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+.en-run-advanced > .en-hint { display: block; margin-top: 8px; }
+
+.en-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+/* 二次确认按钮要比普通主按钮更重：这一步会新增一个运行记录。 */
+.en-run-confirm {
+  background: #b4541f;
+  border-color: #b4541f;
+  color: #fff;
+}
+.en-run-confirm:hover:not(:disabled) { background: #9d4616; border-color: #9d4616; }
+
+/* 回执：成功也要带缺项，所以用绿色底只用来说明「写进去了」，不表示「算全了」。 */
+.en-run-receipt {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #cfe4d7;
+  border-radius: 10px;
+  background: #f3f9f5;
+}
+.en-run-receipt > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.en-run-receipt > .en-hint { display: block; margin: 4px 0 0; }
+
+/* 键值网格：标签在上、值在下，长值（原因、范围）撑满一行。 */
+.en-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 16px;
+  margin: 0 0 12px;
+}
+.en-run-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.en-run-grid dt { color: #7b8a82; font-size: 11.5px; }
+.en-run-grid dd { margin: 0; color: #24312b; font-size: 13px; word-break: break-word; }
+.en-run-grid-wide { grid-column: 1 / -1; }
+
+.en-run-lookup { margin-top: 22px; }
+
+.en-run-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #e6ece4;
+  border-radius: 12px;
+  background: #fff;
+}
+.en-run-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.en-run-card-head h3 { margin: 0 0 6px; font-size: 15px; }
+.en-run-links { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 12.5px; }
+
+.en-run-subtitle {
+  margin: 16px 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3a4a42;
+  letter-spacing: 0.02em;
+}
+
+.en-run-gaps { margin: 10px 0 0; }
+
