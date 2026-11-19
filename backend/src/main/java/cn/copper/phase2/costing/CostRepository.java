@@ -105,6 +105,11 @@ public class CostRepository {
                               LocalDate businessDate, BigDecimal amountYuan, String missingItems) {
     }
 
+    /** 成品直接归属的有效份额；{@code effectiveTon} 已扣除释放回公共的部分。 */
+    public record FinishedAllocationRow(long allocationId, long orderId, long materialId,
+                                        long outputId, BigDecimal effectiveTon) {
+    }
+
     private static final RowMapper<MaterialRow> MATERIAL = (rs, rowNum) -> new MaterialRow(
             rs.getLong("material_id"), rs.getString("material_code"), rs.getString("material_name"),
             rs.getString("material_type"), rs.getString("specification"));
@@ -530,9 +535,10 @@ public class CostRepository {
     /**
      * 成品直接归属订单、但本次运行没有任何「成品原料成本」计费项的订单。
      *
-     * <p>本版订单计费项只发布 {@code ROD_ISSUE} 与 {@code WORKSHOP_ENERGY}，
-     * {@code PUBLIC_FINISHED} 没有写入方（接口清单 4.4）。这类订单的成本里缺了归属成品的原料部分，
-     * 查询侧必须如实报缺项，不能把只有能源费的金额当成完整成本、据此算出虚高利润。</p>
+     * <p>本版订单计费项发布 {@code ROD_ISSUE}、{@code WORKSHOP_ENERGY} 与 {@code PUBLIC_FINISHED}
+     * 三类。成品直接归属由 {@code PUBLIC_FINISHED} 按归属重量带入产出入库成本；只有找不到
+     * 该次产出的入库估值时才会命中这里，查询侧必须如实报缺项，不能把只有能源费的金额
+     * 当成完整成本、据此算出虚高利润。</p>
      */
     public Set<Long> ordersWithUncoveredDirectOutput(long costRunId) {
         return new LinkedHashSet<>(jdbc.queryForList("""
@@ -545,6 +551,34 @@ public class CostRepository {
                           WHERE i.cost_run_id = ? AND i.order_id = fa.order_id
                             AND i.item_type IN ('ROD_ISSUE', 'PUBLIC_FINISHED'))
                 """, Long.class, costRunId));
+    }
+
+    /**
+     * 本次回放涉及的成品直接归属。
+     *
+     * <p>只取尚未释放的有效份额：减量、取消会把未交付部分释放回公共池，
+     * 那部分不能再算进订单成本。释放量按重量扣，成本随重量同比例退出。</p>
+     */
+    public List<FinishedAllocationRow> directOutputAllocations(Collection<Long> outputIds) {
+        if (outputIds == null || outputIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", outputIds.stream().map(id -> "?").toList());
+        return jdbc.query("""
+                SELECT finished_allocation_id, order_id, material_id, output_id,
+                       allocated_quantity_ton, released_quantity_ton
+                  FROM p2_finished_allocation
+                 WHERE source_type = 'DIRECT_OUTPUT'
+                   AND output_id IN (%s)
+                   AND allocated_quantity_ton > released_quantity_ton
+                 ORDER BY finished_allocation_id
+                """.formatted(placeholders),
+                (rs, rowNum) -> new FinishedAllocationRow(
+                        rs.getLong("finished_allocation_id"), rs.getLong("order_id"),
+                        rs.getLong("material_id"), rs.getLong("output_id"),
+                        rs.getBigDecimal("allocated_quantity_ton")
+                                .subtract(rs.getBigDecimal("released_quantity_ton"))),
+                outputIds.toArray());
     }
 
     public List<OrderItemRow> orderItems(long costRunId, long orderId) {

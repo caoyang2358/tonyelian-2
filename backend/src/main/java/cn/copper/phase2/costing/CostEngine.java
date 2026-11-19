@@ -81,6 +81,24 @@ public final class CostEngine {
     }
 
     /**
+     * 成品直接归属订单。
+     *
+     * <p>成本口径：该次产出入库成本 × （归属重量 ÷ 该次合格量）。与验收文档第 4 节
+     * 「同次合格 10 吨、总成本 60 万，A 归属 8 吨、公共 2 吨 → A 48 万、公共 12 万」一致。
+     * 归属只是成本份额的转移，不再产生一次实物入库。</p>
+     *
+     * @param allocatedTon 有效归属量（已扣除释放回公共的部分）
+     */
+    public record FinishedAllocationFact(long allocationId, long orderId, long materialId,
+                                         long outputId, BigDecimal allocatedTon) {
+    }
+
+    /** 一次铜丝产出入库的估值结果，用于按归属重量拆成本。 */
+    private record WireReceipt(long movementId, LocalDate businessDate, BigDecimal quantityTon,
+                               BigDecimal costYuan, boolean complete, List<String> missingItems) {
+    }
+
+    /**
      * 待写入的一行成本流水。
      *
      * @param costDeltaYuan 本行计入库存价值的金额，有符号：入库为正、出库为负。
@@ -112,6 +130,14 @@ public final class CostEngine {
     }
 
     public static Outcome replay(Inputs inputs) {
+        return replay(inputs, List.of());
+    }
+
+    /**
+     * @param finishedAllocations 成品直接归属事实；为空时不生成 {@code PUBLIC_FINISHED} 计费项，
+     *                            由查询侧按 {@code DIRECT_OUTPUT_COST_NOT_COVERED} 报缺项。
+     */
+    public static Outcome replay(Inputs inputs, List<FinishedAllocationFact> finishedAllocations) {
         Map<Long, Material> materials = new LinkedHashMap<>();
         inputs.materials().forEach(material -> materials.put(material.materialId(), material));
 
@@ -156,6 +182,7 @@ public final class CostEngine {
 
         List<MaterialResult> results = new ArrayList<>();
         List<OrderDraft> orderDrafts = new ArrayList<>();
+        Map<Long, WireReceipt> wireReceiptByOutput = new HashMap<>();
         LinkedHashSet<String> runMissing = new LinkedHashSet<>();
         boolean runComplete = true;
 
@@ -199,6 +226,18 @@ public final class CostEngine {
                         CostModels.amount(signed), valued.missingItems());
                 ledger.add(draft);
 
+                // 铜丝产出入库的本次估值留一份：成品归属要按「归属重量 ÷ 本次合格量」拆它的成本。
+                if (valued.direction() == StockValuation.Direction.IN
+                        && material != null && material.kind() == Kind.WIRE) {
+                    OutputFact output = outputByMovement.get(movement.movementId());
+                    if (output != null) {
+                        wireReceiptByOutput.put(output.outputId(),
+                                new WireReceipt(movement.movementId(), output.actualDate(),
+                                        valued.quantityTon(), valued.knownCostYuan(),
+                                        valued.complete(), valued.missingItems()));
+                    }
+                }
+
                 if (entryType.equals(CostModels.ENTRY_ISSUE)) {
                     rodUnitCostByMovement.put(movement.movementId(), valued.unitCostAppliedYuanPerTon());
                     if (material != null && material.kind() == Kind.ROD) {
@@ -218,6 +257,30 @@ public final class CostEngine {
             runMissing.addAll(result.missingItems());
             results.add(new MaterialResult(materialId, result, List.copyOf(ledger),
                     materialComplete, result.missingItems()));
+        }
+
+        // 成品直接归属：把该次产出入库成本按归属重量比例带入订单。
+        // 表上 CHECK 要求 PUBLIC_FINISHED 必须引用成本流水，所以这里存产出入库的 movementId，
+        // 由写入端回填成 stock_cost_ledger_id；归属只转成本份额，不再生成实物入库。
+        for (FinishedAllocationFact fact : finishedAllocations) {
+            WireReceipt receipt = wireReceiptByOutput.get(fact.outputId());
+            if (receipt == null || receipt.quantityTon() == null || receipt.quantityTon().signum() <= 0) {
+                // 找不到对应的产出入库估值：留给 ordersWithUncoveredDirectOutput 报缺项，
+                // 不在这里凭空补一笔金额。
+                continue;
+            }
+            BigDecimal allocated = fact.allocatedTon().min(receipt.quantityTon());
+            BigDecimal ratio = allocated.divide(receipt.quantityTon(), 12, RoundingMode.HALF_UP);
+            BigDecimal amount = receipt.costYuan() == null ? null
+                    : CostModels.amount(receipt.costYuan().multiply(ratio));
+            List<String> itemMissing = receipt.complete() ? List.of() : receipt.missingItems();
+            orderDrafts.add(new OrderDraft(fact.orderId(), CostModels.ITEM_PUBLIC_FINISHED,
+                    "ALLOC:" + fact.allocationId(), receipt.businessDate(),
+                    receipt.movementId(), null, amount, itemMissing));
+            if (!itemMissing.isEmpty()) {
+                runMissing.addAll(itemMissing);
+                runComplete = false;
+            }
         }
 
         // 车间二能源是订单的计费项，不进铜丝库存价值之外再算一次：

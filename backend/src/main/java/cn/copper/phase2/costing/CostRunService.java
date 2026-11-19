@@ -84,7 +84,8 @@ public class CostRunService {
                 ? outputDateBound(prepared.inputs, false) : prepared.scope.to();
         int allocationRows = allocationPublisher.publish(runId, energyFrom, energyTo);
         CostEngine.Outcome outcome = allocationRows == 0 ? prepared.outcome
-                : CostEngine.replay(withEnergy(prepared.inputs, repo.energyAllocations(runId)));
+                : CostEngine.replay(withEnergy(prepared.inputs, repo.energyAllocations(runId)),
+                        prepared.allocations);
         if (allocationRows != 0) {
             // 分摊改变了回放结果，快照必须跟着改：否则 K01 读到的还是「分摊前」的缺项，
             // 明明能源已经计入成本，页面却仍显示 WORKSHOP1_ENERGY_MISSING。
@@ -237,7 +238,8 @@ public class CostRunService {
                 inputs.plateInputs(), inputs.handovers(), energy);
     }
 
-    private record Prepared(CostRepository.Scope scope, CostEngine.Inputs inputs, CostEngine.Outcome outcome) {
+    private record Prepared(CostRepository.Scope scope, CostEngine.Inputs inputs, CostEngine.Outcome outcome,
+                            List<CostEngine.FinishedAllocationFact> allocations) {
     }
 
     /** 调用方给的补算范围；来源引用只用于收窄范围，不用于指定金额。 */
@@ -319,7 +321,14 @@ public class CostRunService {
                         row.movementId(), row.sentQuantityTon())).toList(),
                 List.of());
 
-        return new Prepared(scope, inputs, CostEngine.replay(inputs));
+        Set<Long> outputIds = new LinkedHashSet<>();
+        outputRows.forEach(output -> outputIds.add(output.outputId()));
+        List<CostEngine.FinishedAllocationFact> allocations = repo.directOutputAllocations(outputIds).stream()
+                .map(row -> new CostEngine.FinishedAllocationFact(row.allocationId(), row.orderId(),
+                        row.materialId(), row.outputId(), row.effectiveTon()))
+                .toList();
+
+        return new Prepared(scope, inputs, CostEngine.replay(inputs, allocations), allocations);
     }
 
     /**

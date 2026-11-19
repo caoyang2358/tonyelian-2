@@ -99,7 +99,7 @@ export const COST_MISSING_LABELS: Record<string, string> = {
   COST_CARRY_MISSING: '上游成本断链',
   COST_RUN_MISSING: '尚无核算运行',
   QUANTITY_MISMATCH: '数量与余额不一致',
-  DIRECT_OUTPUT_COST_NOT_COVERED: '直接归属成品的原料成本未纳入计费项',
+  DIRECT_OUTPUT_COST_NOT_COVERED: '成品归属缺少入库成本依据',
 };
 
 const numberFormat = new Intl.NumberFormat('zh-CN', {

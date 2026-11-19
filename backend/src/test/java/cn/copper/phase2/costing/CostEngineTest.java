@@ -243,6 +243,58 @@ class CostEngineTest {
                 assertThat(item.amountYuan()).isEqualByComparingTo("596.45"));
     }
 
+    @Test
+    @DisplayName("成品直接归属：按归属重量占该次合格量的比例，把产出入库成本写成 PUBLIC_FINISHED 计费项")
+    void allocatesWireReceiptCostToDirectOutputOrders() {
+        CostEngine.Inputs inputs = new CostEngine.Inputs(
+                List.of(PLATE, ROD, WIRE),
+                List.of(
+                        movement(70, 1, null, 1L, "PLATE_RECEIPT", "2026-11-17", "10.000"),
+                        movement(71, 1, null, 1L, "PRODUCTION_ISSUE", "2026-11-17", "-10.000"),
+                        movement(72, 2, null, 1L, "PRODUCTION_RECEIPT", "2026-11-17", "10.000"),
+                        movement(73, 2, null, 2L, "PRODUCTION_ISSUE", "2026-11-17", "-10.000"),
+                        movement(74, 3, null, 2L, "PRODUCTION_RECEIPT", "2026-11-17", "10.000")),
+                List.of(
+                        output(801, 2, 1L, "T:1:2026-11-17", "10.000", 72),
+                        new CostEngine.OutputFact(802, 3, 2L, "T:2:2026-11-17", DAY,
+                                new BigDecimal("10.000"), "QUALIFIED_OUTPUT", 74,
+                                List.of(new CostEngine.RodUseRef(910, new BigDecimal("10.000"))))),
+                List.of(new CostEngine.PlateInputFact(1L, "T:1:2026-11-17", DAY,
+                        new BigDecimal("600000.00"))),
+                List.of(new CostEngine.HandoverFact(910, 73, new BigDecimal("10.000"))),
+                List.of(
+                        // 车间一能源明确为零，铜杆入库成本才能完整，交接才带得出单价。
+                        new CostEngine.EnergyFact(701, 1, DAY, "ELECTRICITY", "ROD_STOCK",
+                                null, 801L, null, BigDecimal.ZERO),
+                        new CostEngine.EnergyFact(702, 2, DAY, "ELECTRICITY", "ORDER",
+                                null, null, null, new BigDecimal("1000.00"))));
+
+        CostEngine.Outcome outcome = CostEngine.replay(inputs, List.of(
+                new CostEngine.FinishedAllocationFact(1, 9302, 3, 802, new BigDecimal("3.000")),
+                new CostEngine.FinishedAllocationFact(2, 9303, 3, 802, new BigDecimal("4.000"))));
+
+        CostEngine.MaterialResult wire = material(outcome, 3);
+        assertThat(wire.ledger()).hasSize(1);
+        // 领杆 10 吨 × 6 万 = 60 万，加当日车间二能源 1000，铜丝入库成本 601000。
+        assertThat(wire.ledger().get(0).costDeltaYuan()).isEqualByComparingTo("601000.00");
+
+        assertThat(outcome.orders())
+                .filteredOn(item -> item.itemType().equals(CostModels.ITEM_PUBLIC_FINISHED))
+                .hasSize(2)
+                .anySatisfy(item -> {
+                    assertThat(item.orderId()).isEqualTo(9302L);
+                    // 601000 × 3/10
+                    assertThat(item.amountYuan()).isEqualByComparingTo("180300.00");
+                    // 必须回指产出入库流水：写入端据此回填 stock_cost_ledger_id，表上 CHECK 要求非空。
+                    assertThat(item.movementId()).isEqualTo(74L);
+                    assertThat(item.missingItems()).isEmpty();
+                })
+                .anySatisfy(item -> {
+                    assertThat(item.orderId()).isEqualTo(9303L);
+                    assertThat(item.amountYuan()).isEqualByComparingTo("240400.00");
+                });
+    }
+
     // ---------------------------------------------------------------- 构造器
 
     private static CostEngine.Movement movement(long movementId, long materialId, Long orderId, Long taskId,

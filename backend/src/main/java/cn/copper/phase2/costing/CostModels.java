@@ -65,7 +65,7 @@ public final class CostModels {
     public static final String CODE_PUBLIC_POOL_NOT_TRACKED = "PUBLIC_POOL_NOT_TRACKED";
     public static final String CODE_SOURCE_REVISION_NOT_TRACKED = "SOURCE_REVISION_NOT_TRACKED";
     public static final String CODE_COST_CARRY_MISSING = "COST_CARRY_MISSING";
-    /** 成品直接归属订单，但本版订单计费项只有领杆与能源两类，成品原料成本没有写入方。 */
+    /** 成品已直接归属订单，但找不到该次产出的入库估值（成本仍按归属重量带不进来）。 */
     public static final String CODE_DIRECT_OUTPUT_COST_NOT_COVERED = "DIRECT_OUTPUT_COST_NOT_COVERED";
 
     private CostModels() {
@@ -111,7 +111,7 @@ public final class CostModels {
             case CODE_SOURCE_REVISION_NOT_TRACKED -> "来源修订号尚未落地，本次运行无法核对「计算期间来源是否变化」。";
             case CODE_COST_CARRY_MISSING -> "找不到该入库对应的上游产出或交接依据。";
             case CODE_DIRECT_OUTPUT_COST_NOT_COVERED ->
-                    "成品已直接归属该订单，但本版订单计费项只发布领杆与车间能源，成品原料成本尚未纳入；"
+                    "成品已直接归属该订单，但找不到该次产出的入库成本估值，无法按归属重量带入；"
                             + "当前金额只是已归集部分，不作为完整成本。";
             case "COST_RUN_MISSING" -> "尚未产生核算运行，成本视图与订单盈亏都还没有依据。";
             case "QUANTITY_MISMATCH" -> "成本视图的期末数量与库存余额不一致，说明期间还有未处理的数量事实；此时不给均价。";
