@@ -106,7 +106,10 @@ public class CostQueryService {
         }
         BigDecimal knownValue = value == null
                 ? BigDecimal.ZERO.setScale(CostModels.AMOUNT_SCALE) : value.valueYuan();
-        boolean complete = run != null && value != null && value.missingRows() == 0;
+        // 完整性看两处：成本流水里这一物料有没有缺项行，以及本次运行快照里该物料是否算完整。
+        // 只看流水会把「快照判定不完整」的物料当成完整；只看快照则会和修正后的流水打架。
+        boolean snapshotComplete = snapshot == null || !Boolean.FALSE.equals(snapshot.get("complete"));
+        boolean complete = run != null && value != null && value.missingRows() == 0 && snapshotComplete;
 
         // 成本视图的实物量必须与余额账同源同值。不一致说明期间有待处理的数量事实，
         // 这时给均价只会把「数量差」藏进「单价」里。
@@ -266,7 +269,7 @@ public class CostQueryService {
             blockedReason = "AMOUNT_UNCONFIRMED";
         } else if (!costReady) {
             blockedReason = "COST_INCOMPLETE";
-        } else if (!"COMPLETED".equals(order.productionResult())) {
+        } else if (!productionEnded(order.productionResult())) {
             blockedReason = "PRODUCTION_NOT_COMPLETED";
         } else {
             blockedReason = null;
@@ -299,6 +302,18 @@ public class CostQueryService {
         item.put("missingItems", displayable ? List.of()
                 : List.of(CostModels.missing(blockedReason == null ? "UNKNOWN" : blockedReason)));
         return item;
+    }
+
+    /**
+     * 生产是否已结束。S2-R16 写入的是 {@code NORMAL_COMPLETED} / {@code SHORTFALL_COMPLETED}
+     * （不足量结束也是结束），这里原先只认 {@code COMPLETED}，导致所有正常结束的订单都被判为
+     * 「生产尚未结束」、利润永远不出现——按结果码集合判断，不按某一个字面量。
+     */
+    private static boolean productionEnded(String productionResult) {
+        return switch (productionResult == null ? "" : productionResult) {
+            case "NORMAL_COMPLETED", "SHORTFALL_COMPLETED", "NO_PRODUCTION", "COMPLETED" -> true;
+            default -> false;
+        };
     }
 
     // ---------------------------------------------------------------- K04

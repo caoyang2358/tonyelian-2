@@ -336,6 +336,18 @@ public class CostRepository {
         return requireKey(keys);
     }
 
+    /**
+     * 覆盖运行快照的物料段。
+     *
+     * <p>运行记录必须在分摊落库前就存在（分摊行要挂 runId），但分摊落库会让成本回放的结果
+     * 变一次——材料与能源的完整性、期末数量都可能不同。不刷新快照的话，K01 会读到
+     * 「分摊前」的缺项：明明能源已经进了成本，页面却还挂着 {@code WORKSHOP1_ENERGY_MISSING}。</p>
+     */
+    public void updateInputSnapshot(long costRunId, Object inputSnapshot) {
+        jdbc.update("UPDATE p2_cost_run SET input_snapshot = CAST(? AS JSON) WHERE cost_run_id = ?",
+                json(inputSnapshot), costRunId);
+    }
+
     public void finishRun(long costRunId, String status, Object missingItems) {
         jdbc.update("""
                 UPDATE p2_cost_run

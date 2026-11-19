@@ -71,28 +71,7 @@ public class CostRunService {
         affected.put("to", prepared.scope.to() == null ? null : prepared.scope.to().toString());
         affected.put("sourceReferences", scope.sourceReferences());
 
-        Map<String, Object> snapshot = new LinkedHashMap<>();
-        snapshot.put("ruleVersion", CostModels.RULE_VERSION);
-        snapshot.put("movementCount", prepared.inputs.movements().size());
-        snapshot.put("outputCount", prepared.inputs.outputs().size());
-        snapshot.put("plateInputCount", prepared.inputs.plateInputs().size());
-        snapshot.put("handoverCount", prepared.inputs.handovers().size());
-        snapshot.put("valuationOrder", "business_date, movement_id");
-        // 每个物料的期末数量与完整性：K01 用它核对「成本视图的实物量」与「余额账」
-        // 是否同源同值。两边不一致时不给出均价，而不是让均价掩盖数量差异。
-        List<Map<String, Object>> materialSnapshot = new ArrayList<>();
-        for (CostEngine.MaterialResult material : prepared.outcome.materials()) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("materialId", material.materialId());
-            item.put("endQuantityTon", material.result() == null ? null
-                    : CostModels.ton(material.result().endQuantityTon()));
-            item.put("knownValueYuan", material.result() == null ? null
-                    : CostModels.money(material.result().endKnownValueYuan()));
-            item.put("complete", material.complete());
-            item.put("missingItems", material.missingItems());
-            materialSnapshot.add(item);
-        }
-        snapshot.put("materials", materialSnapshot);
+        Map<String, Object> snapshot = snapshotOf(prepared.inputs, prepared.outcome);
 
         long runId = repo.insertRun(previous == null ? null : previous.costRunId(), CostModels.RUN_RUNNING,
                 CostModels.TRIGGER_MANUAL, affected, snapshot, null, reason, operator);
@@ -106,6 +85,11 @@ public class CostRunService {
         int allocationRows = allocationPublisher.publish(runId, energyFrom, energyTo);
         CostEngine.Outcome outcome = allocationRows == 0 ? prepared.outcome
                 : CostEngine.replay(withEnergy(prepared.inputs, repo.energyAllocations(runId)));
+        if (allocationRows != 0) {
+            // 分摊改变了回放结果，快照必须跟着改：否则 K01 读到的还是「分摊前」的缺项，
+            // 明明能源已经计入成本，页面却仍显示 WORKSHOP1_ENERGY_MISSING。
+            repo.updateInputSnapshot(runId, snapshotOf(prepared.inputs, outcome));
+        }
 
         Map<Long, Long> ledgerByMovement = new LinkedHashMap<>();
         for (CostEngine.MaterialResult material : outcome.materials()) {
@@ -250,6 +234,36 @@ public class CostRunService {
     /** 调用方给的补算范围；来源引用只用于收窄范围，不用于指定金额。 */
     private record ScopeRequest(List<Long> materialIds, List<Long> orderIds, LocalDate from, LocalDate to,
                                 List<Map<String, Object>> sourceReferences) {
+    }
+
+    /**
+     * 运行快照。分摊落库前后各算一次，保证快照描述的是「最终结果」而不是「分摊前的候选」。
+     *
+     * <p>每个物料的期末数量与完整性：K01 用它核对成本视图的实物量与余额账是否同源同值。
+     * 两边不一致时不给出均价，而不是让均价掩盖数量差异。</p>
+     */
+    private static Map<String, Object> snapshotOf(CostEngine.Inputs inputs, CostEngine.Outcome outcome) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("ruleVersion", CostModels.RULE_VERSION);
+        snapshot.put("movementCount", inputs.movements().size());
+        snapshot.put("outputCount", inputs.outputs().size());
+        snapshot.put("plateInputCount", inputs.plateInputs().size());
+        snapshot.put("handoverCount", inputs.handovers().size());
+        snapshot.put("valuationOrder", "business_date, movement_id");
+        List<Map<String, Object>> materialSnapshot = new ArrayList<>();
+        for (CostEngine.MaterialResult material : outcome.materials()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("materialId", material.materialId());
+            item.put("endQuantityTon", material.result() == null ? null
+                    : CostModels.ton(material.result().endQuantityTon()));
+            item.put("knownValueYuan", material.result() == null ? null
+                    : CostModels.money(material.result().endKnownValueYuan()));
+            item.put("complete", material.complete());
+            item.put("missingItems", material.missingItems());
+            materialSnapshot.add(item);
+        }
+        snapshot.put("materials", materialSnapshot);
+        return snapshot;
     }
 
     private Prepared prepare(ScopeRequest request) {
