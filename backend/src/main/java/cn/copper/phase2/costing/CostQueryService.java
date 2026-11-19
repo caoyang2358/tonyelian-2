@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 成本查询服务（S2-K01 物料成本视图、K02 成本流水、K03 订单核算列表、K04 订单核算依据）。
@@ -228,8 +229,10 @@ public class CostQueryService {
 
         CostRepository.RunRow run = repo.latestPublishedRun().orElse(null);
         Map<Long, CostRepository.OrderCostTotal> totals = new LinkedHashMap<>();
+        Set<Long> uncovered = Set.of();
         if (run != null) {
             repo.orderCostTotals(run.costRunId()).forEach(total -> totals.put(total.orderId(), total));
+            uncovered = uncoveredOrders(run.costRunId());
         }
         List<CostRepository.OrderRow> rows = repo.orders(orderId, accountingState, size,
                 (pageValue - 1) * size);
@@ -237,7 +240,8 @@ public class CostQueryService {
 
         List<Map<String, Object>> items = new ArrayList<>(rows.size());
         for (CostRepository.OrderRow row : rows) {
-            items.add(orderItem(row, totals.get(row.orderId()), run));
+            items.add(orderItem(row, totals.get(row.orderId()), run,
+                    uncovered.contains(row.orderId())));
         }
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("items", items);
@@ -251,13 +255,15 @@ public class CostQueryService {
 
     private Map<String, Object> orderItem(CostRepository.OrderRow order,
                                           CostRepository.OrderCostTotal total,
-                                          CostRepository.RunRow run) {
+                                          CostRepository.RunRow run,
+                                          boolean directOutputUncovered) {
         BigDecimal amount = order.agreedAmountYuan() != null
                 ? order.agreedAmountYuan() : order.contractAmountYuan();
         BigDecimal knownCost = total == null ? null : total.amountYuan();
         boolean amountReady = order.amountConfirmed() && order.agreedAmountYuan() != null;
         boolean cancelled = order.cancelledAt() != null;
-        boolean costReady = total != null && total.missingCount() == 0;
+        // 成品已直接归属、但原料成本没有计费项写入方时，已归集的金额只是「已知部分」。
+        boolean costReady = total != null && total.missingCount() == 0 && !directOutputUncovered;
         BigDecimal totalCost = costReady ? total.amountYuan() : null;
 
         String blockedReason;
@@ -299,9 +305,25 @@ public class CostQueryService {
         item.put("costItemCount", total == null ? 0 : total.itemCount());
         item.put("costRunId", run == null ? null : run.costRunId());
         item.put("version", order.version());
-        item.put("missingItems", displayable ? List.of()
-                : List.of(CostModels.missing(blockedReason == null ? "UNKNOWN" : blockedReason)));
+        List<Map<String, Object>> missingList = new ArrayList<>();
+        if (!displayable) {
+            missingList.add(CostModels.missing(blockedReason == null ? "UNKNOWN" : blockedReason));
+        }
+        if (directOutputUncovered) {
+            missingList.add(CostModels.missing(CostModels.CODE_DIRECT_OUTPUT_COST_NOT_COVERED));
+        }
+        item.put("missingItems", missingList);
         return item;
+    }
+
+    /**
+     * 本版订单计费项没有「成品直接归属」的写入方（接口清单 4.4）。有这类归属却没有
+     * 成品原料类计费项的订单，成本是不完整的；K03/K04 都必须把这一点报出来。
+     * 仓储未打桩时按空集合处理，不改变既有判定。
+     */
+    private Set<Long> uncoveredOrders(long costRunId) {
+        Set<Long> found = repo.ordersWithUncoveredDirectOutput(costRunId);
+        return found == null ? Set.of() : found;
     }
 
     /**
@@ -350,6 +372,9 @@ public class CostQueryService {
         BigDecimal amount = order.agreedAmountYuan() != null
                 ? order.agreedAmountYuan() : order.contractAmountYuan();
         boolean cancelled = order.cancelledAt() != null;
+        if (run != null && uncoveredOrders(run.costRunId()).contains(orderId)) {
+            missing.add(CostModels.CODE_DIRECT_OUTPUT_COST_NOT_COVERED);
+        }
         BigDecimal totalCost = missing.isEmpty() && run != null ? known : null;
 
         Map<String, Object> data = new LinkedHashMap<>();

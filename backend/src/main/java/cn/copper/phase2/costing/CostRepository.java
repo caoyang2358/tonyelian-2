@@ -20,9 +20,11 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 成本模块的数据访问。
@@ -523,6 +525,26 @@ public class CostRepository {
                 """, (rs, rowNum) -> new OrderCostTotal(rs.getLong("order_id"),
                 rs.getBigDecimal("amount_yuan"), rs.getLong("item_count"), rs.getLong("missing_count")),
                 costRunId);
+    }
+
+    /**
+     * 成品直接归属订单、但本次运行没有任何「成品原料成本」计费项的订单。
+     *
+     * <p>本版订单计费项只发布 {@code ROD_ISSUE} 与 {@code WORKSHOP_ENERGY}，
+     * {@code PUBLIC_FINISHED} 没有写入方（接口清单 4.4）。这类订单的成本里缺了归属成品的原料部分，
+     * 查询侧必须如实报缺项，不能把只有能源费的金额当成完整成本、据此算出虚高利润。</p>
+     */
+    public Set<Long> ordersWithUncoveredDirectOutput(long costRunId) {
+        return new LinkedHashSet<>(jdbc.queryForList("""
+                SELECT DISTINCT fa.order_id
+                  FROM p2_finished_allocation fa
+                 WHERE fa.source_type = 'DIRECT_OUTPUT'
+                   AND fa.allocated_quantity_ton > fa.released_quantity_ton
+                   AND NOT EXISTS (
+                         SELECT 1 FROM p2_order_cost_item i
+                          WHERE i.cost_run_id = ? AND i.order_id = fa.order_id
+                            AND i.item_type IN ('ROD_ISSUE', 'PUBLIC_FINISHED'))
+                """, Long.class, costRunId));
     }
 
     public List<OrderItemRow> orderItems(long costRunId, long orderId) {

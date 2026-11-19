@@ -116,6 +116,10 @@ public class CostRunService {
         }
 
         List<String> missing = new ArrayList<>(outcome.missingItems());
+        Set<Long> uncovered = repo.ordersWithUncoveredDirectOutput(runId);
+        if (!uncovered.isEmpty()) {
+            missing.add(CostModels.CODE_DIRECT_OUTPUT_COST_NOT_COVERED);
+        }
         boolean revisionRequested = body.get("expectedSourceRevision") != null
                 || body.get("expectedPublishedCostRunId") != null;
         if (revisionRequested) {
@@ -125,7 +129,7 @@ public class CostRunService {
                 ? CostModels.RUN_COMPLETED : CostModels.RUN_INCOMPLETE;
         repo.finishRun(runId, status, missing);
 
-        applyAccountingStates(outcome.orders());
+        applyAccountingStates(outcome.orders(), uncovered);
 
         Map<String, Object> receipt = new LinkedHashMap<>();
         receipt.put("costRunId", runId);
@@ -148,12 +152,17 @@ public class CostRunService {
     /**
      * 订单核算状态只随成本结果更新，不动生产与交付事实。
      * <p>还有缺项的批次记 {@code INCOMPLETE}；不能因为「跑完了」就写 {@code COMPLETED}。</p>
+     * <p>另外：成品直接归属订单但原料成本没有计费项写入方时，本运行只归集了能源费，
+     * 同样必须记 {@code INCOMPLETE}（接口清单 4.4），否则会拿已知部分冒充完整成本。</p>
      */
-    private void applyAccountingStates(List<CostEngine.OrderDraft> drafts) {
+    private void applyAccountingStates(List<CostEngine.OrderDraft> drafts, Set<Long> uncovered) {
         Map<Long, Boolean> completeByOrder = new LinkedHashMap<>();
         for (CostEngine.OrderDraft draft : drafts) {
             boolean complete = draft.missingItems().isEmpty() && draft.amountYuan() != null;
             completeByOrder.merge(draft.orderId(), complete, (left, right) -> left && right);
+        }
+        for (Long orderId : uncovered) {
+            completeByOrder.put(orderId, false);
         }
         completeByOrder.forEach((orderId, complete) ->
                 repo.updateAccountingState(orderId, complete ? "COMPLETED" : "INCOMPLETE"));

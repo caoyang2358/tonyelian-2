@@ -9,6 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -41,6 +42,7 @@ class CostQueryServiceTest {
         when(repo.latestPublishedRun()).thenReturn(Optional.of(run));
         when(repo.orderCostTotals(RUN_ID)).thenReturn(List.of(
                 new CostRepository.OrderCostTotal(ORDER_ID, new BigDecimal("900000.00"), 4, 0)));
+        when(repo.ordersWithUncoveredDirectOutput(RUN_ID)).thenReturn(Set.of());
         when(repo.orders(isNull(), isNull(), anyInt(), anyInt())).thenReturn(List.of(
                 new CostRepository.OrderRow(ORDER_ID, "DEMO-R-9301", "联调客户", 2L,
                         new BigDecimal("10.000"), DUE, new BigDecimal("1000000.00"),
@@ -88,5 +90,24 @@ class CostQueryServiceTest {
         assertThat(item.get("estimatedProfitYuan")).isNull();
         // 已知成本照常展示：拦住的是利润，不是全部数据。
         assertThat(item.get("knownCostAmountYuan")).isEqualTo("900000.00");
+    }
+
+    @Test
+    @DisplayName("成品直接归属但原料成本没有计费项写入方时，不给完整成本也不给利润")
+    @SuppressWarnings("unchecked")
+    void uncoveredDirectOutputBlocksCompleteCost() {
+        CostRepository repo = repository("NORMAL_COMPLETED");
+        when(repo.ordersWithUncoveredDirectOutput(RUN_ID)).thenReturn(Set.of(ORDER_ID));
+        Map<String, Object> item = firstOrder(repo);
+
+        assertThat(item.get("totalCostAmountYuan")).isNull();
+        assertThat(item.get("profitDisplayable")).isEqualTo(false);
+        assertThat(item.get("profitBlockedReason")).isEqualTo("COST_INCOMPLETE");
+        assertThat(item.get("estimatedProfitYuan")).isNull();
+        // 拦的是「完整成本」这个结论，已归集的已知金额照常展示。
+        assertThat(item.get("knownCostAmountYuan")).isEqualTo("900000.00");
+        List<Map<String, Object>> missing = (List<Map<String, Object>>) item.get("missingItems");
+        assertThat(missing).extracting(entry -> entry.get("code"))
+                .contains(CostModels.CODE_DIRECT_OUTPUT_COST_NOT_COVERED);
     }
 }

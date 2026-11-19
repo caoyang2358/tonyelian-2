@@ -99,6 +99,7 @@ export const COST_MISSING_LABELS: Record<string, string> = {
   COST_CARRY_MISSING: '上游成本断链',
   COST_RUN_MISSING: '尚无核算运行',
   QUANTITY_MISMATCH: '数量与余额不一致',
+  DIRECT_OUTPUT_COST_NOT_COVERED: '直接归属成品的原料成本未纳入计费项',
 };
 
 const numberFormat = new Intl.NumberFormat('zh-CN', {
@@ -153,6 +154,7 @@ export function labelOf(dict: Record<string, string>, code: string | null): stri
 }
 
 const ENERGY_SHORT: Record<string, string> = {ELECTRICITY: '电', WATER: '水', GAS: '煤气'};
+const WORKSHOP_SHORT: Record<string, string> = {'1': '车间一', '2': '车间二'};
 
 /**
  * 订单计费项的来源标识是可追溯键，不是给人读的：
@@ -162,7 +164,7 @@ const ENERGY_SHORT: Record<string, string> = {ELECTRICITY: '电', WATER: '水', 
 export function sourceKeyText(sourceKey: string): string {
   const energy = /^ENERGY:(\d+):(\d{4}-\d{2}-\d{2}):([A-Z_]+)$/.exec(sourceKey);
   if (energy) {
-    return `车间${energy[1]} · ${energy[2]} · ${ENERGY_SHORT[energy[3]] ?? energy[3]}`;
+    return `${WORKSHOP_SHORT[energy[1]] ?? `车间 ${energy[1]}`} · ${energy[2]} · ${ENERGY_SHORT[energy[3]] ?? energy[3]}`;
   }
   const rodIssue = /^ROD_ISSUE:(\d+)$/.exec(sourceKey);
   if (rodIssue) return `领杆流水 #${rodIssue[1]}`;
