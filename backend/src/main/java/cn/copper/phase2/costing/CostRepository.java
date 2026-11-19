@@ -428,7 +428,13 @@ public class CostRepository {
             ps.setString(5, draft.entryType());
             ps.setString(6, draft.sourceType());
             ps.setLong(7, draft.sourceId());
-            ps.setString(8, CostModels.SHARE_POOL);
+            // share_key 必须逐条唯一：唯一键是
+            // (cost_run_id, material_id, source_type, source_id, entry_type, share_key)，
+            // 同一次投料分两次称重时两条入库流水的 source_id 都是投料号，恒写 'POOL'
+            // 会让第二次称重的成本流水直接撞唯一键、整批补算失败。
+            ps.setString(8, draft.movementId() == null
+                    ? CostModels.SHARE_POOL
+                    : CostModels.SHARE_POOL + "-M" + draft.movementId());
             ps.setDate(9, Date.valueOf(draft.businessDate()));
             ps.setBigDecimal(10, draft.quantityTon());
             ps.setBigDecimal(11, draft.unitCostYuanPerTon());
