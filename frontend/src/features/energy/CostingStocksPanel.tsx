@@ -76,15 +76,15 @@ export function CostingStocksPanel() {
       {noRun
         ? (
           <p className="en-notice">
-            还没有核算运行：下面的实物量来自库存余额，金额与均价要等补算之后才有依据。
-            没测算过的库存不是「零元库存」。
+            尚无核算运行：下方实物量取自库存余额，金额与均价需补算后才有依据。
+            未核算的库存不代表零元库存。
           </p>
         )
         : (
           <p className="en-cost-run">
             <span className="en-badge en-badge-current">核算运行 #{run.costRunId}</span>
             <span>{labelOf(RUN_STATUS_LABELS, run.status)}</span>
-            {run.ruleVersion && <span className="en-muted">规则 {run.ruleVersion}</span>}
+            {run.ruleVersion && <span className="en-muted">核算规则 {run.ruleVersion}</span>}
             {run.completedAt && <span className="en-muted">完成于 {run.completedAt.replace('T', ' ').slice(0, 19)}</span>}
             {data && (
               <span className="en-muted">
@@ -117,7 +117,7 @@ export function CostingStocksPanel() {
           <tbody>
             {loading && !data && <tr><td className="en-empty" colSpan={10}>正在读取…</td></tr>}
             {data && items.length === 0 && (
-              <tr><td className="en-empty" colSpan={10}>没有匹配的物料。</td></tr>
+              <tr><td className="en-empty" colSpan={10}>暂无匹配的物料。</td></tr>
             )}
             {items.map(item => (
               <StockRow key={item.materialId} item={item}
@@ -136,7 +136,7 @@ export function CostingStocksPanel() {
             <button type="button" className="button button-small" disabled={page >= totalPages}
                     onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button>
           </div>
-          <span className="en-hint">共 {data.total ?? 0} 件物料</span>
+          <span className="en-hint">共 {data.total ?? 0} 项物料</span>
         </div>
       )}
 
@@ -263,7 +263,7 @@ function CostLedgerDrawer({materialId, materialName, onClose}: {
               {data?.costRunId
                 ? <span className="en-badge en-badge-current">核算运行 #{data.costRunId}</span>
                 : <span className="en-muted">尚无核算运行</span>}
-              <span>每行是一个价值动作，数量事实仍以库存流水为准</span>
+              <span>每行记录一笔价值变动，数量以库存流水为准</span>
             </p>
           </div>
           <button type="button" className="en-drawer-close" onClick={onClose} aria-label="关闭">×</button>
@@ -271,7 +271,7 @@ function CostLedgerDrawer({materialId, materialName, onClose}: {
         <div className="en-drawer-body">
           {error && <p className="en-error">{error}</p>}
           {data && data.missingItems && data.missingItems.length > 0 && (
-            <p className="en-notice">还没有核算运行，成本流水为空——不是没有成本，是还没核算。</p>
+            <p className="en-notice">尚无核算运行，成本流水为空：这不代表没有成本，只是尚未核算。</p>
           )}
           <div className="en-table-wrap">
             <table className="en-table en-table-compact">
@@ -289,7 +289,7 @@ function CostLedgerDrawer({materialId, materialName, onClose}: {
               <tbody>
                 {loading && !data && <tr><td className="en-empty" colSpan={7}>正在读取…</td></tr>}
                 {data && data.items.length === 0 && (
-                  <tr><td className="en-empty" colSpan={7}>这次运行没有该物料的成本流水。</td></tr>
+                  <tr><td className="en-empty" colSpan={7}>本次核算运行未产生该物料的成本流水。</td></tr>
                 )}
                 {data?.items.map(row => <LedgerRow key={row.stockCostLedgerId} row={row} />)}
               </tbody>

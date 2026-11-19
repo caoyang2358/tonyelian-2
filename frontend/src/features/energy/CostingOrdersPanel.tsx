@@ -83,8 +83,8 @@ export function CostingOrdersPanel() {
       {noRun
         ? (
           <p className="en-notice">
-            还没有核算运行：已知成本与完整成本都为空，盈亏一律不给。
-            订单数量与交期照常展示，但「没算过」不等于「成本为零」。
+            尚无核算运行：已知成本与完整成本暂为空，盈亏不予展示。
+            订单数量与交期正常显示；未核算不等于成本为零。
           </p>
         )
         : (
@@ -92,7 +92,7 @@ export function CostingOrdersPanel() {
             <span className="en-badge en-badge-current">核算运行 #{run.costRunId}</span>
             <span>{labelOf(RUN_STATUS_LABELS, run.status)}</span>
             {run.completedAt && <span className="en-muted">完成于 {run.completedAt.replace('T', ' ').slice(0, 19)}</span>}
-            <span className="en-muted">口径：只含材料与车间能源，不含人工、折旧与制造费用</span>
+            <span className="en-muted">口径：材料与车间能源，不含人工、折旧、制造费用</span>
           </p>
         )}
 
@@ -101,7 +101,7 @@ export function CostingOrdersPanel() {
           <thead>
             <tr>
               <th>订单</th>
-              <th>需求</th>
+              <th>需求量</th>
               <th>交期</th>
               <th>生产结果</th>
               <th>核算状态</th>
@@ -116,7 +116,7 @@ export function CostingOrdersPanel() {
           <tbody>
             {loading && !data && <tr><td className="en-empty" colSpan={11}>正在读取…</td></tr>}
             {data && items.length === 0 && (
-              <tr><td className="en-empty" colSpan={11}>没有匹配的订单。</td></tr>
+              <tr><td className="en-empty" colSpan={11}>暂无匹配的订单。</td></tr>
             )}
             {items.map(item => (
               <OrderRow key={item.orderId} item={item} onDetail={() => setDetailOrderId(item.orderId)} />
@@ -272,14 +272,14 @@ function OrderCostDrawer({orderId, onClose}: {orderId: string; onClose: () => vo
                   <dt>核算运行</dt><dd>{data.cost.costRunId ? `#${data.cost.costRunId}` : '尚未核算'}</dd>
                   <dt>计算口径</dt>
                   <dd>{data.calculationScope === 'MATERIAL_AND_ENERGY_ONLY'
-                    ? '材料 + 车间能源（不含人工、折旧、制造费用）' : data.calculationScope}</dd>
+                    ? '材料与车间能源，不含人工、折旧、制造费用' : data.calculationScope}</dd>
                 </dl>
               </section>
 
               <section className="en-detail-block">
                 <h4>计费项（{data.costItems.length}）</h4>
                 {data.costItems.length === 0
-                  ? <p className="en-hint">本次运行没有为该订单产生成本项：还没发生可核算的领料或能源归属，不等于成本为零。</p>
+                  ? <p className="en-hint">本次核算未为该订单生成计费项：尚无可核算的领料或能源归属，不代表成本为零。</p>
                   : (
                     <table className="en-table en-table-compact">
                       <thead>

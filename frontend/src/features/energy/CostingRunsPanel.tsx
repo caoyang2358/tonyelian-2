@@ -38,11 +38,12 @@ export function CostingRunsPanel() {
 
   return (
     <div className="en-cost en-runs">
-      {/* 用独立的块级说明类，不复用 .en-notice：后者是 flex，为「一句话 + 一个按钮」
-          设计，装长段落会把 <b> 与相邻文本拆成各自独立的 flex 项。 */}
+      {/* 用独立的块级说明类，不复用 .en-notice：后者是 flex，为「一句话 + 一个按钮」设计，
+          装多句说明会把文本拆成各自独立的 flex 项。 */}
       <p className="en-run-note">
-        本版补算是<b>同步执行</b>：提交后直接返回结果，没有「执行中」状态，失败会整批回滚而不是留下一条失败记录。
-        发布指针与来源修订号尚未落地，「当前运行」指最近一次完成的运行，不做候选与发布的对比。
+        补算按真实来源重新计算成本，并生成一次新的核算运行。提交后在同一次请求内完成，没有「执行中」的中间状态；
+        任一步失败则整批不写入，不会留下半成品数据。
+        页面上的「当前运行」指最近一次完成的运行，系统不保留多套并行结果。
       </p>
 
       <RecalcForm onDone={() => loadCurrent()} />
@@ -113,7 +114,7 @@ function RecalcForm({onDone}: {onDone: () => void}) {
       <header className="en-run-form-head">
         <h3>执行补算</h3>
         <p>
-          影响范围由后端沿真实来源追溯确定，这里只能收窄、不能指定金额；留空表示重算全部历史数据。
+          影响范围按真实来源追溯确定，此处只能缩小范围，不能指定金额；留空表示重算全部历史数据。
         </p>
       </header>
 
@@ -142,17 +143,17 @@ function RecalcForm({onDone}: {onDone: () => void}) {
         <summary>只重算指定物料或订单（可空）</summary>
         <div className="en-run-fields">
           <label className="en-field">
-            <span>物料 ID，逗号分隔</span>
+            <span>物料编号，逗号分隔</span>
             <input value={materialIds} placeholder="例如 1,2"
                    onChange={event => { setMaterialIds(event.target.value); touch(); }} />
           </label>
           <label className="en-field">
-            <span>订单 ID，逗号分隔</span>
+            <span>订单编号，逗号分隔</span>
             <input value={orderIds} placeholder="留空表示全部订单"
                    onChange={event => { setOrderIds(event.target.value); touch(); }} />
           </label>
         </div>
-        <p className="en-hint">这些是内部编号，通常不用填；用于定位某几件物料的成本重算。</p>
+        <p className="en-hint">这些是内部编号，通常无需填写；仅用于定位个别物料的成本重算。</p>
       </details>
 
       {error && <p className="en-error" role="alert">{error}</p>}
@@ -179,7 +180,7 @@ function RecalcForm({onDone}: {onDone: () => void}) {
                 执行补算
               </button>
               <span className="en-hint">
-                补算只重算成本，不再次投料、产出或领用。需要二次确认，是因为它会新增一次运行记录。
+                补算只重算成本，不重复投料、产出或领用。二次确认用于避免误生成新的核算运行。
               </span>
             </>
           )}
@@ -208,7 +209,7 @@ function RecalcReceiptCard({receipt, onDismiss}: {receipt: CostRecalcReceipt; on
           <dt>来源修订号核对</dt>
           <dd>
             {receipt.sourceRevisionChecked === false
-              ? <span className="en-missing">未核过（本版没有来源修订号）</span>
+              ? <span className="en-missing">未核对（暂无来源修订号）</span>
               : <span className="en-muted">本次未要求核对</span>}
           </dd>
         </div>
@@ -257,7 +258,7 @@ function RunLookup({current, currentReady}: {current: CostRunSummary | null; cur
     <section className="en-run-lookup">
       <header className="en-run-form-head">
         <h3>运行查询</h3>
-        <p>没有运行列表接口，按运行号查。当前运行的编号取自库存成本视图的同一份结果。</p>
+        <p>按运行号查询。当前运行号与库存成本视图一致。</p>
       </header>
 
       <div className="en-toolbar">
@@ -279,7 +280,7 @@ function RunLookup({current, currentReady}: {current: CostRunSummary | null; cur
           </button>
         )}
         {currentReady && !current?.costRunId && (
-          <span className="en-hint">还没有任何核算运行：上面的表单产生第一次补算后就能查。</span>
+          <span className="en-hint">暂无核算运行。完成一次补算后即可查询。</span>
         )}
       </div>
 
@@ -287,8 +288,7 @@ function RunLookup({current, currentReady}: {current: CostRunSummary | null; cur
       {detail && <RunDetailCard run={detail} onOpen={id => void open(id)} />}
       {!detail && !error && (
         <p className="en-notice">
-          还没有可展示的运行。补算完成、或在上面输入运行号后，这里会显示状态、受影响范围、
-          读到的输入规模与每件物料的期末完整性。
+          暂无可展示的运行。补算完成或输入运行号后，此处显示状态、影响范围、输入规模与各物料期末完整性。
         </p>
       )}
     </section>
@@ -305,7 +305,7 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
           <p className="en-cost-runline">
             <span className={`en-badge ${statusBadge(run.status)}`}>{labelOf(RUN_STATUS_LABELS, run.status)}</span>
             <span>{labelOf(TRIGGER_TYPE_LABELS, run.triggerType)}</span>
-            <span className="en-muted">规则 {run.ruleVersion} · 记录版本 {run.version}</span>
+            <span className="en-muted">核算规则 {run.ruleVersion} · 记录版本 {run.version}</span>
             {/* 后端 retryable 的语义是「补齐后可再算」，本版没有重试按钮，别让人去找。 */}
             {run.retryable && (
               <span className="en-badge en-badge-partial" title="补齐缺项后重新执行补算即可">
@@ -350,7 +350,7 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
               : '全部'}
           </dd>
         </div>
-        <div><dt>来源引用</dt><dd className="en-mono">{run.affectedScope.sourceReferenceCount} 条</dd></div>
+        <div><dt>来源引用数</dt><dd className="en-mono">{run.affectedScope.sourceReferenceCount} 条</dd></div>
       </dl>
 
       <h4 className="en-run-subtitle">本次写入</h4>
@@ -395,11 +395,11 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
           </thead>
           <tbody>
             {snapshot.materials.length === 0 && (
-              <tr><td className="en-empty" colSpan={5}>这次运行没有读到物料。</td></tr>
+              <tr><td className="en-empty" colSpan={5}>本次运行未读到物料。</td></tr>
             )}
             {snapshot.materials.map(item => (
               <tr key={item.materialId} className={item.complete ? undefined : 'en-row-gap'}>
-                <td className="en-mono">#{item.materialId}</td>
+                <td className="en-mono">物料 #{item.materialId}</td>
                 <td className="en-mono">{ton(item.endQuantityTon)}<span className="en-unit">吨</span></td>
                 <td className="en-mono">{snapshotMoney(item)}</td>
                 <td>
@@ -415,7 +415,7 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
                         {item.missingItems.map(code => (
                           <li key={code}>
                             <code>{code}</code>
-                            <span>{COST_MISSING_LABELS[code] ?? '未收录的缺项码'}</span>
+                            <span>{COST_MISSING_LABELS[code] ?? '未登记的缺项'}</span>
                           </li>
                         ))}
                       </ul>
@@ -427,7 +427,7 @@ function RunDetailCard({run, onOpen}: {run: CostRunDetail; onOpen: (id: string) 
         </table>
       </div>
       <p className="en-hint">
-        快照只记物料编号与当时的数量、金额，不存名称——名称会随主数据修改，快照要能复原当时的判断。
+        快照只记录物料编号及当时的数量与金额，不保存名称：名称可能后续修改，快照需复原当时的判断。
       </p>
     </article>
   );

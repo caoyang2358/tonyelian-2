@@ -109,7 +109,7 @@ export function EnergyDayDetail({workshopId, actualDate, onClose}: {
               </div>
 
               <section className="en-detail-block">
-                <h4>当日录全与分母</h4>
+                <h4>当日录全确认与分摊分母</h4>
                 <dl className="en-detail-pairs">
                   <dt>录全确认</dt>
                   <dd>
@@ -121,7 +121,7 @@ export function EnergyDayDetail({workshopId, actualDate, onClose}: {
                   <dt>分摊分母</dt>
                   <dd>
                     {data.denominator.quantityTon
-                      ? <>{data.denominator.quantityTon} t{data.denominator.complete ? '' : '（未确认，可能随补录变化）'}</>
+                      ? <>{data.denominator.quantityTon} t{data.denominator.complete ? '' : '（未确认，补录后可能变化）'}</>
                       : '未建立'}
                   </dd>
                   <dt>说明</dt>
@@ -303,7 +303,7 @@ export function EnergyDayDetail({workshopId, actualDate, onClose}: {
                 <h4>核算与缺项</h4>
                 <dl className="en-detail-pairs">
                   <dt>核算运行</dt>
-                  <dd>{data.costRun.costRunId ? `#${data.costRun.costRunId}` : '未核算（本版尚无核算运行）'}</dd>
+                  <dd>{data.costRun.costRunId ? `#${data.costRun.costRunId}` : '未核算'}</dd>
                   <dt>核算版本</dt>
                   <dd>{data.costRun.version ?? '—'}</dd>
                 </dl>
