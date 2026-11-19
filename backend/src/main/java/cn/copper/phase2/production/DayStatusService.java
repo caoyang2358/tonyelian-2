@@ -64,7 +64,7 @@ public class DayStatusService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("code", "WEIGHING_PENDING");
             item.put("taskId", ProductionTypes.id(pending.taskId()));
-            item.put("message", "任务 " + pending.taskId() + " 当天有生产记录但还没登记合格产量，也未确认零产出。");
+            item.put("message", "有任务当天已经产生生产记录，但还没登记合格产量，也未确认零产出。");
             items.add(item);
         }
         boolean hasFact = hasAnyFact(workshopId, actualDate);
@@ -129,7 +129,7 @@ public class DayStatusService {
         }
         Map<String, Object> energy = new LinkedHashMap<>();
         energy.put("code", "ENERGY_PRICE_MISSING");
-        energy.put("message", "能源价格未登记，成本核算待补。");
+        energy.put("message", "能源价格由成本核算模块统一登记，本模块暂不提供录入，不影响当日确认。");
         items.add(energy);
         return items;
     }

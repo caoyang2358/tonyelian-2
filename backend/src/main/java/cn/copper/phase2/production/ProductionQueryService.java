@@ -333,6 +333,8 @@ public class ProductionQueryService {
         item.put("taskId", row.taskId() == null ? null
                 : ProductionTypes.id(row.taskId()));
         item.put("operatorName", row.operatorName());
+        item.put("startedAt", ProductionTypes.time(row.startedAt()));
+        item.put("stoppedAt", ProductionTypes.time(row.stoppedAt()));
         item.put("source", row.taskId() == null ? ProductionTypes.SOURCE_UNPLANNED
                 : ProductionTypes.SOURCE_PLANNED);
         if (row.groupId() != null) {

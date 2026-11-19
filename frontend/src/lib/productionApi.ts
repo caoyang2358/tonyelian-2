@@ -51,6 +51,7 @@ export interface TimelineItem {
   productionGroupId?: string; groupVersion?: number; anchorActualDate?: string;
   quantityTon?: string | null; sentQuantityTon?: string | null; receivedQuantityTon?: string | null;
   orderId?: string | null; voidedAt?: string | null;
+  startedAt?: string | null; stoppedAt?: string | null;
 }
 
 export interface RecordDetailPayload {
@@ -152,6 +153,7 @@ function mapTimeline(value: Record<string, unknown>): TimelineItem {
     quantityTon: s(value.quantityTon), sentQuantityTon: s(value.sentQuantityTon),
     receivedQuantityTon: s(value.receivedQuantityTon), orderId: s(value.orderId),
     voidedAt: s(value.voidedAt),
+    startedAt: s(value.startedAt), stoppedAt: s(value.stoppedAt),
   };
 }
 

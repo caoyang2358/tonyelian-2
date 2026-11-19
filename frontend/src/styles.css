@@ -331,3 +331,11 @@ main{padding:34px 39px 23px;flex:1;max-width:1580px;margin:0 auto;width:100%;min
 
 .reset-filter.is-active{color:var(--brand);font-weight:600;text-decoration:underline;text-underline-offset:4px}
 .reset-filter:disabled{opacity:.55;cursor:progress}
+
+/* 生产任务详情：分区标题与收尾二选一 */
+.detail-section-title{font-size:12px;font-weight:600;color:#354c39;margin:14px 0 3px}
+.detail-section-hint{margin:0 0 9px;font-size:10px;color:#8a9684;line-height:1.8}
+.action-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+.action-row-title{font-size:12px;font-weight:600;color:#354c39;flex:0 0 auto}
+.link-button{border:0;background:none;padding:0 2px;font:inherit;font-size:10px;color:#2e6c51;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.link-button:hover{color:#1f5240}

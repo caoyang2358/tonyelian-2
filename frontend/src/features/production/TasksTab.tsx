@@ -2,11 +2,11 @@ import {useCallback, useState} from 'react';
 import {useResource} from '../../lib/useResource';
 import {ApiError} from '../../lib/api';
 import {
-  EXECUTION_STATE_LABELS, RECORD_TYPE_LABELS, WEIGHING_STATE_LABELS,
+  EXECUTION_STATE_LABELS, WEIGHING_STATE_LABELS,
   fetchTaskDetail, fetchTasks, newRequestId, postProduction,
   type TaskSummary,
 } from '../../lib/productionApi';
-import {FormRow, SaveFeedback, quantityHint, workshopName} from './shared';
+import {FormRow, SaveFeedback, workshopName} from './shared';
 
 const today = () => new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'});
 
@@ -27,7 +27,6 @@ export function TasksTab() {
     <section className="panel" aria-label="生产任务查询">
       <div className="panel-heading"><div>
         <h2>生产任务<small className="panel-count">{date}</small></h2>
-        <p>按计划日期查看两车间的生产任务，可登记实际与结束任务。</p>
       </div></div>
       <div className="filters" style={{paddingBottom: 16}}>
         <label className="select-field">计划日期
@@ -82,7 +81,7 @@ export function TasksTab() {
               </span></td>
             </tr>)}
           {!tasks.loading && !tasks.error && !tasks.data?.items.length &&
-            <tr><td colSpan={8}>该日期暂无生产任务。任务由「订单与计划」模块创建后自动出现在这里；无计划的生产请用「实际记录」页签的计划外补录。</td></tr>}
+            <tr><td colSpan={8}>该日期暂无生产任务；任务由「订单与计划」模块创建，无计划的生产请在「实际记录」页补录。</td></tr>}
         </tbody>
       </table></div>
     </section>
@@ -109,12 +108,22 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
 
   const task = detail.data;
   const isRodWorkshop = task?.workshopId === '1';
+  // 按用途分组：登记实际 / 任务收尾 / 可选作业时间，避免一排放一堆看不懂的按钮。
+  const RECORD_ACTIONS = ['PLATE_INPUT', 'ROD_OUTPUT', 'ROD_HANDOVER', 'WIRE_OUTPUT'];
+  const recordActions = (task?.availableActions ?? []).filter(action => RECORD_ACTIONS.includes(action));
+  const closingActions = (task?.availableActions ?? [])
+    .filter(action => action === 'TASK_COMPLETION' || action === 'NO_OUTPUT_CONFIRMATION');
+  const canExecution = (task?.availableActions ?? []).includes('EXECUTION_RECORD');
 
   const submit = useCallback(async (path: string, body: Record<string, unknown>) => {
     setBusy(true); setFeedback(null);
     try {
-      await postProduction(path, {requestId: newRequestId(), operatorName: '系统管理员', ...body});
-      setFeedback({ok: true, message: '保存成功，事实与库存已同事务过账。'});
+      const payload = {...body};
+      if (!payload.operatorName) payload.operatorName = '系统管理员';
+      const result = await postProduction(path, {requestId: newRequestId(), ...payload}) as
+        {overPlanWarning?: string} | undefined;
+      setFeedback({ok: true,
+        message: result?.overPlanWarning ? `保存成功。${result.overPlanWarning}` : '保存成功。'});
       detail.reload(); onChanged();
       setOpenForm(null);
     } catch (error) {
@@ -131,7 +140,6 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
   return <section className="panel" aria-label="任务详情">
     <div className="panel-heading"><div>
       <h2>任务详情<small className="panel-count">{task?.plannedDate}</small></h2>
-      <p>任务计划摘要与登记入口。</p>
     </div>
       <button type="button" className="button" onClick={onClose}>收起</button>
     </div>
@@ -142,19 +150,24 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
         gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px 26px'}}>
         <div><dt>任务顺序</dt><dd>当日第 {task.sequenceNo} 号</dd></div>
         <div><dt>车间 / 产品</dt><dd>{workshopName(task.workshopId).split(' · ')[0]} ·
-          {(task.materialName ?? task.materialId).replace('Φ', '直径 ')}</dd></div>
+          {(task.materialName ?? '').startsWith('Φ')
+            ? (task.materialName as string).replace(/^Φ([\d.]+)/, '直径 $1mm ')
+            : (task.materialName ?? '—')}</dd></div>
         <div><dt>计划日期</dt><dd>{task.plannedDate}</dd></div>
         <div><dt>计划合格量</dt><dd><strong>{task.plannedQualifiedTon} 吨</strong></dd></div>
         <div><dt>实际合格量</dt><dd>{task.actualQualifiedTon == null
           ? <span className="missing-value">待统计</span>
           : <strong>{task.actualQualifiedTon} 吨</strong>}</dd></div>
         <div><dt>差额</dt><dd>{task.varianceTon == null ? '待统计' : `${task.varianceTon} 吨`}</dd></div>
-        <div><dt>计划投料</dt><dd>{task.plannedPlateTon == null
-          ? <span className="missing-value">未安排投料</span>
-          : `${task.plannedPlateTon} 吨`}</dd></div>
-        <div><dt>已录投料</dt><dd>{task.plateInputSummaryTon ?? '无'} 吨（{task.plateInputCount} 笔）</dd></div>
-        <div><dt>交接笔数</dt><dd>{task.handoverCount}</dd></div>
-        <div><dt>铜板库存</dt><dd>{task.inventory?.physicalTon ?? '—'} 吨</dd></div>
+        {isRodWorkshop ? <>
+          <div><dt>计划投料</dt><dd>{task.plannedPlateTon == null
+            ? <span className="missing-value">未安排投料</span>
+            : `${task.plannedPlateTon} 吨`}</dd></div>
+          <div><dt>已录投料</dt><dd>{task.plateInputSummaryTon ?? '无'} 吨（{task.plateInputCount} 笔）</dd></div>
+          <div><dt>铜板库存</dt><dd>{task.inventory?.physicalTon ?? '—'} 吨</dd></div>
+        </> : <>
+          <div><dt>铜杆交接</dt><dd>{task.handoverCount ? `${task.handoverCount} 笔` : '尚无交接'}</dd></div>
+        </>}
         <div><dt>本任务预留</dt><dd>{task.reservations.length
           ? task.reservations.map(r => `${r.reservedTon} 吨`).join('、')
           : <span className="missing-value">无</span>}</dd></div>
@@ -167,45 +180,47 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
       </div>
 
       <div className="ops-form" style={{paddingTop: 6}}>
-        <div className="ops-form-actions">
-          {task.availableActions.map(action =>
-            <button key={action} type="button"
-              className={`button ${openForm === action ? 'button-primary' : ''}`}
-              onClick={() => {setOpenForm(openForm === action ? null : action); setFeedback(null);}}>
-              {ACTION_LABELS[action] ?? action}
-            </button>)}
-        </div>
+        {recordActions.length > 0 && <>
+          <div className="action-row">
+            <span className="action-row-title">登记生产实际</span>
+            <div className="ops-form-actions" style={{margin: 0}}>
+              {recordActions.map(action =>
+                <button key={action} type="button"
+                  className={`button ${openForm === action ? 'button-primary' : ''}`}
+                  onClick={() => {setOpenForm(openForm === action ? null : action); setFeedback(null);}}>
+                  {ACTION_LABELS[action] ?? action}
+                </button>)}
+            </div>
+          </div>
+        </>}
         {feedback && <SaveFeedback feedback={feedback}/>}
-        {openForm === 'EXECUTION_RECORD' && <FormRow fields={[
-          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
-          {name: 'startedAt', label: '实际开始时间', type: 'datetime-local'},
-          {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local'},
-        ]} hint="开始与结束时间至少填一项。"
-          busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/execution-records`, {
-              ...values, expectedVersion: task.version,
-              startedAt: toOffset(values.startedAt), stoppedAt: toOffset(values.stoppedAt),
-            })}/>}
         {openForm === 'PLATE_INPUT' && isRodWorkshop && <FormRow fields={[
           {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'inputQuantityTon', label: '本次铜板投入（吨）', required: true, placeholder: '如 6.300'},
           {name: 'materialAmountYuan', label: '材料金额（元，可留空）', placeholder: '可留空'},
-        ]} hint={quantityHint} busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/plate-inputs`, {...values, expectedVersion: task.version})}/>}
+          {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+        ]} busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/plate-inputs`, {...values, expectedVersion: task.version})}/>}
         {openForm === 'ROD_OUTPUT' && isRodWorkshop && <FormRow fields={[
           {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
           {name: 'qualifiedQuantityTon', label: '本次合格产量（吨）', required: true},
-        ]} hint="每次称重登记一条记录，铜杆自动入库。" busy={busy}
-          onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/rod-outputs`, {...values, expectedVersion: task.version})}/>}
+          {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+        ]} hint="按磅单填，可多次累加。"
+          busy={busy} onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/rod-outputs`, {...values, expectedVersion: task.version})}/>}
         {openForm === 'ROD_HANDOVER' && !isRodWorkshop && <FormRow fields={[
           {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
-          {name: 'sentQuantityTon', label: '实际交出重量（吨）', required: true},
-          {name: 'sentAt', label: '交出时间', type: 'datetime-local', required: true},
+          {name: 'sentQuantityTon', label: '车间1交来重量（吨）', required: true},
+          {name: 'sentAt', label: '交来时间', type: 'datetime-local', required: true},
           {name: 'orderId', label: '关联订单（可空）'},
-          {name: 'receivedQuantityTon', label: '实收重量（接收已发生时填）'},
-          {name: 'receivedAt', label: '接收时间', type: 'datetime-local'},
-        ]} hint="接收尚未发生时留空，之后可在「实际记录」中补录接收。" busy={busy}
+          {name: 'receivedQuantityTon', label: '本车间实收重量（吨，已收到才填）'},
+          {name: 'receivedAt', label: '实收时间', type: 'datetime-local'},
+          {name: 'releaseReason', label: '超差放行原因（误差超 5% 时填）'},
+          {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+        ]} busy={busy}
           onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/rod-handovers`, {
               ...values, expectedVersion: task.version,
               sentAt: toOffset(values.sentAt), receivedAt: toOffset(values.receivedAt),
+              releaseReason: values.releaseReason || null,
+              releaseConfirmed: Boolean(values.releaseReason),
             })}/>}
         {openForm === 'WIRE_OUTPUT' && !isRodWorkshop && <FormRow fields={[
           {name: 'materialId', label: '产品', type: 'select', required: true,
@@ -215,62 +230,100 @@ export function TaskDetailPanel({taskId, onClose, onChanged}: {
           {name: 'stoppedAt', label: '停机时间', type: 'datetime-local'},
           {name: 'allocationsText', label: '订单归属（订单编号:吨数，逗号分隔，可空）',
             placeholder: '9001:3.000'},
-        ]} hint="按实际称重登记；归属超出订单余量时系统自动截断并提示差额。" busy={busy}
-          onSubmit={values => submit('/api/v1/production/wire-outputs', {
+          {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+        ]} hint="按磅单填，可多次累加。"
+          busy={busy} onSubmit={values => submit('/api/v1/production/wire-outputs', {
             taskIds: [taskId], expectedVersions: {tasks: [{id: taskId, version: task.version}]},
             materialId: values.materialId, actualDate: values.actualDate,
             qualifiedQuantityTon: values.qualifiedQuantityTon,
             stoppedAt: toOffset(values.stoppedAt),
             allocations: parseAllocations(values.allocationsText),
+            operatorName: values.operatorName,
           })}/>}
-        {openForm === 'NO_OUTPUT_CONFIRMATION' && <FormRow fields={[
-          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
-          {name: 'scope', label: '确认范围', type: 'select', required: true,
-            options: [['TASK', '本任务'], ['WORKSHOP_DAY', '整个车间当天']]},
-          {name: 'reason', label: '原因', required: true, placeholder: '如设备检修未开机'},
-        ]} hint="当天已有合格产量时不能确认零产出。" busy={busy}
-          onSubmit={values => submit('/api/v1/production/no-output-confirmations', {
-              ...values, taskId: values.scope === 'TASK' ? taskId : undefined,
-              expectedVersion: values.scope === 'TASK' ? task.version : undefined,
-              workshopId: task.workshopId,
-            })}/>}
-        {openForm === 'TASK_COMPLETION' && <FormRow fields={[
-          {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
-          {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local', required: true},
-          {name: 'reason', label: '未称重即结束的原因（已称重可空）'},
-        ]} hint="结束后任务保留原计划与差额；当天实际仍可补录。" busy={busy}
-          onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/completion`, {
-              ...values, expectedVersion: task.version, stoppedAt: toOffset(values.stoppedAt),
-            })}/>}
+
+        {closingActions.length > 0 && <>
+          <div className="action-row" style={{marginTop: 16}}>
+            <span className="action-row-title">任务收尾</span>
+            <div className="ops-form-actions" style={{margin: 0}}>
+              {closingActions.includes('TASK_COMPLETION') && <button type="button"
+                className={`button ${openForm === 'TASK_COMPLETION' ? 'button-primary' : ''}`}
+                onClick={() => {setOpenForm(openForm === 'TASK_COMPLETION' ? null : 'TASK_COMPLETION');
+                  setFeedback(null);}}>结束本任务</button>}
+              {closingActions.includes('NO_OUTPUT_CONFIRMATION') && <button type="button"
+                className={`button ${openForm === 'NO_OUTPUT_CONFIRMATION' ? 'button-primary' : ''}`}
+                onClick={() => {setOpenForm(openForm === 'NO_OUTPUT_CONFIRMATION'
+                  ? null : 'NO_OUTPUT_CONFIRMATION'); setFeedback(null);}}>今天没有产出</button>}
+            </div>
+          </div>
+          {closingActions.includes('TASK_COMPLETION')
+            && !closingActions.includes('NO_OUTPUT_CONFIRMATION')
+            && <p className="detail-section-hint" style={{marginTop: 6}}>
+              今天已有产量，不能再确认零产出。</p>}
+          {openForm === 'TASK_COMPLETION' && <FormRow fields={[
+            {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+            {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local', required: true},
+            {name: 'reason', label: '未称重就结束的原因（已称重可空）'},
+            {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+          ]} hint="结束后不能再称重，产量没称完请先称重。" busy={busy}
+            onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/completion`, {
+                ...values, expectedVersion: task.version, stoppedAt: toOffset(values.stoppedAt),
+              })}/>}
+          {openForm === 'NO_OUTPUT_CONFIRMATION' && <FormRow fields={[
+            {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+            {name: 'scope', label: '没产出的范围', type: 'select', required: true,
+              options: [['TASK', '只有本任务没产出'], ['WORKSHOP_DAY', '整个车间当天都没产出']]},
+            {name: 'reason', label: '原因', required: true, placeholder: '如设备检修未开机'},
+            {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+          ]} hint="当天已经登记过合格产量时，不能确认零产出。" busy={busy}
+            onSubmit={values => submit('/api/v1/production/no-output-confirmations', {
+                ...values, taskId: values.scope === 'TASK' ? taskId : undefined,
+                expectedVersion: values.scope === 'TASK' ? task.version : undefined,
+                workshopId: task.workshopId,
+              })}/>}
+        </>}
+
+        {canExecution && <>
+          <p className="detail-section-hint" style={{margin: '10px 0 0'}}>
+            <button type="button" className="link-button"
+              onClick={() => {setOpenForm(openForm === 'EXECUTION_RECORD' ? null : 'EXECUTION_RECORD');
+                setFeedback(null);}}>登记开工/停工时间</button>
+            <span style={{marginLeft: 4}}>（不影响产量）</span>
+          </p>
+          {openForm === 'EXECUTION_RECORD' && <FormRow fields={[
+            {name: 'actualDate', label: '发生日期', type: 'date', required: true, defaultValue: today()},
+            {name: 'startedAt', label: '实际开始时间', type: 'datetime-local'},
+            {name: 'stoppedAt', label: '实际停止时间', type: 'datetime-local'},
+            {name: 'operatorName', label: '经办人', placeholder: '默认系统管理员'},
+          ]} hint="填开始即开工，之后只补停止时间；一段没停不能开下一段。" busy={busy}
+            onSubmit={values => submit(`/api/v1/production/tasks/${taskId}/execution-records`, {
+                ...values, expectedVersion: task.version,
+                startedAt: toOffset(values.startedAt), stoppedAt: toOffset(values.stoppedAt),
+              })}/>}
+        </>}
       </div>
 
-      <div className="ops-form" style={{paddingTop: 0}}>
-        <h3 style={{fontSize: 13, color: '#354c39', margin: '8px 0 10px'}}>实际记录时间线</h3>
+      {task.executions.length > 0 && <div className="ops-form" style={{paddingTop: 0}}>
+        <p className="detail-section-title" style={{marginTop: 16}}>开工/停工记录</p>
         <div className="table-region"><table style={{minWidth: 480}}>
-          <thead><tr><th>类型</th><th>实际日</th><th>起止</th><th>经办人</th></tr></thead>
+          <thead><tr><th>实际日</th><th>起止</th><th>经办人</th></tr></thead>
           <tbody>
-            {!task.executions.length && <tr><td colSpan={4}>本任务暂无执行片段。</td></tr>}
             {task.executions.map(execution =>
               <tr key={execution.recordId}>
-                <td>{RECORD_TYPE_LABELS.EXECUTION}</td>
                 <td>{execution.actualDate}</td>
                 <td>{trimTime(execution.startedAt) ?? '未登记'} ~ {trimTime(execution.stoppedAt) ?? '未登记'}</td>
                 <td>{execution.operatorName}</td>
               </tr>)}
           </tbody>
         </table></div>
-        <p className="panel-note" style={{marginTop: 10}}>
-          <span className="note-dot"/><p>投料、称重与交接明细请到「实际记录」页签查看。</p>
-        </p>
-      </div>
+      </div>}
     </>}
   </section>;
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  EXECUTION_RECORD: '登记开工与停工时间', PLATE_INPUT: '登记投料', ROD_OUTPUT: '铜杆称重',
-  ROD_HANDOVER: '登记交出', WIRE_OUTPUT: '铜丝称重', NO_OUTPUT_CONFIRMATION: '确认无合格产出',
-  TASK_COMPLETION: '结束日任务',
+  EXECUTION_RECORD: '登记开工/停工时间', PLATE_INPUT: '记录铜板投入', ROD_OUTPUT: '铜杆称重',
+  ROD_HANDOVER: '记录铜杆交接', WIRE_OUTPUT: '铜丝称重', NO_OUTPUT_CONFIRMATION: '确认今天没有产出',
+  TASK_COMPLETION: '结束本任务',
 };
 
 export const MATERIAL_LABELS: Record<string, string> = {
@@ -294,3 +347,4 @@ function toOffset(value: string | undefined): string | null {
 function trimTime(value: string | null): string | null {
   return value ? value.replace('T', ' ').slice(0, 16) : null;
 }
+

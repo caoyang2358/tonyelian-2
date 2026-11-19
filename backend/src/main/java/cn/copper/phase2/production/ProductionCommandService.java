@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,6 +27,9 @@ import java.util.Map;
  */
 @Service
 public class ProductionCommandService {
+
+    /** 提示里展示"几号几点"的格式。 */
+    private static final DateTimeFormatter TIME_LABEL = DateTimeFormatter.ofPattern("MM-dd HH:mm");
 
     private final JdbcTemplate jdbc;
     private final ProductionRepository repo;
@@ -113,6 +117,25 @@ public class ProductionCommandService {
         if ("COMPLETED".equals(task.status())) {
             throw new BusinessException(ErrorCode.STATE_CONFLICT, "任务已登记结束，不能再补充执行片段。");
         }
+        // 只登记停工时间：补到该任务还没填停工的片段上，形成完整一段，不另起一条。
+        if (startedAt == null) {
+            Long closedId = closeOpenExecution(taskId, stoppedAt);
+            if (closedId == null) {
+                throw BusinessException.invalid("startedAt",
+                        "没有找到这条任务尚未停工的开工登记，请先登记开工时间。");
+            }
+            repo.bumpTaskVersion(taskId);
+            repo.bumpDayRevision(task.workshopId(), actualDate);
+            return executionResult(closedId, task.workshopId());
+        }
+        // 已有"开了工还没停工"的片段时，不允许再登记新片段：一天可以有多段作业，
+        // 但不能同时有两段在跑，否则时间线会出现两个"还没填停工"。
+        LocalDateTime openingStart = openExecutionStart(taskId);
+        if (openingStart != null) {
+            throw new BusinessException(ErrorCode.STATE_CONFLICT, String.format(
+                    "该任务已有未填停工的开工时间（%s），请先补填停工时间，再登记下一段。",
+                    openingStart.format(TIME_LABEL)));
+        }
         jdbc.update("""
                 INSERT INTO p2_output_record
                     (record_type, workshop_id, task_id, actual_date, started_at, stopped_at,
@@ -124,6 +147,44 @@ public class ProductionCommandService {
         repo.bumpTaskVersion(taskId);
         repo.bumpDayRevision(task.workshopId(), actualDate);
         return executionResult(recordId, task.workshopId());
+    }
+
+    /**
+     * 把停工时间补到该任务尚未填停工的作业片段上；没有可补的片段返回 null。
+     * 同一天的开工、停工应该是一段完整作业，不是两条各自缺一半的记录。
+     */
+    private Long closeOpenExecution(long taskId, LocalDateTime stoppedAt) {
+        record Open(long outputId, LocalDateTime startedAt) {}
+        List<Open> open = jdbc.query("""
+                SELECT output_id, started_at FROM p2_output_record
+                WHERE task_id = ? AND record_type = 'EXECUTION'
+                  AND started_at IS NOT NULL AND stopped_at IS NULL AND voided_at IS NULL
+                ORDER BY started_at DESC
+                """, (rs, n) -> new Open(rs.getLong("output_id"),
+                rs.getTimestamp("started_at").toLocalDateTime()), taskId);
+        if (open.isEmpty()) {
+            return null;
+        }
+        if (open.get(0).startedAt().isAfter(stoppedAt)) {
+            throw BusinessException.invalid("stoppedAt", "停工时间不能早于开工时间。");
+        }
+        // 只补这一段；历史脏数据里若有多段未停工，不能全部盖上同一个停工时间。
+        jdbc.update("""
+                UPDATE p2_output_record SET stopped_at = ?, version = version + 1
+                WHERE output_id = ?
+                """, stoppedAt, open.get(0).outputId());
+        return open.get(0).outputId();
+    }
+
+    /** 该任务当前是否有"开了工还没停工"的片段；有则返回其开工时间。 */
+    private LocalDateTime openExecutionStart(long taskId) {
+        return jdbc.query("""
+                SELECT started_at FROM p2_output_record
+                WHERE task_id = ? AND record_type = 'EXECUTION'
+                  AND started_at IS NOT NULL AND stopped_at IS NULL AND voided_at IS NULL
+                ORDER BY started_at DESC LIMIT 1
+                """, (rs, n) -> rs.getTimestamp("started_at").toLocalDateTime(), taskId)
+                .stream().findFirst().orElse(null);
     }
 
     private Map<String, Object> executionResult(long recordId, long workshopId) {
@@ -419,6 +480,10 @@ public class ProductionCommandService {
         if (task.workshopId() != queries.workshopIdByCode("WS-ROD")) {
             throw new BusinessException(ErrorCode.STATE_CONFLICT, "Φ8 铜杆称重只属于车间一。");
         }
+        if ("COMPLETED".equals(task.status())) {
+            throw new BusinessException(ErrorCode.STATE_CONFLICT,
+                    "任务 " + task.taskId() + " 已登记结束，不能再登记称重。");
+        }
         LocalDate actualDate = ProductionTypes.parseDate("actualDate", str(body, "actualDate"), true);
         requireNotFuture(actualDate);
         BigDecimal qualified = ProductionTypes.parseTon("qualifiedQuantityTon",
@@ -493,6 +558,12 @@ public class ProductionCommandService {
         data.put("movementId", ProductionTypes.id(movementId));
         data.put("taskCumulativeTon", ProductionTypes.ton(cumulative));
         data.put("varianceTon", ProductionTypes.ton(cumulative.subtract(task.plannedQualifiedTon())));
+        BigDecimal variance = cumulative.subtract(task.plannedQualifiedTon());
+        if (variance.compareTo(BigDecimal.ZERO) > 0) {
+            data.put("overPlanWarning", "注意：本任务实际合格量 " + ProductionTypes.ton(cumulative)
+                    + " 吨已超出计划 " + ProductionTypes.ton(task.plannedQualifiedTon())
+                    + " 吨（超出 " + ProductionTypes.ton(variance) + " 吨）。");
+        }
         data.put("supplyFulfilledTon", ProductionTypes.ton(fulfilled));
         data.put("accountingState", "PENDING");
         if (executionRecordId != null) {
@@ -605,7 +676,7 @@ public class ProductionCommandService {
         String reason = str(body, "releaseReason");
         if (!confirmed || reason == null || reason.isBlank()) {
             throw new BusinessException(ErrorCode.HANDOVER_REASON_REQUIRED,
-                    "交接误差超过 5%，需要确认放行并填写原因。",
+                    "交接误差超过 5%，请在「超差放行原因」里写明原因。",
                     Map.of("errorRate", errorRateString(sentTon, receivedTon)));
         }
         return new ReleaseDecision(reason, operatorName, StockService.now());
@@ -904,8 +975,20 @@ public class ProductionCommandService {
             repo.bumpTaskVersion(task.taskId());
         }
         repo.bumpDayRevision(wireWorkshop, actualDate);
-        return wireOutputResult(outputId, materialId, qualified, publicQuantity, movement.movementId(),
-                rodUseRefs, allocationResults, adjustments);
+        Map<String, Object> result = wireOutputResult(outputId, materialId, qualified, publicQuantity,
+                movement.movementId(), rodUseRefs, allocationResults, adjustments);
+        // 超计划只提醒不拦截：差额口径与任务页一致（实际累计 − 计划合格量）。
+        for (ProductionRepository.TaskRow task : tasks) {
+            BigDecimal cumulative = repo.taskQualifiedTon(task.taskId());
+            BigDecimal variance = cumulative.subtract(task.plannedQualifiedTon());
+            if (variance.compareTo(BigDecimal.ZERO) > 0) {
+                result.put("overPlanWarning", "注意：任务 " + task.taskId() + " 实际合格量 "
+                        + ProductionTypes.ton(cumulative) + " 吨已超出计划 "
+                        + ProductionTypes.ton(task.plannedQualifiedTon())
+                        + " 吨（超出 " + ProductionTypes.ton(variance) + " 吨）。");
+            }
+        }
+        return result;
     }
 
     private void validateExpectedVersions(Map<String, Object> body,
@@ -1291,13 +1374,15 @@ public class ProductionCommandService {
             requireReason(str(body, "reason"), "任务尚未称重即结束，登记待统计");
         }
 
-        // 停止事实入时间线。
-        jdbc.update("""
-                INSERT INTO p2_output_record
-                    (record_type, workshop_id, task_id, actual_date, stopped_at, reason, operator_name)
-                VALUES ('EXECUTION', ?, ?, ?, ?, ?, ?)
-                """, task.workshopId(), taskId, Date.valueOf(actualDate), stoppedAt,
-                str(body, "notes"), str(body, "operatorName"));
+        // 停止事实入时间线：该任务有没填停工的片段就补全它，避免同一天出现"只有开工"和"只有停工"两条。
+        if (closeOpenExecution(taskId, stoppedAt) == null) {
+            jdbc.update("""
+                    INSERT INTO p2_output_record
+                        (record_type, workshop_id, task_id, actual_date, stopped_at, reason, operator_name)
+                    VALUES ('EXECUTION', ?, ?, ?, ?, ?, ?)
+                    """, task.workshopId(), taskId, Date.valueOf(actualDate), stoppedAt,
+                    str(body, "notes"), str(body, "operatorName"));
+        }
         repo.completeTask(taskId);
 
         // 未用预留释放；成品交付预留（DIRECT_OUTPUT）由成品归属支撑，不随任务结束释放。

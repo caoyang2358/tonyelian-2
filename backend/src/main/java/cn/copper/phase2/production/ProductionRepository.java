@@ -504,6 +504,7 @@ public class ProductionRepository {
                        o.production_group_id AS group_id, o.material_id, o.actual_date,
                        o.recorded_at, o.operator_name, o.qualified_quantity_ton AS quantity_ton,
                        o.reason, o.voided_at,
+                       o.started_at, o.stopped_at,
                        NULL AS sent_ton, NULL AS received_ton,
                        o.task_id AS handover_order_id, NULL AS handover_task_id
                 FROM p2_output_record o
@@ -511,7 +512,7 @@ public class ProductionRepository {
                 SELECT i.input_id, 'PLATE_INPUT', COALESCE(t.workshop_id, g.workshop_id), i.task_id,
                        i.production_group_id, i.material_id, i.actual_date, i.recorded_at,
                        i.operator_name, i.input_quantity_ton, NULL, NULL,
-                       NULL, NULL, NULL, NULL
+                       NULL, NULL, NULL, NULL, NULL, NULL
                 FROM p2_plate_input i
                 LEFT JOIN p2_plan_task t ON t.task_id = i.task_id
                 LEFT JOIN p2_production_group g ON g.production_group_id = i.production_group_id
@@ -519,6 +520,7 @@ public class ProductionRepository {
                 SELECT h.handover_id, 'ROD_HANDOVER', COALESCE(t.workshop_id, g.workshop_id), h.task_id,
                        h.production_group_id, NULL, DATE(h.sent_at), h.recorded_at, h.operator_name,
                        h.sent_quantity_ton, NULL, NULL,
+                       NULL, NULL,
                        h.sent_quantity_ton, h.received_quantity_ton, h.order_id, h.task_id
                 FROM p2_rod_handover h
                 LEFT JOIN p2_plan_task t ON t.task_id = h.task_id
@@ -530,8 +532,10 @@ public class ProductionRepository {
     public record TimelineRow(long recordId, String recordType, Long workshopId, Long taskId,
                               Long groupId, Long materialId, LocalDate actualDate,
                               LocalDateTime recordedAt, String operatorName, BigDecimal quantityTon,
-                              String reason, LocalDateTime voidedAt, BigDecimal sentTon,
-                              BigDecimal receivedTon, Long orderId, Long handoverTaskId) {
+                              String reason, LocalDateTime voidedAt,
+                              LocalDateTime startedAt, LocalDateTime stoppedAt,
+                              BigDecimal sentTon, BigDecimal receivedTon, Long orderId,
+                              Long handoverTaskId) {
     }
 
     public List<TimelineRow> timeline(RecordFilter filter, int limit, int offset) {
@@ -547,6 +551,7 @@ public class ProductionRepository {
                 rs.getObject("material_id", Long.class), rs.getDate("actual_date").toLocalDate(),
                 ts(rs.getTimestamp("recorded_at")), rs.getString("operator_name"),
                 rs.getBigDecimal("quantity_ton"), rs.getString("reason"), ts(rs.getTimestamp("voided_at")),
+                ts(rs.getTimestamp("started_at")), ts(rs.getTimestamp("stopped_at")),
                 rs.getBigDecimal("sent_ton"), rs.getBigDecimal("received_ton"),
                 rs.getObject("handover_order_id", Long.class),
                 rs.getObject("handover_task_id", Long.class)), args.toArray());
