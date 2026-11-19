@@ -25,12 +25,19 @@ const COMPLETENESS_LABELS: Record<EnergyCompleteness, string> = {
   MISSING: '无可用来源',
 };
 
-const QUALITY_OPTIONS: {code: string; label: string}[] = [
-  {code: 'GOOD', label: 'GOOD'},
-  {code: 'PARTIAL', label: 'PARTIAL'},
-  {code: 'BAD', label: 'BAD'},
-  {code: 'NO_DATA', label: 'NO_DATA'},
-];
+/**
+ * 质量码是接口枚举，原值固定为 `GOOD/PARTIAL/BAD/NO_DATA`，筛选时按原值传参。
+ * 界面按中文展示，与同屏的完整性、能源种类保持一致；遇到未登记的新值原样回退，不吞掉信息。
+ */
+const QUALITY_LABELS: Record<string, string> = {
+  GOOD: '良好',
+  PARTIAL: '部分可用',
+  BAD: '异常',
+  NO_DATA: '无数据',
+};
+
+const QUALITY_OPTIONS: {code: string; label: string}[] =
+  Object.entries(QUALITY_LABELS).map(([code, label]) => ({code, label}));
 
 const PAGE_SIZE = 20;
 
@@ -335,7 +342,9 @@ function DailyRow({item, rowKey, expanded, onToggle, onOpen}: {
           </span>
           {item.calculationMethod && <span className="en-scope-detail">{item.calculationMethod}</span>}
         </td>
-        <td>{item.qualityStatus ?? <span className="en-muted">—</span>}</td>
+        <td>{item.qualityStatus
+          ? (QUALITY_LABELS[item.qualityStatus] ?? item.qualityStatus)
+          : <span className="en-muted">—</span>}</td>
         <td className="en-mono">{item.refreshTime ? item.refreshTime.slice(0, 19).replace('T', ' ') : <span className="en-muted">—</span>}</td>
         <td>
           {item.missingItems.length === 0
