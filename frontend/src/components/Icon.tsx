@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 export type Page = 'equipment' | 'operations' | 'knowledge' | 'network' | 'planning' | 'production' | 'statistics';
-export type IconName = Page | 'arrow' | 'refresh' | 'search' | 'check' | 'alert' | 'database' | 'clock' | 'plus' | 'document' | 'edit';
+export type IconName = Page | 'arrow' | 'refresh' | 'search' | 'check' | 'alert' | 'database' | 'clock' | 'plus' | 'document' | 'edit' | 'clipboard' | 'calendar' | 'inventory' | 'factory';
 
 export function Icon({name, size = 20}: {name: IconName; size?: number}) {
   const paths: Record<IconName, ReactNode> = {
@@ -22,6 +22,10 @@ export function Icon({name, size = 20}: {name: IconName; size?: number}) {
     plus: <><circle cx="12" cy="12" r="9" /><path d="M12 8v8m-4-4h8" /></>,
     document: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 12h6m-6 4h6" /></>,
     edit: <><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4" /><path d="M12 20h8" /></>,
+    clipboard: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V2h6v2M9 9h6m-6 4h6m-6 4h4" /></>,
+    calendar: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M7 2v4m10-4v4M3 9h18M7 13h3m4 0h3m-10 4h3" /></>,
+    inventory: <><path d="M3 7h18v14H3zM5 3h14l2 4H3z" /><path d="M9 12h6" /></>,
+    factory: <><path d="M3 21V10l6 3V7l6 4V3h6v18zM3 21h18" /><path d="M7 17h1m4 0h1m4 0h1" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
