@@ -21,6 +21,13 @@ import './energy.css';
 
 const OPERATOR_STORAGE_KEY = 'en-operator-name';
 
+/** 更正后受影响区间的核算状态。三值来自接口校验，未知值原样回退，不吞信息。 */
+const CORRECTION_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待补算',
+  COMPLETE: '已核算',
+  NOT_APPLICABLE: '未涉及核算区间',
+};
+
 function newRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
@@ -85,7 +92,10 @@ export function EnergyPricePanel() {
       // 匹配要能源、车间、用能日三者齐备。能源复用列表筛选的那个值——接口的 energyType
       // 同时作用于列表与匹配，分开设两个下拉必然出现"列表看电、匹配算水"的矛盾。
       actualDate: matchDate && matchWorkshop && filters.energyType ? matchDate : undefined,
-      workshopId: matchDate && matchWorkshop && filters.energyType ? matchWorkshop : undefined,
+      // 通用价不属于任何车间：范围选通用时不能再带 workshopId，
+      // 否则后端会按「通用 + 指定车间」判为互斥参数而拒绝整个请求。
+      workshopId: matchDate && matchWorkshop && filters.energyType && filters.scope !== 'GENERAL'
+        ? matchWorkshop : undefined,
       page: nextPage,
       pageSize: 20,
     }, current.signal)
@@ -103,6 +113,12 @@ export function EnergyPricePanel() {
 
   const matched = data?.matchedPrice ?? null;
   const totalPages = data ? Math.max(1, Math.ceil(Number(data.total ?? 0) / Number(data.pageSize || 20))) : 1;
+  // 列表为空时必须是「筛选没命中」还是「一条都没录过」：两者给同一句话会误导——
+  // 上面按用能日能查到价，下面却说「尚未录入」，明显自相矛盾。
+  const scopedByMatch = Boolean(matchWorkshop && matchDate && filters.energyType);
+  const filtersByWorkshop = scopedByMatch && filters.scope !== 'GENERAL';
+  const hasFilter = Boolean(filters.energyType || filters.scope || filters.effectiveFrom
+    || filters.effectiveTo || filters.includeHistory || scopedByMatch);
   const workshopName = useMemo(
     () => (id: string | null) => {
       if (!id) return '全部车间';
@@ -157,6 +173,10 @@ export function EnergyPricePanel() {
         </button>
       </div>
 
+      <p className="en-hint en-scope-note">
+        「通用」对所有车间生效，作为兜底价；「车间专用」只对所选车间生效，匹配时优先于通用价。
+      </p>
+
       <div className="en-match">
         <p className="en-match-title">按实际用能日查适用价</p>
         <div className="en-match-controls">
@@ -182,30 +202,32 @@ export function EnergyPricePanel() {
         <div className="en-match-result">
           {!filters.energyType
             ? <span className="en-muted">
-                先在上方「能源类型」选定一种能源——价格按能源分别维护，不选能源就无法匹配到具体单价。
+                请先在上方选择能源类型。价格按能源分别维护，未选能源无法匹配单价。
               </span>
             : !matchWorkshop || !matchDate
-              ? <span className="en-muted">选择车间与日期后显示当天适用的价格。</span>
+              ? <span className="en-muted">选择车间与日期后，显示当天适用的价格。</span>
               : loading
                 ? <span className="en-muted">查询中…</span>
                 : matched
                   ? <span>
                       适用价 <strong>{formatPrice(matched.unitPriceYuanPerUnit)}</strong> 元/{matched.unitCode}
                       <span className="en-match-meta">
-                        {ENERGY_SCOPE_LABELS[matched.scope]} · 自 {matched.effectiveDate} 生效 · 价格 ID {matched.priceId}
+                        {ENERGY_SCOPE_LABELS[matched.scope]} · 自 {matched.effectiveDate} 生效 · 价格编号 {matched.priceId}
                       </span>
                     </span>
-                  : <span className="en-missing">该日无适用价格。用量会保留，单价与费用为空，请先补录价格。</span>}
+                  : <span className="en-missing">该日无适用价格：用量保留，单价与费用为空，请先录入价格。</span>}
         </div>
         {matchWorkshop && matchDate && filters.energyType && (
           <p className="en-match-hint">
-            接口的车间参数同时筛选列表，所以下方只列出该车间的价；点「清除」恢复全部车间。
+            {filters.scope === 'GENERAL'
+              ? '当前范围选的是通用价，下方列表不再按车间过滤；要只看该车间的专价，把「价格范围」改为车间专用。'
+              : '选定车间后，下方列表只显示该车间的价格；点「清除」恢复全部车间。'}
           </p>
         )}
       </div>
 
       {notice && <p className="en-notice" role="status">{notice}
-        <button type="button" className="en-link" onClick={() => setNotice(null)}>知道了</button>
+        <button type="button" className="en-link" onClick={() => setNotice(null)}>关闭</button>
       </p>}
       {error && <p className="en-error" role="alert">{error}</p>}
 
@@ -229,7 +251,13 @@ export function EnergyPricePanel() {
             )}
             {!loading && data && data.items.length === 0 && (
               <tr><td colSpan={8} className="en-empty">
-                还没有录入任何价格。先建通用价，再按车间细化——没有价格时，用能记录会停在待核算。
+                {hasFilter
+                  ? <>
+                      当前筛选条件下没有价格记录。上方的适用价按实际用能日单独匹配，不受这里筛选影响；
+                      可放宽能源类型、价格范围或生效日
+                      {filtersByWorkshop ? '，或点「清除」恢复全部车间' : ''}后再看。
+                    </>
+                  : '尚未录入价格。建议先建通用价，再按车间细化；没有价格时，用能记录停留在待核算。'}
               </td></tr>
             )}
             {data?.items.map(row => (
@@ -269,7 +297,7 @@ export function EnergyPricePanel() {
         <span>共 {data?.total ?? 0} 条</span>
         <div>
           <button type="button" className="button button-small" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button>
-          <span className="en-pager-index">{page} / {totalPages}</span>
+          <span className="en-pager-index">第 {page} / {totalPages} 页</span>
           <button type="button" className="button button-small" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>下一页</button>
         </div>
       </div>
@@ -343,8 +371,8 @@ function PriceDialog({workshops, origin, onClose, onSaved}: PriceDialogProps) {
         .then(result => {
           const scope = result.data.affectedScope;
           const range = scope.to ? `${scope.from} 至 ${scope.to}` : `${scope.from} 起`;
-          done(`已更正：原价格 ${result.data.previousPriceId} 退出当前有效，新价格 ${result.data.priceId} 自 ${range} 生效；`
-            + `核算状态 ${result.data.status === 'PENDING' ? '待补算' : result.data.status}。`);
+          done(`已更正：原价格编号 ${result.data.previousPriceId} 退出当前有效，新价格编号 ${result.data.priceId} 自 ${range} 生效；`
+            + `核算状态 ${CORRECTION_STATUS_LABELS[result.data.status] ?? result.data.status}。`);
         })
         .catch(fail);
     } else {
@@ -358,7 +386,7 @@ function PriceDialog({workshops, origin, onClose, onSaved}: PriceDialogProps) {
         .then(result => {
           const scope = result.data.affectedScope;
           const range = scope.to ? `${scope.from} 至 ${scope.to}` : `${scope.from} 起`;
-          done(`已新增价格 ${result.data.priceId}，自 ${range} 生效。已核定的历史核算保留原价格依据。`);
+          done(`已新增价格编号 ${result.data.priceId}，自 ${range} 生效。已核定的历史核算保留原价格依据。`);
         })
         .catch(fail);
     }
@@ -374,7 +402,7 @@ function PriceDialog({workshops, origin, onClose, onSaved}: PriceDialogProps) {
 
         {correcting && (
           <div className="en-origin">
-            <p>原价格 ID {origin.priceId}：{formatPrice(origin.unitPriceYuanPerUnit)} 元/{origin.unitCode}，
+            <p>原价格编号 {origin.priceId}：{formatPrice(origin.unitPriceYuanPerUnit)} 元/{origin.unitCode}，
               自 {origin.effectiveDate} 生效，{ENERGY_SCOPE_LABELS[origin.scope]}。</p>
             <p className="en-muted">保存后原价格保留在历史里，只退出「当前有效」，不会被删除。</p>
           </div>
@@ -405,7 +433,7 @@ function PriceDialog({workshops, origin, onClose, onSaved}: PriceDialogProps) {
               onChange={event => setUnitPrice(event.target.value)} />
             {fieldErrors.unitPriceYuanPerUnit
               ? <em className="en-field-error">{fieldErrors.unitPriceYuanPerUnit}</em>
-              : <em className="en-hint">允许填 0（自产或免费）；单位随能源固定，不需要手填。</em>}
+              : <em className="en-hint">可填 0（自产或免费）；单位随能源类型自动带出。</em>}
           </label>
           <label className="en-field en-field-wide">
             <span>经办人</span>

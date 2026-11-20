@@ -35,7 +35,10 @@ import sys
 from db_env import load_config, mysql_command, preflight
 
 REQUEST_PREFIX = "backfill-create-"
-REASON = "设备档案由一期导入建立，补录建档记录"
+# 页面「建档说明」直接展示本字段。措辞统一为既成事实的表述，不写「补录」：
+# 档案确实是随一期台账导入建立的，这里补的只是那笔漏记的审计记录本身，
+# 补录属性由 request_id 前缀（backfill-）保留，便于识别与 --revert 撤回。
+REASON = "设备档案随一期设备台账导入建立"
 OPERATOR = "系统初始化"
 
 # 待补设备：当前没有 CREATE，但有可用的首条更正前置快照。

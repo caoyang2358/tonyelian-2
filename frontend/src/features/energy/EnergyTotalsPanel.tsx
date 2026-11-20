@@ -25,12 +25,26 @@ const COMPLETENESS_LABELS: Record<EnergyCompleteness, string> = {
   MISSING: '无可用来源',
 };
 
-const QUALITY_OPTIONS: {code: string; label: string}[] = [
-  {code: 'GOOD', label: 'GOOD'},
-  {code: 'PARTIAL', label: 'PARTIAL'},
-  {code: 'BAD', label: 'BAD'},
-  {code: 'NO_DATA', label: 'NO_DATA'},
-];
+/**
+ * 质量码是接口枚举，原值固定为 `GOOD/PARTIAL/BAD/NO_DATA`，筛选时按原值传参。
+ * 界面按中文展示，与同屏的完整性、能源种类保持一致；遇到未登记的新值原样回退，不吞掉信息。
+ */
+const QUALITY_LABELS: Record<string, string> = {
+  GOOD: '良好',
+  PARTIAL: '部分可用',
+  BAD: '异常',
+  NO_DATA: '无数据',
+};
+
+const QUALITY_OPTIONS: {code: string; label: string}[] =
+  Object.entries(QUALITY_LABELS).map(([code, label]) => ({code, label}));
+
+/** 小时回补时透出的采集计算方式。原值放在 title 里备查。 */
+const CALCULATION_METHOD_LABELS: Record<string, string> = {
+  CUMULATIVE_DIFF: '累计量差值',
+  INSTANT_INTEGRAL: '瞬时量积分',
+  NO_DATA: '无数据',
+};
 
 const PAGE_SIZE = 20;
 
@@ -177,13 +191,13 @@ export function EnergyTotalsPanel() {
         </h3>
         {loadingTotals && !totals && <p className="en-hint">正在读取…</p>}
         {totals && totals.workshops.length === 0 && (
-          <p className="en-empty">字典中没有可统计的生产车间。</p>
+          <p className="en-empty">暂无可统计的生产车间。</p>
         )}
         {totals?.workshops.map(workshop => (
           <article className="en-total-card" key={workshop.workshopId}>
             <header className="en-total-head">
               <h4>{workshop.workshopName ?? `车间 ${workshop.workshopId}`}</h4>
-              <span className="en-section-note">{workshop.workshopId}</span>
+              <span className="en-section-note">编码 {workshop.workshopId}</span>
             </header>
             <div className="en-total-grid">
               <QuantityCard label="用电" quantity={workshop.electricity} />
@@ -200,7 +214,7 @@ export function EnergyTotalsPanel() {
           每日来源
           {summary && (
             <span className="en-section-note">
-              范围内 {summary.slotTotal} 个日槽：完整 {summary.completeCount}、
+              范围内共 {summary.slotTotal} 项日来源：完整 {summary.completeCount}、
               部分已知 {summary.partialCount}、缺测 {summary.missingCount}
             </span>
           )}
@@ -333,9 +347,15 @@ function DailyRow({item, rowKey, expanded, onToggle, onOpen}: {
           <span className={`en-badge en-badge-${item.completeness.toLowerCase()}`}>
             {COMPLETENESS_LABELS[item.completeness]}
           </span>
-          {item.calculationMethod && <span className="en-scope-detail">{item.calculationMethod}</span>}
+          {item.calculationMethod && (
+            <span className="en-scope-detail" title={item.calculationMethod}>
+              {CALCULATION_METHOD_LABELS[item.calculationMethod] ?? item.calculationMethod}
+            </span>
+          )}
         </td>
-        <td>{item.qualityStatus ?? <span className="en-muted">—</span>}</td>
+        <td>{item.qualityStatus
+          ? (QUALITY_LABELS[item.qualityStatus] ?? item.qualityStatus)
+          : <span className="en-muted">—</span>}</td>
         <td className="en-mono">{item.refreshTime ? item.refreshTime.slice(0, 19).replace('T', ' ') : <span className="en-muted">—</span>}</td>
         <td>
           {item.missingItems.length === 0

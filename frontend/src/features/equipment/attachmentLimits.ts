@@ -38,9 +38,9 @@ const FORMATS: Record<AttachmentFileKind, Format[]> = {
   ],
   DOCUMENT: [
     {label: 'PDF', extensions: ['pdf']},
-    {label: 'Word（DOC/DOCX）', extensions: ['doc', 'docx']},
-    {label: 'Excel（XLS/XLSX）', extensions: ['xls', 'xlsx']},
-    {label: '纯文本（TXT/CSV）', extensions: ['txt', 'csv']},
+    {label: 'Word（DOC、DOCX）', extensions: ['doc', 'docx']},
+    {label: 'Excel（XLS、XLSX）', extensions: ['xls', 'xlsx']},
+    {label: '文本（TXT、CSV）', extensions: ['txt', 'csv']},
   ],
 };
 
@@ -61,6 +61,17 @@ export function acceptOf(kind: AttachmentFileKind): string {
 /** 某一类附件允许的格式说明，用于页面提示与本地报错。 */
 export function formatsTextOf(kind: AttachmentFileKind): string {
   return textOfKinds([kind]);
+}
+
+/**
+ * 「支持哪些格式、单个多大」的统一说法，三个上传入口共用一句。
+ *
+ * <p>此前设备附件写「当前类别可传…」、合同文件写「支持…」、替换弹窗写「只能换成…」，
+ * 同一件事三种句式，还各自带一句「可执行文件一律不收」。现在统一成这一句，
+ * 格式清单仍来自 {@link FORMATS}，与后端白名单同源。</p>
+ */
+export function supportHintOf(kinds: AttachmentFileKind[]): string {
+  return `支持以下格式：${textOfKinds(kinds)}，单个不超过 ${MAX_FILE_SIZE_TEXT}。`;
 }
 
 /**

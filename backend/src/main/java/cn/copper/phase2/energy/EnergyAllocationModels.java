@@ -24,9 +24,18 @@ public final class EnergyAllocationModels {
 
     /** 车间二：按当日实际合格重量分摊全日消耗（含待机），属于经营估算。 */
     public static final String BASIS_OUTPUT_WEIGHT = "OUTPUT_WEIGHT";
-    /** 车间一：材料与能源按库存成本归集，需库存成本台账，本版未接入。 */
+    /** 车间一：材料与能源按库存成本归集，能源随各次产出入库进入铜杆成本。 */
     public static final String BASIS_STOCK_COST = "STOCK_COST";
 
+    /** 分摊目标：订单、公共成品份额、产出入库（车间一）、当日零产出、尚未确定。 */
+    public static final String TARGET_ORDER = "ORDER";
+    public static final String TARGET_PUBLIC = "PUBLIC";
+    public static final String TARGET_ROD_STOCK = "ROD_STOCK";
+    public static final String TARGET_NO_OUTPUT = "NO_OUTPUT";
+    public static final String TARGET_PENDING = "PENDING";
+
+    /** 分摊行已落在成本台账里，费用有了核算版本。 */
+    public static final String STATUS_ALLOCATED = "ALLOCATED";
     /** 依据齐全但还没有核算运行，费用未落账。 */
     public static final String STATUS_PENDING_COSTING = "PENDING_COSTING";
     /** 缺计量、缺称重、缺价格或缺归属，还谈不上分摊。 */
@@ -41,7 +50,7 @@ public final class EnergyAllocationModels {
 
     public static final String CODE_ORDER_ATTRIBUTION_MISSING = "ORDER_ATTRIBUTION_MISSING";
     public static final String CODE_PRICE_MISSING = "PRICE_MISSING";
-    public static final String CODE_ALLOCATION_BASIS_UNSUPPORTED = "ALLOCATION_BASIS_UNSUPPORTED";
+    // ALLOCATION_BASIS_UNSUPPORTED 已于 2026-11-19 随车间一接入称重归集而退役，不再返回。
     public static final String CODE_ATTRIBUTION_EXCEEDS_OUTPUT = "ATTRIBUTION_EXCEEDS_OUTPUT";
     public static final String CODE_COST_RUN_MISSING = "COST_RUN_MISSING";
     public static final String CODE_DAY_RECORDS_UNCONFIRMED = "DAY_RECORDS_UNCONFIRMED";
@@ -88,11 +97,15 @@ public final class EnergyAllocationModels {
     public record ShareEnergy(String energyType, String unit, String allocatedConsumption, String amountYuan) {}
 
     /**
-     * 一个分摊对象。订单与公共份额用同一个结构，{@code targetType} 区分，
-     * 这样页面不必为公共行写第二套渲染。
+     * 一个分摊对象。订单、公共份额与产出入库共用同一结构，{@code targetType} 区分，
+     * 这样页面不必为每种目标写第二套渲染。
+     *
+     * @param targetKey 目标标识：订单为订单 ID，公共为 {@code PUBLIC}，产出入库为产出 ID
+     * @param orderNo   订单号；产出入库与公共份额为空
      */
     public record AllocationShare(
             String targetType,
+            String targetKey,
             String orderId,
             String orderNo,
             String qualifiedQuantityTon,

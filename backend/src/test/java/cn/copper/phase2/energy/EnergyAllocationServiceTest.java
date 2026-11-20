@@ -45,11 +45,12 @@ class EnergyAllocationServiceTest {
 
     private final EnergySourceRepository repository = mock(EnergySourceRepository.class);
     private final EnergyRepository priceRepository = mock(EnergyRepository.class);
+    private final EnergyAllocationRepository allocationRepository = mock(EnergyAllocationRepository.class);
     private final WorkshopRow wireWorkshop = new WorkshopRow(2L, "车间2 · 铜丝拉制", "拉丝");
     private final WorkshopRow rodWorkshop = new WorkshopRow(1L, "车间1 · 铜杆生产", "熔炼");
 
     private EnergyAllocationService service(boolean coverageVerified) {
-        return new EnergyAllocationService(repository, priceRepository, coverageVerified);
+        return new EnergyAllocationService(repository, priceRepository, allocationRepository, coverageVerified);
     }
 
     @Test
@@ -186,17 +187,44 @@ class EnergyAllocationServiceTest {
     }
 
     @Test
-    void 车间一按库存成本归集并说明本版未接入() {
+    void 分摊已落库时状态为已分摊且不再报未落库() {
+        when(repository.workshop(2L)).thenReturn(Optional.of(wireWorkshop));
+        when(repository.outputFacts(anyLong(), any(), any())).thenReturn(List.of(
+                new OutputFact(DAY, "QUALIFIED_OUTPUT", new BigDecimal("10.000"))));
+        when(repository.orderAttributions(anyLong(), any())).thenReturn(List.of(
+                new OrderAttribution(7L, "DEMO-R-7", new BigDecimal("10.000"))));
+        when(allocationRepository.currentByDay(2L, DAY)).thenReturn(Optional.of(
+                new EnergyAllocationRepository.PersistedRun(19L, 6, new BigDecimal("3910.00"))));
+
+        WorkshopDayAllocation result = service(false).dayAllocation("2", "2026-11-10");
+
+        assertEquals(EnergyAllocationModels.STATUS_ALLOCATED, result.status());
+        assertTrue(result.statusNote().contains("19"));
+        assertTrue(result.missingItems().stream()
+                .noneMatch(item -> "ALLOCATION_NOT_PERSISTED".equals(item.code())));
+        assertTrue(result.missingItems().stream()
+                .noneMatch(item -> EnergyAllocationModels.CODE_COST_RUN_MISSING.equals(item.code())));
+    }
+
+    @Test
+    void 车间一按各次称重把能源归集到产出入库() {
         when(repository.workshop(1L)).thenReturn(Optional.of(rodWorkshop));
         when(repository.outputFacts(anyLong(), any(), any())).thenReturn(List.of(
                 new OutputFact(DAY, "QUALIFIED_OUTPUT", new BigDecimal("8.000"))));
+        when(repository.qualifiedOutputs(1L, DAY)).thenReturn(List.of(
+                new EnergySourceRepository.OutputRow(701, 1L, DAY, new BigDecimal("8.000"))));
 
         WorkshopDayAllocation result = service(false).dayAllocation("1", "2026-11-10");
 
         assertEquals(EnergyAllocationModels.BASIS_STOCK_COST, result.allocationBasis());
-        assertTrue(result.allocations().isEmpty());
+        // 车间一不再直接按订单计费，而是把能源归集到每一次产出入库，随入库进入铜杆成本。
+        assertEquals(1, result.allocations().size());
+        assertEquals(EnergyAllocationModels.TARGET_ROD_STOCK, result.allocations().get(0).targetType());
+        assertEquals("701", result.allocations().get(0).targetKey());
+        assertEquals("1.000000", result.allocations().get(0).ratio());
+        assertNull(result.publicShare());
         assertTrue(result.missingItems().stream()
-                .anyMatch(item -> EnergyAllocationModels.CODE_ALLOCATION_BASIS_UNSUPPORTED.equals(item.code())));
+                .noneMatch(item -> "ALLOCATION_BASIS_UNSUPPORTED".equals(item.code())));
     }
 
     @Test
@@ -262,6 +290,38 @@ class EnergyAllocationServiceTest {
         BusinessException invalid = assertThrows(BusinessException.class,
                 () -> service(false).dayAllocation("2", "2026/11/10"));
         assertEquals(ErrorCode.VALIDATION_ERROR, invalid.errorCode());
+    }
+
+    /**
+     * 已经有核算运行时，不能再报「尚未产生核算运行」。
+     *
+     * <p>这两件事经常被混为一谈：核算运行存在，但这次分摊还没写进成本台账，费用依然不可用。
+     * 缺项码要能区分，否则现场按「去点一次补算」处理，点完还是同一个缺项。</p>
+     */
+    @Test
+    void 已有核算运行时缺项改为分摊未落库而不是没有运行() {
+        when(repository.workshop(2L)).thenReturn(Optional.of(wireWorkshop));
+        when(repository.outputFacts(anyLong(), any(), any())).thenReturn(List.of(
+                new OutputFact(DAY, "QUALIFIED_OUTPUT", new BigDecimal("10.000"))));
+        when(repository.orderAttributions(2L, DAY)).thenReturn(List.of(
+                new OrderAttribution(1L, "SO-2026-001", new BigDecimal("10.000"))));
+
+        MeterRow electricity = new MeterRow(11L, "EM-01", "车间二电总表", "ELECTRICITY");
+        when(repository.meters(2L, "ELECTRICITY")).thenReturn(List.of(electricity));
+        when(repository.dayReadings(any(), any(), any()))
+                .thenReturn(List.of(reading(11L, "1000.000000")));
+        when(priceRepository.matchPrice("ELECTRICITY", 2L, DAY)).thenReturn(Optional.of(
+                new PriceMatch("1", EnergyModels.SCOPE_WORKSHOP, DAY, "元/kWh", "1.0000000000", 3L)));
+        when(priceRepository.latestPublishedCostRun()).thenReturn(Optional.of(
+                new EnergyRepository.PublishedCostRun(9L, 2L, "S2-COST-1.0", "INCOMPLETE")));
+
+        WorkshopDayAllocation result = service(true).dayAllocation("2", "2026-11-10");
+
+        assertEquals("9", result.costRun().costRunId());
+        assertEquals("INCOMPLETE", result.costRun().status());
+        List<String> codes = result.missingItems().stream().map(MissingItem::code).toList();
+        assertTrue(codes.contains("ALLOCATION_NOT_PERSISTED"), codes.toString());
+        assertFalse(codes.contains(EnergyAllocationModels.CODE_COST_RUN_MISSING), codes.toString());
     }
 
     private static DayReading reading(long sensorId, String consumption) {
