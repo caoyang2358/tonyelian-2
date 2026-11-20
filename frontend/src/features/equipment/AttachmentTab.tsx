@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
 import type { AttachmentFileKind, AttachmentItem } from '../../lib/api';
-import { MAX_FILE_SIZE_TEXT, acceptOf, formatSize, formatsTextOf, localFileError } from './attachmentLimits';
+import { acceptOf, formatSize, localFileError, supportHintOf } from './attachmentLimits';
 import './equipment.css';
 
 /**
@@ -175,15 +175,20 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
           </div>
         </li>)}
       </ul>)}
-    <p className="eq-form-hint">
-      {`当前类别「${KIND_LABELS[kind]}」可传：${formatsTextOf(kind)}，单个文件不超过 ${MAX_FILE_SIZE_TEXT}；可执行文件（.exe、.bat 等）一律不收。`
-        + '换格式前请先切换上方类别——Word、Excel 属于「文档资料」，扫描图建议选「设备配图」。'
-        + '附件不提供删除：传错了请用"替换"更新内容，已被知识页引用的手册会继续指向同一个附件 ID。'}
-    </p>
-    <p className="eq-form-hint">
-      这里的附件属于本设备。合同签署件请到"维保合同"页签按合同上传——那里按合同归档，
-      合同换设备或覆盖多台时不会重复存，也不会混进设备档案。
-    </p>
+    <div className="eq-hint-stack">
+      <p className="eq-form-hint">
+        {`当前类别「${KIND_LABELS[kind]}」${supportHintOf([kind])}`}
+      </p>
+      <p className="eq-form-hint">
+        换格式请先切换上方类别：Word、Excel 属于「文档资料」，扫描件建议选「设备配图」。
+      </p>
+      <p className="eq-form-hint">
+        附件不提供删除。传错了请用「替换」更新内容，已被知识页引用的手册会继续指向同一附件。
+      </p>
+      <p className="eq-form-hint">
+        合同签署件请到「维保合同」页签按合同上传，一份合同覆盖多台设备也只存一份。
+      </p>
+    </div>
 
     {replacing && <div className="eq-overlay" role="presentation"
                       onMouseDown={event => { if (event.target === event.currentTarget && !saving) setReplacing(null); }}>
@@ -201,7 +206,7 @@ export function AttachmentTab({equipmentId, refreshToken}: {equipmentId: string;
               {replaceFile
                 ? <small className="eq-form-hint">{replaceFile.name} · {formatSize(replaceFile.size)}</small>
                 : <small className="eq-form-hint">
-                    只能换成同类别文件（{formatsTextOf(replacing.fileKind)}）。附件 ID 与引用关系保持不变，只更新内容与版本。
+                    {`只能换成同一类别的文件，${supportHintOf([replacing.fileKind])}附件与引用关系不变，只更新内容与版本。`}
                   </small>}
             </label>
           </div>

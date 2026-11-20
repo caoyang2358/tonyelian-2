@@ -79,7 +79,7 @@ test('变更记录按契约映射版本与操作人', () => {
 test('新增建档记录的版本前值为空而不是 0', () => {
   // 建档这一条没有「改前版本」，若解析时兜成 0，页面就会把新增写成 v0 → v0，
   // 读起来像一次没有变化的更正。
-  const page = mapChangeLogPage({items: [{id: '1', operation: 'CREATE', before: null, after: {code: 'X'}, reason: '设备档案由一期导入建立，补录建档记录', operatorName: '系统初始化', recordedAt: '2026-11-03T20:04:58+08:00', requestId: 'backfill-create-1', versionBefore: null, versionAfter: 0}], page: 1, pageSize: 20, total: 1});
+  const page = mapChangeLogPage({items: [{id: '1', operation: 'CREATE', before: null, after: {code: 'X'}, reason: '设备档案随一期设备台账导入建立', operatorName: '系统初始化', recordedAt: '2026-11-03T20:04:58+08:00', requestId: 'backfill-create-1', versionBefore: null, versionAfter: 0}], page: 1, pageSize: 20, total: 1});
   assert.equal(page.items[0].operation, 'CREATE');
   assert.equal(page.items[0].versionBefore, null);
   assert.equal(page.items[0].versionAfter, 0);

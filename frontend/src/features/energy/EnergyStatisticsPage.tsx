@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import type { Page } from '../../components/Icon';
+import { CostingOrdersPanel } from './CostingOrdersPanel';
+import { CostingRunsPanel } from './CostingRunsPanel';
+import { CostingStocksPanel } from './CostingStocksPanel';
 import { EnergyPricePanel } from './EnergyPricePanel';
 import { EnergyTotalsPanel } from './EnergyTotalsPanel';
 import './energy.css';
@@ -7,14 +10,17 @@ import './energy.css';
 /**
  * 系统二 · 生产与能源统计。
  *
- * <p>视图划分按《页面与交互规格》第 1 节：总量统计、订单核算、库存成本、能源价格。
- * 每日分摊不单独占页签——它是总量的详情，从某车间某日点进去看。</p>
+ * <p>视图划分按《页面与交互规格》第 1 节：总量统计、订单核算、库存成本、能源价格，
+ * 外加核算运行。每日分摊不单独占页签——它是总量的详情，从某车间某日点进去看。</p>
  *
- * <p>已接入的两个视图背后是真实接口（E01/E02 用量、E04—E06 价格）。未接入的两个
- * 如实写出等的是什么，不用空表格冒充"已实现"。</p>
+ * <p>五个视图背后都是真实接口：E01/E02 用量与日来源、E03 当日分摊、E04—E06 价格、
+ * K01/K02 库存成本、K03/K04 订单核算、K05/K06 补算与运行查询。</p>
+ *
+ * <p>补算放在独立页签而不是塞进订单核算：它对全区间重算一次成本，有副作用，
+ * 且需要单独写清「同步执行、无发布指针、来源修订号未追踪」这三条边界。</p>
  */
 
-type ViewId = 'totals' | 'costing' | 'stock' | 'price';
+type ViewId = 'totals' | 'costing' | 'stock' | 'price' | 'runs';
 
 interface View {
   id: ViewId;
@@ -33,23 +39,34 @@ const VIEWS: View[] = [
   {
     id: 'costing',
     label: '订单核算',
-    hint: '库存成本、订单成本与估算盈亏',
-    blocked: '接口 K03/K04 待接入。依赖订单、库存成本流水与实际交付事实，'
-      + '而这些事实尚未产生（订单、投料、称重当前均为 0 行）。',
+    hint: '订单的适用金额、已知与完整成本，以及估算盈亏',
   },
   {
     id: 'stock',
     label: '库存成本',
-    hint: '铜杆与分规格铜丝的实物、价值及均价',
-    blocked: '接口 K01/K02 待接入。库存成本账由统一库存服务在入库、领用、归属时落账，'
-      + '该服务尚未建立，暂时没有可展示的成本来源。',
+    hint: '铜板、铜杆与铜丝的实物量、在库价值及移动加权均价',
   },
   {
     id: 'price',
     label: '能源价格',
     hint: '通用与车间专用单价、按用能日生效',
   },
+  {
+    id: 'runs',
+    label: '核算运行',
+    hint: '执行成本补算，按运行号查看状态、影响范围与输入快照',
+  },
 ];
+
+function renderView(view: ViewId) {
+  switch (view) {
+    case 'totals': return <EnergyTotalsPanel />;
+    case 'costing': return <CostingOrdersPanel />;
+    case 'stock': return <CostingStocksPanel />;
+    case 'price': return <EnergyPricePanel />;
+    case 'runs': return <CostingRunsPanel />;
+  }
+}
 
 export interface EnergyStatisticsPageProps {
   item: {id: Exclude<Page, 'equipment'>; label: string; description: string; features: string[]};
@@ -89,16 +106,11 @@ export function EnergyStatisticsPage({item}: EnergyStatisticsPageProps) {
         ? <div className="en-blocked">
             <p className="en-blocked-title">{active.label}尚未接入</p>
             <p className="en-blocked-detail">{active.blocked}</p>
-            <p className="en-blocked-note">
-              先做能独立成立的部分，比对着空表造数更有意义——所以本轮先交付「总量统计」与「能源价格」。
-            </p>
             <button type="button" className="button button-small" onClick={() => setView('totals')}>
               回到总量统计
             </button>
           </div>
-        : view === 'totals'
-          ? <EnergyTotalsPanel />
-          : <EnergyPricePanel />}
+        : renderView(view)}
     </section>
   );
 }

@@ -1,5 +1,8 @@
 package cn.copper.phase2.energy;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -9,7 +12,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -25,6 +30,7 @@ import java.util.Optional;
  */
 @Repository
 public class EnergySourceRepository {
+    private static final Logger LOG = LoggerFactory.getLogger(EnergySourceRepository.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     /**
@@ -83,6 +89,45 @@ public class EnergySourceRepository {
               FROM p2_output_record
              WHERE workshop_id = ? AND actual_date BETWEEN ? AND ?
                AND record_type IN ('QUALIFIED_OUTPUT', 'NO_OUTPUT')
+            """;
+
+    /**
+     * 当日需要分摊的（车间，日期）组合。零产出日也要参与——那一天的能源不是不存在，
+     * 只是不按比例分给订单，需要单独落一行说明。
+     */
+    private static final String SELECT_OUTPUT_DAYS = """
+            SELECT DISTINCT workshop_id, actual_date
+              FROM p2_output_record
+             WHERE actual_date BETWEEN ? AND ?
+               AND record_type IN ('QUALIFIED_OUTPUT', 'NO_OUTPUT')
+             ORDER BY actual_date, workshop_id
+            """;
+
+    /**
+     * 当日逐次称重。车间一按这个明细把能源归集到各次产出入库，
+     * 所以必须带 {@code output_id}，不能用按日汇总的数量代替。
+     */
+    private static final String SELECT_OUTPUT_DETAIL = """
+            SELECT output_id, workshop_id, actual_date, qualified_quantity_ton
+              FROM p2_output_record
+             WHERE workshop_id = ? AND actual_date = ?
+               AND record_type = 'QUALIFIED_OUTPUT'
+             ORDER BY output_id
+            """;
+
+    /**
+     * 当日录全确认（S2-R19 写入的日状态）。
+     *
+     * <p>{@code confirmed_source_revision} 是确认那一刻的来源修订号。补录或更正会把
+     * {@code source_revision} 推高，两者一旦不等，这条确认就已失效——不能再拿它当
+     * 「当日只生产了这些」的依据。所以判定必须同时看两个字段，只看
+     * {@code records_complete} 会把失效的确认当成有效。</p>
+     */
+    private static final String SELECT_DAY_STATUS = """
+            SELECT workshop_id, actual_date, source_revision, confirmed_source_revision,
+                   records_complete, confirmed_by, confirmed_at
+              FROM p2_production_day_status
+             WHERE workshop_id = ? AND actual_date BETWEEN ? AND ?
             """;
 
     /**
@@ -209,6 +254,84 @@ public class EnergySourceRepository {
      * @param attributedQuantityTon 该订单当日归属的合格量合计（吨）
      */
     public record OrderAttribution(long orderId, String orderNo, BigDecimal attributedQuantityTon) {}
+
+    /**
+     * 当日录全确认状态。
+     *
+     * <p>{@link #confirmed()} 要求 {@code confirmed_source_revision} 等于当前
+     * {@code source_revision}：确认之后只要又补录或更正过，来源修订号就会被推高，
+     * 这条确认自动失效。{@link #invalidated()} 正是这种「曾经确认过、现在不作数」的状态，
+     * 页面需要区分它和「从没确认过」——前者是补录导致的，后者是还没录完。</p>
+     */
+    public record DayStatusRow(long workshopId, LocalDate actualDate, long sourceRevision,
+                               Long confirmedSourceRevision, boolean recordsComplete,
+                               String confirmedBy, OffsetDateTime confirmedAt) {
+
+        public boolean confirmed() {
+            return recordsComplete && confirmedSourceRevision != null
+                    && confirmedSourceRevision == sourceRevision;
+        }
+
+        public boolean invalidated() {
+            return confirmedSourceRevision != null && confirmedSourceRevision != sourceRevision;
+        }
+    }
+
+    /**
+     * 按日读取录全确认。区间内没有状态行的日期不会出现在结果里——「没有这行」本身就是
+     * 「没确认过」，调用方据此报未确认，而不是当成确认。
+     *
+     * <p>日状态表由 V18 引入。库还没升到 V18 时这里返回空表并记一条告警：
+     * 没有这张表等于没有任何确认，退化成「未确认」是正确语义，不是把故障藏起来。</p>
+     */
+    public Map<LocalDate, DayStatusRow> dayStatuses(long workshopId, LocalDate from, LocalDate to) {
+        try {
+            List<DayStatusRow> rows = jdbc.query(SELECT_DAY_STATUS, (rs, row) -> new DayStatusRow(
+                            rs.getLong("workshop_id"),
+                            rs.getDate("actual_date").toLocalDate(),
+                            rs.getLong("source_revision"),
+                            (Long) rs.getObject("confirmed_source_revision", Long.class),
+                            rs.getBoolean("records_complete"),
+                            rs.getString("confirmed_by"),
+                            toOffset(rs.getTimestamp("confirmed_at"))),
+                    workshopId, from, to);
+            Map<LocalDate, DayStatusRow> index = new HashMap<>();
+            for (DayStatusRow row : rows) {
+                index.put(row.actualDate(), row);
+            }
+            return index;
+        } catch (DataAccessException unavailable) {
+            LOG.warn("读取当日录全确认失败，按未确认处理（车间 {}，{} 至 {}）：{}",
+                    workshopId, from, to, unavailable.getMessage());
+            return Map.of();
+        }
+    }
+
+    public Optional<DayStatusRow> dayStatus(long workshopId, LocalDate date) {
+        return Optional.ofNullable(dayStatuses(workshopId, date, date).get(date));
+    }
+
+    /** 区间内所有有产出（正称重或明确零产出）的车间日，分摊按这个清单逐日落库。 */
+    public List<OutputDay> outputDays(LocalDate from, LocalDate to) {
+        return jdbc.query(SELECT_OUTPUT_DAYS, (rs, row) -> new OutputDay(
+                        rs.getLong("workshop_id"),
+                        rs.getDate("actual_date").toLocalDate()),
+                from, to);
+    }
+
+    /** 当日逐次合格称重，带产出 ID 与重量。 */
+    public List<OutputRow> qualifiedOutputs(long workshopId, LocalDate date) {
+        return jdbc.query(SELECT_OUTPUT_DETAIL, (rs, row) -> new OutputRow(
+                        rs.getLong("output_id"),
+                        rs.getLong("workshop_id"),
+                        rs.getDate("actual_date").toLocalDate(),
+                        rs.getBigDecimal("qualified_quantity_ton")),
+                workshopId, date);
+    }
+
+    public record OutputDay(long workshopId, LocalDate actualDate) {}
+
+    public record OutputRow(long outputId, long workshopId, LocalDate actualDate, BigDecimal quantityTon) {}
 
     private static String placeholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));

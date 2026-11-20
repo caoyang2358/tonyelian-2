@@ -11,7 +11,7 @@ DELETE c FROM p2_change_log c JOIN tmp_test_knowledge_ids t
 DELETE a FROM p2_knowledge_article a JOIN tmp_test_knowledge_ids t ON t.article_id=a.article_id;
 DROP TEMPORARY TABLE tmp_test_knowledge_ids;
 
--- 补齐现场演示设备的类型、位置、管理状态和责任班组；不虚构厂家、序列号和日期。
+-- 补齐现场演示设备的类型与安装位置，空缺的责任人给默认班组；不虚构厂家、序列号和日期。
 INSERT INTO p2_equipment_profile
   (equipment_id,type_code,installation_location,management_status,technical_parameters,version,created_at,updated_at)
 SELECT e.equipment_id,x.type_code,x.location,'IN_USE',JSON_ARRAY(JSON_OBJECT(
@@ -29,16 +29,19 @@ JOIN (
   UNION ALL SELECT 'DRAW-03','DRAWING_MACHINE','车间2 · 拉丝生产区'
   UNION ALL SELECT 'GAUGE-02','DIAMETER_GAUGE','车间2 · 在线检测区'
 ) x ON x.code=e.equipment_code
+-- 已存在的档案只补类型与位置；管理状态由业务维护，迁移不得把停用/报废重置为在用。
 ON DUPLICATE KEY UPDATE type_code=VALUES(type_code),installation_location=VALUES(installation_location),
-  management_status='IN_USE',updated_at=NOW(3),version=version;
+  updated_at=NOW(3);
 
+-- 仅补齐空缺（NULL、空串或早期占位值「待指定」）；已有人工录入的责任人不覆盖。
 UPDATE dim_equipment SET responsible_person = CASE equipment_code
   WHEN 'SMELT-FUR-01' THEN '熔炼运行班组' WHEN 'HOLD-FUR-01' THEN '熔炼运行班组'
-  WHEN 'CAST-01' THEN '连铸运行班组' WHEN 'ROLL-01' THEN '连轸运行班组'
+  WHEN 'CAST-01' THEN '连铸运行班组' WHEN 'ROLL-01' THEN '连铸运行班组'
   WHEN 'DRAW-01' THEN '拉丝运行班组' WHEN 'DRAW-02' THEN '拉丝运行班组'
   WHEN 'DRAW-03' THEN '拉丝运行班组' WHEN 'GAUGE-02' THEN '质量检测班组'
   ELSE responsible_person END
-WHERE equipment_code IN ('SMELT-FUR-01','HOLD-FUR-01','CAST-01','ROLL-01','DRAW-01','DRAW-02','DRAW-03','GAUGE-02');
+WHERE equipment_code IN ('SMELT-FUR-01','HOLD-FUR-01','CAST-01','ROLL-01','DRAW-01','DRAW-02','DRAW-03','GAUGE-02')
+  AND (responsible_person IS NULL OR TRIM(responsible_person) IN ('', '待指定'));
 
 -- 隐藏仅用于接口验收的临时设备，知识库选择器也会主动排除该编码。
 UPDATE dim_equipment SET enabled=0 WHERE equipment_code='KNOWLEDGE-VERIFY';

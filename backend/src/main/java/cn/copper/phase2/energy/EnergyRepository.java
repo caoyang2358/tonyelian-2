@@ -322,6 +322,24 @@ public class EnergyRepository {
     };
 
     /**
+     * 最近一次已提交结果的核算运行。
+     *
+     * <p>E03 需要它来区分两种情况：「还没有任何核算运行」与「已有运行但本次分摊尚未落库」。
+     * 两者都还拿不到成本版本，但原因不同，缺项码也不能共用一个。</p>
+     */
+    public record PublishedCostRun(long costRunId, Long version, String ruleVersion, String status) {}
+
+    public Optional<PublishedCostRun> latestPublishedCostRun() {
+        return jdbc.query("""
+                SELECT cost_run_id, version, rule_version, status FROM p2_cost_run
+                 WHERE status IN ('COMPLETED', 'INCOMPLETE')
+                 ORDER BY cost_run_id DESC LIMIT 1
+                """, (rs, rowNum) -> new PublishedCostRun(rs.getLong("cost_run_id"),
+                rs.getLong("version"), rs.getString("rule_version"), rs.getString("status")))
+                .stream().findFirst();
+    }
+
+    /**
      * 单价输出为字符串，保留数据库的 10 位小数。
      *
      * <p>这里不用 {@code stripTrailingZeros}：契约示例是 {@code "1.1000000000"}，

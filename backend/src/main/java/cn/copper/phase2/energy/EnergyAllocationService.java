@@ -42,21 +42,22 @@ import java.util.Map;
 public class EnergyAllocationService {
     /** 分摊比例的内部精度。输出时再降到 {@code RATIO_SCALE}。 */
     private static final int RATIO_INTERNAL_SCALE = 16;
-    private static final String TARGET_ORDER = "ORDER";
-    private static final String TARGET_PUBLIC = "PUBLIC";
     private static final String WORKSHOP_TYPE_MELTING = "熔炼";
     private static final String SOURCE_PRODUCTION = "PRODUCTION_RECORD";
     private static final String SOURCE_ENERGY_ALLOCATION = "ENERGY_ALLOCATION";
 
     private final EnergySourceRepository repository;
     private final EnergyRepository priceRepository;
+    private final EnergyAllocationRepository allocationRepository;
     private final EnergyUsageResolver resolver;
 
     public EnergyAllocationService(EnergySourceRepository repository,
                                    EnergyRepository priceRepository,
+                                   EnergyAllocationRepository allocationRepository,
                                    @Value("${phase2.energy.coverage-verified:false}") boolean coverageVerified) {
         this.repository = repository;
         this.priceRepository = priceRepository;
+        this.allocationRepository = allocationRepository;
         this.resolver = new EnergyUsageResolver(coverageVerified);
     }
 
@@ -67,8 +68,11 @@ public class EnergyAllocationService {
                 .orElseThrow(() -> BusinessException.notFound("车间不存在：" + workshopIdText));
 
         String workshopText = String.valueOf(workshopId);
+        // 核算运行存在，不等于本次分摊已经写进成本台账：分摊行由核算发布落库。两者要分开报。
+        EnergyRepository.PublishedCostRun published = priceRepository.latestPublishedCostRun().orElse(null);
         List<MissingItem> missing = new ArrayList<>();
-        boolean dayConfirmed = EnergyTotalsService.DAY_CONFIRMATION_AVAILABLE;
+        EnergySourceRepository.DayStatusRow dayStatus = repository.dayStatus(workshopId, date).orElse(null);
+        boolean dayConfirmed = dayStatus != null && dayStatus.confirmed();
 
         // ---------- 1. 分母：当日全部合格量 ----------
         BigDecimal qualified = null;
@@ -132,92 +136,132 @@ public class EnergyAllocationService {
                 : EnergyAllocationModels.BASIS_OUTPUT_WEIGHT;
         List<AllocationShare> allocations = new ArrayList<>();
         AllocationShare publicShare = null;
+        EnergyAllocationRepository.PersistedRun persisted =
+                allocationRepository.currentByDay(workshopId, date).orElse(null);
+        boolean sourcesComplete = sources.stream()
+                .allMatch(item -> EnergyStatModels.COMPLETE.equals(item.completeness()));
         String status;
         String statusNote;
 
         if (!melting && zeroConfirmed && qualified == null) {
             status = EnergyAllocationModels.STATUS_NO_OUTPUT;
             statusNote = "当日确认无合格产出，能源按车间费用归集，不产生订单份额";
-        } else if (melting) {
-            status = EnergyAllocationModels.STATUS_PENDING_INPUT;
-            statusNote = "车间一按库存成本归集材料与能源，需统一库存服务与核算运行，本版只提供当日来源与费用";
-            missing.add(new MissingItem(EnergyAllocationModels.CODE_ALLOCATION_BASIS_UNSUPPORTED,
-                    SOURCE_ENERGY_ALLOCATION, null, workshopText, date, "allocation",
-                    "车间一不以合格重量分摊能源，需按库存成本归集；统一库存服务与核算运行尚未接入"));
         } else if (qualified == null || qualified.signum() <= 0) {
             status = EnergyAllocationModels.STATUS_PENDING_INPUT;
-            statusNote = "当日尚未称重或未建立分母，暂不能分摊";
+            statusNote = melting
+                    ? "当日尚未称重，车间一能源无法归集到各次产出入库"
+                    : "当日尚未称重或未建立分母，暂不能分摊";
         } else {
-            List<OrderAttribution> attributions = repository.orderAttributions(workshopId, date);
-            if (attributions.isEmpty()) {
-                status = EnergyAllocationModels.STATUS_PENDING_INPUT;
-                statusNote = "当日有合格产出但尚无订单归属，只能给出分母，不能拆分到订单";
-                missing.add(new MissingItem(EnergyAllocationModels.CODE_ORDER_ATTRIBUTION_MISSING,
-                        SOURCE_PRODUCTION, null, workshopText, date, "orderAllocation",
-                        "当日合格称重未关联订单归属，需先完成称重归属，否则无法按订单分摊"));
-            } else {
-                BigDecimal attributed = attributions.stream()
-                        .map(OrderAttribution::attributedQuantityTon)
-                        .filter(java.util.Objects::nonNull)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                if (attributed.compareTo(qualified) > 0) {
-                    status = EnergyAllocationModels.STATUS_PENDING_INPUT;
-                    statusNote = "订单归属量大于当日合格总量，比例不成立，需先核对称重与归属";
-                    missing.add(new MissingItem(EnergyAllocationModels.CODE_ATTRIBUTION_EXCEEDS_OUTPUT,
-                            SOURCE_PRODUCTION, null, workshopText, date, "orderAllocation",
-                            "订单归属合计 " + format(attributed, EnergyStatModels.TON_SCALE)
-                                    + " 吨已超过当日合格量 " + format(qualified, EnergyStatModels.TON_SCALE)
-                                    + " 吨，请核对归属记录"));
-                } else {
-                    for (OrderAttribution attribution : attributions) {
-                        BigDecimal quantity = attribution.attributedQuantityTon();
-                        if (quantity == null || quantity.signum() <= 0) continue;
-                        BigDecimal ratio = quantity.divide(qualified, RATIO_INTERNAL_SCALE, RoundingMode.HALF_UP);
-                        List<ShareEnergy> energies = shareEnergies(sources, ratio);
-                        allocations.add(new AllocationShare(TARGET_ORDER,
-                                String.valueOf(attribution.orderId()), attribution.orderNo(),
-                                format(quantity, EnergyStatModels.TON_SCALE),
-                                format(ratio, EnergyAllocationModels.RATIO_SCALE),
-                                energies, sumAmount(energies), List.of()));
-                    }
-                    BigDecimal publicQuantity = qualified.subtract(attributed);
-                    if (publicQuantity.signum() > 0) {
-                        BigDecimal ratio = publicQuantity.divide(qualified, RATIO_INTERNAL_SCALE,
-                                RoundingMode.HALF_UP);
-                        List<ShareEnergy> energies = shareEnergies(sources, ratio);
-                        publicShare = new AllocationShare(TARGET_PUBLIC, null, null,
-                                format(publicQuantity, EnergyStatModels.TON_SCALE),
-                                format(ratio, EnergyAllocationModels.RATIO_SCALE),
-                                energies, sumAmount(energies), List.of());
-                    }
-                    boolean sourcesComplete = sources.stream()
-                            .allMatch(item -> EnergyStatModels.COMPLETE.equals(item.completeness()));
-                    if (sourcesComplete && dayConfirmed) {
-                        status = EnergyAllocationModels.STATUS_PENDING_COSTING;
-                        statusNote = "依据齐全，等待核算运行落账并生成成本版本";
-                    } else {
-                        status = EnergyAllocationModels.STATUS_PENDING_INPUT;
-                        statusNote = "比例已按当前称重给出，但能源来源或当日录全尚未确定，费用不作为最终结果";
-                    }
-                    missing.add(new MissingItem(EnergyAllocationModels.CODE_COST_RUN_MISSING,
-                            SOURCE_ENERGY_ALLOCATION, null, workshopText, date, "costRun",
-                            "尚未产生核算运行，分摊消耗与费用未落成本台账，也没有核算版本"));
+            if (melting) {
+                // 车间一按库存成本归集：把当日能源按各次合格铜杆重量分到产出入库，
+                // 随后随入库进入铜杆成本，再由领用带到下游，不按订单直接计费。
+                for (EnergySourceRepository.OutputRow output : repository.qualifiedOutputs(workshopId, date)) {
+                    BigDecimal quantity = output.quantityTon();
+                    if (quantity == null || quantity.signum() <= 0) continue;
+                    BigDecimal ratio = quantity.divide(qualified, RATIO_INTERNAL_SCALE, RoundingMode.HALF_UP);
+                    List<ShareEnergy> energies = shareEnergies(sources, ratio);
+                    allocations.add(new AllocationShare(EnergyAllocationModels.TARGET_ROD_STOCK,
+                            String.valueOf(output.outputId()), null, null,
+                            format(quantity, EnergyStatModels.TON_SCALE),
+                            format(ratio, EnergyAllocationModels.RATIO_SCALE),
+                            energies, sumAmount(energies), List.of()));
                 }
+            } else {
+                List<OrderAttribution> attributions = repository.orderAttributions(workshopId, date);
+                if (!attributions.isEmpty()) {
+                    BigDecimal attributed = attributions.stream()
+                            .map(OrderAttribution::attributedQuantityTon)
+                            .filter(java.util.Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    if (attributed.compareTo(qualified) > 0) {
+                        missing.add(new MissingItem(EnergyAllocationModels.CODE_ATTRIBUTION_EXCEEDS_OUTPUT,
+                                SOURCE_PRODUCTION, null, workshopText, date, "orderAllocation",
+                                "订单归属合计 " + format(attributed, EnergyStatModels.TON_SCALE)
+                                        + " 吨已超过当日合格量 " + format(qualified, EnergyStatModels.TON_SCALE)
+                                        + " 吨，请核对归属记录"));
+                        attributions = List.of();
+                    } else {
+                        for (OrderAttribution attribution : attributions) {
+                            BigDecimal quantity = attribution.attributedQuantityTon();
+                            if (quantity == null || quantity.signum() <= 0) continue;
+                            BigDecimal ratio = quantity.divide(qualified, RATIO_INTERNAL_SCALE,
+                                    RoundingMode.HALF_UP);
+                            List<ShareEnergy> energies = shareEnergies(sources, ratio);
+                            allocations.add(new AllocationShare(EnergyAllocationModels.TARGET_ORDER,
+                                    String.valueOf(attribution.orderId()),
+                                    String.valueOf(attribution.orderId()), attribution.orderNo(),
+                                    format(quantity, EnergyStatModels.TON_SCALE),
+                                    format(ratio, EnergyAllocationModels.RATIO_SCALE),
+                                    energies, sumAmount(energies), List.of()));
+                        }
+                        BigDecimal publicQuantity = qualified.subtract(attributed);
+                        if (publicQuantity.signum() > 0) {
+                            BigDecimal ratio = publicQuantity.divide(qualified, RATIO_INTERNAL_SCALE,
+                                    RoundingMode.HALF_UP);
+                            List<ShareEnergy> energies = shareEnergies(sources, ratio);
+                            publicShare = new AllocationShare(EnergyAllocationModels.TARGET_PUBLIC,
+                                    EnergyAllocationModels.TARGET_PUBLIC, null, null,
+                                    format(publicQuantity, EnergyStatModels.TON_SCALE),
+                                    format(ratio, EnergyAllocationModels.RATIO_SCALE),
+                                    energies, sumAmount(energies), List.of());
+                        }
+                    }
+                } else {
+                    missing.add(new MissingItem(EnergyAllocationModels.CODE_ORDER_ATTRIBUTION_MISSING,
+                            SOURCE_PRODUCTION, null, workshopText, date, "orderAllocation",
+                            "当日合格称重未关联订单归属，需先完成称重归属，否则无法按订单分摊"));
+                }
+            }
+
+            if (allocations.isEmpty() && publicShare == null) {
+                status = EnergyAllocationModels.STATUS_PENDING_INPUT;
+                statusNote = melting
+                        ? "当日有合格量但没有逐次称重明细，无法把能源归集到产出入库"
+                        : "当日有合格产出但尚无订单归属，只能给出分母，不能拆分到订单";
+            } else if (persisted != null) {
+                status = EnergyAllocationModels.STATUS_ALLOCATED;
+                statusNote = "分摊已写入核算运行 " + persisted.costRunId()
+                        + "，共 " + persisted.rowCount() + " 行，费用已进成本台账";
+            } else if (sourcesComplete && dayConfirmed) {
+                status = EnergyAllocationModels.STATUS_PENDING_COSTING;
+                statusNote = published == null
+                        ? "依据齐全，等待核算运行落账并生成成本版本"
+                        : "依据齐全，等待本次分摊写入成本台账后由核算运行生成成本版本";
+            } else {
+                status = EnergyAllocationModels.STATUS_PENDING_INPUT;
+                statusNote = "比例已按当前称重给出，但能源来源或当日录全尚未确定，费用不作为最终结果";
+            }
+
+            if (persisted == null) {
+                missing.add(new MissingItem(
+                        published == null
+                                ? EnergyAllocationModels.CODE_COST_RUN_MISSING
+                                : "ALLOCATION_NOT_PERSISTED",
+                        SOURCE_ENERGY_ALLOCATION, null, workshopText, date, "costRun",
+                        published == null
+                                ? "尚未产生核算运行，分摊消耗与费用未落成本台账，也没有核算版本"
+                                : "已有核算运行 " + published.costRunId()
+                                + "，但本次分摊尚未写入分摊行，费用仍未落成本台账"));
             }
         }
 
         List<EnergyReconciliation> reconciliation = reconcile(sources, allocations, publicShare);
-        CostRun costRun = new CostRun(null, null, "NOT_RUN");
+        CostRun costRun = published == null
+                ? new CostRun(null, null, "NOT_RUN")
+                : new CostRun(String.valueOf(published.costRunId()), published.version(), published.status());
         String totalAmount = amountTotalComplete ? format(amountTotal, EnergyAllocationModels.AMOUNT_SCALE) : null;
 
         return new WorkshopDayAllocation(
                 workshopText, workshop.workshopName(), workshop.workshopType(), date,
                 basis, status, statusNote,
                 dayConfirmed
-                        ? new DayConfirmation(true, null, null, false,
+                        ? new DayConfirmation(true, dayStatus.confirmedBy(), dayStatus.confirmedAt(), false,
                         "当日生产记录已确认录全，分摊比例为最终依据")
-                        : new DayConfirmation(false, null, null, false,
-                        "S2-R18/R19 未接入，本版不提供当日录全确认；分摊比例均为按现有记录的临时结果"),
+                        : new DayConfirmation(false, null, null,
+                        dayStatus != null && dayStatus.invalidated(),
+                        dayStatus != null && dayStatus.invalidated()
+                                ? "当日曾确认录全，但之后又发生补录或更正，确认已失效；分摊比例需重新核对"
+                                : "当日生产记录尚未确认录全，分摊比例均为按现有记录的临时结果"),
                 denominator, sources, totalAmount, allocations, publicShare,
                 reconciliation, costRun, missing);
     }

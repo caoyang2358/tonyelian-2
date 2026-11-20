@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../../lib/api';
 import type { AttachmentFileKind, AttachmentItem } from '../../lib/api';
 import {
-  CONTRACT_ACCEPT, CONTRACT_FORMATS_TEXT, MAX_FILE_SIZE_TEXT, acceptOf, formatSize, formatsTextOf, localFileError,
+  CONTRACT_ACCEPT, MAX_FILE_SIZE_TEXT, acceptOf, formatSize, localFileError, supportHintOf,
 } from './attachmentLimits';
 import './equipment.css';
 
@@ -39,8 +39,15 @@ function formatTime(value: string | null): string {
   return date.toLocaleString('zh-CN', {hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
 }
 
+/**
+ * 合同文件不让用户选类别，按文件本身归类。
+ *
+ * <p>先看 MIME，再看扩展名兜底：浏览器偶尔不给 MIME（或只给 application/octet-stream），
+ * 此时一律归 DOCUMENT，会让 png 扫描件撞上文档白名单被服务端拒收。</p>
+ */
 function kindFor(file: File): AttachmentFileKind {
-  return file.type.startsWith('image/') ? 'IMAGE' : 'DOCUMENT';
+  if (file.type.startsWith('image/')) return 'IMAGE';
+  return /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name) ? 'IMAGE' : 'DOCUMENT';
 }
 
 export function ContractFiles({contractId, readOnly = false}: {contractId: string; readOnly?: boolean}) {
@@ -160,7 +167,8 @@ export function ContractFiles({contractId, readOnly = false}: {contractId: strin
 
       {!busy && rows !== null && (rows.length === 0
         ? <p className="eq-contract-empty">
-            {`尚未上传合同文件。支持${CONTRACT_FORMATS_TEXT}，单个不超过 ${MAX_FILE_SIZE_TEXT}；可执行文件（.exe、.bat 等）一律不收。`}
+            尚未上传合同文件。<br />
+            {`支持 PDF、Word、Excel 与图片扫描件，单个不超过 ${MAX_FILE_SIZE_TEXT}。`}
           </p>
         : <ul className="eq-contract-file-list">
           {rows.map(row => <li key={row.attachmentId} className="eq-contract-file">
@@ -196,7 +204,7 @@ export function ContractFiles({contractId, readOnly = false}: {contractId: strin
               {replaceFile
                 ? <small className="eq-form-hint">{replaceFile.name} · {formatSize(replaceFile.size)}</small>
                 : <small className="eq-form-hint">
-                    只能换成同类别文件（{formatsTextOf(replacing.fileKind)}）。合同、设备与引用关系都不变，只更新这份文件的内容与版本。
+                    {`只能换成同一类别的文件，${supportHintOf([replacing.fileKind])}合同与设备的关联不变，只更新这份文件的内容与版本。`}
                   </small>}
             </label>
           </div>

@@ -35,14 +35,12 @@ import java.util.Set;
 @Service
 public class EnergyTotalsService {
     /**
-     * 当日录全确认是否可用。S2-R18/R19 尚未实现、{@code p2_production_day_status} 也不存在，
-     * 因此此刻恒为 false：产量只可能返回"已知部分 + 未确认"。
+     * 当日录全确认的判定口径。
      *
-     * <p>接入 R19 后改为读取日状态表，这里不要用"当天有称重就当录全"来抄近路——
-     * 那会把"还没录完"当成"确实只生产了这些"。</p>
+     * <p>只认 {@code p2_production_day_status} 里「确认来源修订号仍等于当前来源修订号」的
+     * 记录：S2-R19 落库之后，任何补录或更正都会把来源修订号推高，使旧的确认自动失效。
+     * 不能用「当天有称重就当录全」抄近路——那会把"还没录完"当成"确实只生产了这些"。</p>
      */
-    static final boolean DAY_CONFIRMATION_AVAILABLE = false;
-
     static final String CODE_DAY_RECORDS_UNCONFIRMED = "DAY_RECORDS_UNCONFIRMED";
     static final String CODE_ZERO_CONFLICT_WITH_OUTPUT = "ZERO_CONFLICT_WITH_OUTPUT";
     static final String SOURCE_PRODUCTION = "PRODUCTION_RECORD";
@@ -143,6 +141,8 @@ public class EnergyTotalsService {
                 qualifiedByDate.merge(fact.actualDate(), fact.quantityTon(), BigDecimal::add);
             }
         }
+        Map<LocalDate, EnergySourceRepository.DayStatusRow> dayStatus =
+                repository.dayStatuses(workshopId, from, to);
 
         List<MissingItem> missing = new ArrayList<>();
         List<BigDecimal> knownParts = new ArrayList<>();
@@ -151,9 +151,11 @@ public class EnergyTotalsService {
         for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
             BigDecimal qualified = qualifiedByDate.get(date);
             boolean zero = zeroDays.contains(date);
+            EnergySourceRepository.DayStatusRow status = dayStatus.get(date);
+            boolean confirmed = status != null && status.confirmed();
             if (qualified == null && !zero) {
                 allComplete = false;
-                missing.add(unconfirmed(workshopId, date,
+                missing.add(unconfirmed(workshopId, date, status,
                         "当日未查询到称重或零产出事实，且当日生产记录尚未确认录全，不能按零产量处理"));
                 continue;
             }
@@ -164,10 +166,12 @@ public class EnergyTotalsService {
                         String.valueOf(workshopId), date, "qualifiedOutput",
                         "当日既有明确零产出确认又有正称重，已按正称重计，请核对并作废其中一条"));
             }
-            if (!DAY_CONFIRMATION_AVAILABLE) {
+            if (!confirmed) {
                 allComplete = false;
-                missing.add(unconfirmed(workshopId, date,
-                        "当日生产记录尚未确认录全，产量为已知称重合计，不作为完整产量"));
+                missing.add(unconfirmed(workshopId, date, status,
+                        status != null && status.invalidated()
+                                ? "当日曾确认录全，但之后又发生补录或更正，确认已失效，产量需重新核对"
+                                : "当日生产记录尚未确认录全，产量为已知称重合计，不作为完整产量"));
             }
         }
 
@@ -188,7 +192,8 @@ public class EnergyTotalsService {
                 EnergyStatModels.PARTIAL, shown);
     }
 
-    private static MissingItem unconfirmed(long workshopId, LocalDate date, String message) {
+    private static MissingItem unconfirmed(long workshopId, LocalDate date,
+                                          EnergySourceRepository.DayStatusRow status, String message) {
         return new MissingItem(CODE_DAY_RECORDS_UNCONFIRMED, SOURCE_PRODUCTION, null,
                 String.valueOf(workshopId), date, "qualifiedOutput", message);
     }
