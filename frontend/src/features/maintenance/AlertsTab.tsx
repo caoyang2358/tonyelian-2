@@ -24,6 +24,16 @@ function priorityTagClass(priority: string): string {
   return 'ops-tag-gray';
 }
 
+/**
+ * 处理状态展示：报修后由工单决定——有未结工单就是「等待维修」，
+ * 工单验收完成且没有未结工单就是「已处理」；没报修才看人工处理记录。
+ */
+function ProcessingTag({repairState, handlingState}: {repairState?: string | null; handlingState: string}) {
+  if (repairState === 'HANDLED') return <span className="ops-tag ops-tag-green">已处理</span>;
+  if (repairState === 'WAITING_REPAIR') return <span className="ops-tag ops-tag-blue">等待维修</span>;
+  return <Tag value={handlingState} map={handlingStateLabels} />;
+}
+
 /** 把结构化规则快照翻成业务能读的句子，避免直接抛 [0, 80] 这种数学区间。 */
 function ruleText(snapshot: RuleSnapshot): string {
   const unit = formatUnit(snapshot.unitCode);
@@ -359,7 +369,7 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
             <td>{formatTime(item.startedAt)}</td>
             <td><span className={`ops-tag ${item.sourceType === 'MANUAL' ? 'ops-tag-amber' : 'ops-tag-gray'}`}>{label(eventSourceLabels, item.sourceType, '—')}</span></td>
             <td><Tag value={item.eventState} map={eventStateLabels} /></td>
-            <td><Tag value={item.handlingState} map={handlingStateLabels} /></td>
+            <td><ProcessingTag repairState={item.repairState} handlingState={item.handlingState} /></td>
             <td>{item.repairOrderStatuses?.length
               ? <><Tag value={item.repairOrderStatuses[0]} map={orderStatusLabels} />
                   {item.repairOrderStatuses.length > 1 && <span className="missing-value"> 等{item.repairOrderStatuses.length}张</span>}</>
@@ -380,7 +390,7 @@ export function AlertsTab({onRepairRequest}: {onRepairRequest?: (handoff: Repair
             <div className="ops-detail-row"><dt>当前状态</dt><dd>
               <span className={`ops-tag ${priorityTagClass(detail.priority)}`}>优先级 {label(priorityLabels, detail.priority)}</span>
               <Tag value={detail.eventState} map={eventStateLabels} />
-              <Tag value={detail.handlingState} map={handlingStateLabels} />
+              <ProcessingTag repairState={detail.repairState} handlingState={detail.handlingState} />
             </dd></div>
             <dl>
               <div><dt>设备</dt><dd><strong>{detail.equipmentName}</strong></dd></div>

@@ -216,15 +216,15 @@ public class RepairOrderRepository {
     public long insertOrder(String placeholderOrderNo, long equipmentId, String sourceType,
                             Long sourceAlertEventId, Long sourceInspectionId, String sourceSnapshotJson,
                             String faultCategory, String description, String reporterName,
-                            LocalDateTime now) {
+                            String status, LocalDateTime firstSubmittedAt, LocalDateTime now) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement("""
                     INSERT INTO p2_repair_order
                         (order_no, equipment_id, source_type, source_alert_event_id, source_inspection_id,
                          source_snapshot, fault_category, description, reporter_name,
-                         status, created_at, updated_at, version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                         status, first_submitted_at, created_at, updated_at, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, placeholderOrderNo);
             ps.setLong(2, equipmentId);
@@ -235,9 +235,10 @@ public class RepairOrderRepository {
             ps.setString(7, faultCategory);
             ps.setString(8, description);
             ps.setString(9, reporterName);
-            ps.setString(10, RepairOrderWorkflow.DRAFT);
-            ps.setObject(11, now);
+            ps.setString(10, status);
+            ps.setObject(11, firstSubmittedAt);
             ps.setObject(12, now);
+            ps.setObject(13, now);
             return ps;
         }, keys);
         Number key = keys.getKey();
@@ -275,6 +276,43 @@ public class RepairOrderRepository {
                        completed_at = COALESCE(?, completed_at)
                  WHERE repair_order_id = ?
                 """, status, now, firstSubmittedAt, completedAt, repairOrderId);
+    }
+
+    /**
+     * 工单走到终态时闭环来源事件：把还没结束的异常事件写结束，并记下结束原因。
+     *
+     * <p>没有采集数据时事件不会按恢复结束，若不在这里闭环，页面就会出现
+     * 「工单已结束、事件还在进行中」的矛盾。只动未结束的事件，
+     * 已被自动恢复或规则变更结束的事件保留原有结束原因，不做覆盖。</p>
+     *
+     * <p>结束时间用 {@code GREATEST(?, triggered_at)} 兜住 chk_2
+     * （ended_at 不得早于触发时间），避免人工补录事件与工单时间倒挂时整笔操作失败。</p>
+     *
+     * <p>同一事件可能被报修成多张工单（建单不拦截，由审核判定重复），这里只有当
+     * 这张单是同一事件的<b>最后一张未结工单</b>时才结束事件；否则另一张单还在走，
+     * 事件先闭环又会造出「事件已结束、处理状态等待维修」的同类矛盾。</p>
+     *
+     * @param endReason 结束原因，取值见 {@link AlertEventStates}：验收通过是维修闭环，
+     *                  审核判定无需维修是另一码事，页面据此显示「结束原因」，不与工单状态互相冒充
+     * @return 受影响行数；0 表示来源不是异常事件，或事件已经结束
+     */
+    public int closeSourceAlertEvent(long repairOrderId, LocalDateTime endedAt,
+                                     String endReason, LocalDateTime now) {
+        return jdbc.update("""
+                UPDATE p2_alert_event e
+                  JOIN p2_repair_order r ON r.source_alert_event_id = e.event_id
+                   SET e.ended_at = GREATEST(?, e.triggered_at),
+                       e.end_reason = ?,
+                       e.version = e.version + 1,
+                       e.updated_at = ?
+                 WHERE r.repair_order_id = ?
+                   AND r.source_type = 'ALERT_EVENT'
+                   AND e.ended_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM p2_repair_order other
+                                    WHERE other.source_alert_event_id = e.event_id
+                                      AND other.repair_order_id <> r.repair_order_id
+                                      AND other.status NOT IN ('COMPLETED', 'CLOSED'))
+                """, endedAt, endReason, now, repairOrderId);
     }
 
     public long insertAction(long repairOrderId, String actionType, String result, String previousStatus,
@@ -330,6 +368,17 @@ public class RepairOrderRepository {
         jdbc.update("DELETE FROM p2_repair_photo WHERE repair_order_id = ?", repairOrderId);
         for (Long attachmentId : attachmentIds) {
             jdbc.update("INSERT INTO p2_repair_photo (repair_order_id, attachment_id) VALUES (?, ?)",
+                    repairOrderId, attachmentId);
+        }
+    }
+
+    /**
+     * 追加照片：建单即提交后，报修人在上传窗口里补传的现场照片只能追加，不能整集合替换，
+     * 避免把审核或维修阶段已经挂上的证据照片冲掉。重复挂同一张附件时忽略。
+     */
+    public void appendPhotos(long repairOrderId, List<Long> attachmentIds) {
+        for (Long attachmentId : attachmentIds) {
+            jdbc.update("INSERT IGNORE INTO p2_repair_photo (repair_order_id, attachment_id) VALUES (?, ?)",
                     repairOrderId, attachmentId);
         }
     }
@@ -440,8 +489,13 @@ public class RepairOrderRepository {
             args.add(Long.valueOf(query.equipmentId()));
         }
         if (query.status() != null) {
-            conditions.add("r.status = ?");
-            args.add(query.status());
+            // 页面按四类状态筛选，其中「待审核」包含退回补充、「已结束」包含验收与关闭，
+            // 因此这里允许逗号分隔的多状态，等价于 IN 查询。
+            String[] statuses = query.status().split(",");
+            conditions.add("r.status IN (" + String.join(", ", java.util.Collections.nCopies(statuses.length, "?")) + ")");
+            for (String status : statuses) {
+                args.add(status);
+            }
         }
         if (query.sourceType() != null) {
             conditions.add("r.source_type = ?");

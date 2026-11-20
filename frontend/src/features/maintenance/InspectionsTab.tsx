@@ -101,7 +101,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
             description: `${createFields.content.trim()}${createFields.description.trim() ? `｜${createFields.description.trim()}` : ''}`,
             reporterName: createFields.inspectorName.trim(),
           });
-          orderNote = ` 已同步生成维修工单 ${order.orderNo}，当前「待提交」，需到维修工单页签提交送审。`;
+          orderNote = ` 已同步生成维修工单 ${order.orderNo}，已进入「待审核」。`;
         } catch (error) {
           orderFailed = true;
           orderNote = ` 但维修工单未生成：${error instanceof MaintenanceApiError ? error.message : '接口异常'}，`
@@ -221,7 +221,7 @@ export function InspectionsTab({onRepairRequest}: {onRepairRequest?: (handoff: R
                 <option value="">故障类别（可选）</option>
                 {Object.entries(faultCategoryLabels).map(([value, text]) => <option value={value} key={value}>{text}</option>)}
               </select>
-              <span className="ops-check-note">工单从「待提交」开始，需到维修工单页签提交送审</span>
+              <span className="ops-check-note">勾选后同步建单，工单直接进入「待审核」</span>
             </> : <span className="ops-check-note">不勾选则只留巡检记录，之后可在下方详情点「以此巡检报修」</span>}
           </div>}
           <PhotoPicker files={createPhotos} onChange={setCreatePhotos} disabled={creating} />

@@ -1,5 +1,6 @@
 package cn.copper.phase2.maintenance;
 
+import cn.copper.phase2.maintenance.OverviewModels.DurationBuckets;
 import cn.copper.phase2.maintenance.OverviewModels.EquipmentReportCount;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -18,7 +19,7 @@ import java.util.List;
  */
 @Repository
 public class OverviewRepository {
-    /** 待审核、待补充、维修中、待验收：文档定义的"待办"四个状态。 */
+    /** 待审核（含退回补充）、待维修、待验收：页面上的三个未结束环节，都算待办。 */
     private static final List<String> PENDING_STATUSES = List.of(
             RepairOrderWorkflow.REVIEW_PENDING,
             RepairOrderWorkflow.RETURNED_FOR_INFO,
@@ -26,6 +27,12 @@ public class OverviewRepository {
             RepairOrderWorkflow.ACCEPTANCE_PENDING);
 
     private final JdbcTemplate jdbc;
+
+    /** 在办工单的时效阈值：与概览时长分档的黄色/红色分界一致（2 小时）。 */
+    static final int OVERDUE_AFTER_HOURS = 2;
+
+    /** 健康区间的上限（30 分钟）：与前端配色分档同一口径，改一处即可。 */
+    static final int EXPECTED_MINUTES = 30;
 
     public OverviewRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -116,6 +123,62 @@ public class OverviewRepository {
 
     /** 均值与样本量。 */
     public record HandlingStats(BigDecimal averageSeconds, long sampleCount) {}
+
+    /**
+     * 已完成工单的时长分档：同一批样本（首次提交→验收通过）按 30 分钟、2 小时切开。
+     *
+     * <p>没有样本时三个都是 0，由前端判断"暂无可分段展示"，不画空条。</p>
+     */
+    public DurationBuckets durationBuckets(LocalDateTime from, LocalDateTime to,
+                                           Long workshopId, Long equipmentId) {
+        List<Object> args = new ArrayList<>();
+        String sql = """
+                SELECT
+                  COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(SECOND, t.first_submitted_at, t.completed_at) <= %d
+                                    THEN 1 ELSE 0 END), 0) AS within30,
+                  COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(SECOND, t.first_submitted_at, t.completed_at) > %d
+                                     AND TIMESTAMPDIFF(SECOND, t.first_submitted_at, t.completed_at) <= %d
+                                    THEN 1 ELSE 0 END), 0) AS within2h,
+                  COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(SECOND, t.first_submitted_at, t.completed_at) > %d
+                                    THEN 1 ELSE 0 END), 0) AS over2h
+                FROM p2_repair_order t
+                JOIN dim_equipment e ON e.equipment_id = t.equipment_id
+                """.formatted(EXPECTED_MINUTES * 60, EXPECTED_MINUTES * 60,
+                OVERDUE_AFTER_HOURS * 3600, OVERDUE_AFTER_HOURS * 3600)
+                + scope("t.completed_at", from, to, workshopId, equipmentId, args)
+                + " AND t.completed_at IS NOT NULL AND t.first_submitted_at IS NOT NULL";
+        return jdbc.queryForObject(sql, (rs, row) -> new DurationBuckets(
+                rs.getLong("within30"), rs.getLong("within2h"), rs.getLong("over2h")), args.toArray());
+    }
+
+    /**
+     * 在办工单超时数：仍处于中间状态、且从首次提交到现在已超过 2 小时。
+     *
+     * <p>这是"工单时效"，与期限提醒（设备档案到期）是两回事，因此单独一条 SQL、
+     * 单独一个数字，既不复用 from/to 时间窗，也不混进期限的临期/超期。
+     * 用一个固定时点做基准，避免同一响应里两个数字来自不同时刻。</p>
+     */
+    public long countOverdueRepairs(LocalDateTime now, Long workshopId, Long equipmentId) {
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.valueOf(now.minusHours(OVERDUE_AFTER_HOURS)));
+        String placeholders = String.join(",", PENDING_STATUSES.stream().map(s -> "?").toList());
+        args.addAll(PENDING_STATUSES);
+        StringBuilder sql = new StringBuilder("""
+                SELECT COUNT(*) FROM p2_repair_order t
+                JOIN dim_equipment e ON e.equipment_id = t.equipment_id
+                WHERE t.first_submitted_at IS NOT NULL AND t.first_submitted_at < ?
+                """)
+                .append(" AND t.status IN (").append(placeholders).append(")");
+        if (workshopId != null) {
+            sql.append(" AND e.workshop_id = ?");
+            args.add(workshopId);
+        }
+        if (equipmentId != null) {
+            sql.append(" AND e.equipment_id = ?");
+            args.add(equipmentId);
+        }
+        return count(sql.toString(), args);
+    }
 
     private long count(String sql, List<Object> args) {
         Long total = jdbc.queryForObject(sql, Long.class, args.toArray());

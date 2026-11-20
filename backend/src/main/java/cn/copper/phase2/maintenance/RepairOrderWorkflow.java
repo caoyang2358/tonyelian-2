@@ -6,20 +6,33 @@ import java.util.Set;
 /**
  * 工单状态机，逐条对应《运维管理页面接口文档》§4 的状态转换表。
  * 所有状态与动作码集中在此，避免散落在 Service 的字符串字面量里。
+ *
+ * <p>2026-11 评审调整：取消"待提交"（DRAFT）环节，录入工单即直接提交进入待审核。
+ * 页面只呈现四类业务状态：待审核、待维修、待验收、已结束；
+ * 其中"退回补充"是待审核环节内的补充态，与待审核同组展示、同组筛选。</p>
  */
 final class RepairOrderWorkflow {
-    static final String DRAFT = "DRAFT";
+    /** 待审核。 */
     static final String REVIEW_PENDING = "REVIEW_PENDING";
+    /** 待审核环节内被退回、有待报修人补充资料的子状态。 */
     static final String RETURNED_FOR_INFO = "RETURNED_FOR_INFO";
+    /** 待维修：已审核通过并派工。 */
     static final String IN_REPAIR = "IN_REPAIR";
+    /** 待验收：维修人已登记结果。 */
     static final String ACCEPTANCE_PENDING = "ACCEPTANCE_PENDING";
+    /** 已结束：验收通过。 */
     static final String COMPLETED = "COMPLETED";
+    /** 已结束：无需维修或重复单关闭。 */
     static final String CLOSED = "CLOSED";
 
-    /** 可保存资料、可正式提交的两个状态。 */
-    static final Set<String> EDITABLE = Set.of(DRAFT, RETURNED_FOR_INFO);
+    /** 只有被退回补充的工单需要报修人再编辑；建单即提交，不再有草稿态。 */
+    static final Set<String> EDITABLE = Set.of(RETURNED_FOR_INFO);
     /** 已结束，不再接受任何动作。 */
     static final Set<String> TERMINAL = Set.of(COMPLETED, CLOSED);
+    /** 页面上的"待审核"一类：待审核与退回补充同属审核环节。 */
+    static final Set<String> REVIEW_GROUP = Set.of(REVIEW_PENDING, RETURNED_FOR_INFO);
+    /** 页面上的"已结束"一类：验收通过与关闭合并展示。 */
+    static final Set<String> CLOSED_GROUP = Set.of(COMPLETED, CLOSED);
 
     static final String ACTION_SAVE = "SAVE";
     static final String ACTION_SUBMIT = "SUBMIT";
@@ -36,7 +49,7 @@ final class RepairOrderWorkflow {
     /** 当前状态下允许的动作码，作为 S1-R03 的 availableActions 返回给前端。 */
     static List<String> availableActions(String status) {
         return switch (status) {
-            case DRAFT, RETURNED_FOR_INFO -> List.of(ACTION_SAVE, ACTION_SUBMIT);
+            case RETURNED_FOR_INFO -> List.of(ACTION_SAVE, ACTION_SUBMIT);
             case REVIEW_PENDING -> List.of(
                     ACTION_APPROVE, ACTION_RETURN_FOR_INFO, ACTION_NO_REPAIR, ACTION_DUPLICATE);
             case IN_REPAIR -> List.of(ACTION_REPAIR_RESULT);
@@ -45,7 +58,7 @@ final class RepairOrderWorkflow {
         };
     }
 
-    /** 可编辑字段清单：只有草稿与退回补充状态允许改资料。 */
+    /** 可编辑字段清单：只有退回补充状态允许改资料。 */
     static List<String> editableFields(String status) {
         return EDITABLE.contains(status)
                 ? List.of("description", "supplement", "reporterName", "photoAttachmentIds")

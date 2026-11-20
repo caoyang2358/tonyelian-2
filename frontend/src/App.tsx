@@ -9,13 +9,14 @@ import type { Page } from './components/Icon';
 import { PendingPage } from './components/PendingPage';
 import { EquipmentPage } from './features/equipment/EquipmentPage';
 import { MaintenancePage } from './features/maintenance/MaintenancePage';
+import { ProductionPage } from './features/production/ProductionPage';
 import { KnowledgePage } from './features/knowledge/KnowledgePage';
 import { NetworkPage } from './features/network/NetworkPage';
 import { EnergyStatisticsPage } from './features/energy/EnergyStatisticsPage';
 
 const navigation: {id: Page; label: string; system: 1 | 2; description: string; features: string[]}[] = [
   {id: 'equipment', label: '设备管理', system: 1, description: '查看生产设备与基础信息', features: []},
-  {id: 'operations', label: '运维管理', system: 1, description: '异常提醒、人工巡检与维修处理', features: ['异常事件与人工处理', '巡检记录与报修草稿', '维修、审核及验收']},
+  {id: 'operations', label: '运维管理', system: 1, description: '异常提醒、人工巡检与维修处理', features: ['异常事件与人工处理', '巡检记录与异常报修', '维修、审核及验收']},
   {id: 'knowledge', label: '运维知识库', system: 1, description: '设备知识、手册与人工排查步骤', features: ['按设备和类型查阅', '人工维护的故障排查步骤', '已验收维修案例整理']},
   {id: 'network', label: '设备组网', system: 1, description: '车间工艺、设备与测点的二维示意', features: ['二维工艺与设备关系', '测点信息及档案关联', '示意位置与连线维护']},
   {id: 'planning', label: '订单与计划', system: 2, description: '订单、库存、产能与日生产计划', features: ['订单与物料需求', '生产草稿与日计划', '库存分配和交付记录']},
@@ -28,7 +29,7 @@ const pageComponents = {
   knowledge: KnowledgePage,
   network: NetworkPage,
   planning: PendingPage,
-  production: PendingPage,
+  production: ProductionPage,
   statistics: EnergyStatisticsPage,
 };
 
@@ -48,11 +49,11 @@ export default function App() {
   const retry = () => { live.reload(); ready.reload(); overview.reload(); setRefreshToken(value => value + 1); };
   // 调试信息（数据库连接状态等）默认隐藏，加 ?debug=1 才显示——功能保留，不向普通用户展示。
   const debugMode = new URLSearchParams(window.location.search).has('debug');
-  return <><a className="skip-link" href="#main-content">跳到主要内容</a><div className="app-shell"><aside className="sidebar"><a className="brand" href="#main-content" onClick={() => setPage('equipment')} aria-label="铜冶炼二期，返回设备管理"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy">铜冶炼二期<small>COPPER OPERATIONS</small></span></a><div className="workspace-caption">管理工作台</div><nav aria-label="主导航">{([1, 2] as const).map(system => <div className="navigation-group" key={system}><p className="navigation-label">系统{system === 1 ? '一' : '二'}<span>{system === 1 ? '区域能源管理' : '全生命周期管控'}</span></p><div className="navigation-items">{navigation.filter(item => item.system === system).map(item => <button type="button" className={`navigation-item ${page === item.id ? 'active' : ''}`} key={item.id} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><Icon name={item.id} size={19} /><span>{item.label}</span>{item.id !== 'equipment' && item.id !== 'operations' && item.id !== 'network' && item.id !== 'knowledge' && item.id !== 'statistics' && <span className="nav-pending">即将上线</span>}{page === item.id && <span className="nav-active-dot" />}</button>)}</div></div>)}</nav><div className="sidebar-bottom"><div className="sidebar-lines" aria-hidden="true"><i /><i /><i /><i /></div><span>设备 · 生产 · 能源</span><p>信息连接，协同生产</p></div></aside>
+  return <><a className="skip-link" href="#main-content">跳到主要内容</a><div className="app-shell"><aside className="sidebar"><a className="brand" href="#main-content" onClick={() => setPage('equipment')} aria-label="铜冶炼二期，返回设备管理"><span className="brand-mark"><span /><span /><span /></span><span className="brand-copy">铜冶炼二期<small>COPPER OPERATIONS</small></span></a><div className="workspace-caption">管理工作台</div><nav aria-label="主导航">{([1, 2] as const).map(system => <div className="navigation-group" key={system}><p className="navigation-label">系统{system === 1 ? '一' : '二'}<span>{system === 1 ? '区域能源管理' : '全生命周期管控'}</span></p><div className="navigation-items">{navigation.filter(item => item.system === system).map(item => <button type="button" className={`navigation-item ${page === item.id ? 'active' : ''}`} key={item.id} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><Icon name={item.id} size={19} /><span>{item.label}</span>{item.id !== 'equipment' && pageComponents[item.id] === PendingPage && <span className="nav-pending">即将上线</span>}{page === item.id && <span className="nav-active-dot" />}</button>)}</div></div>)}</nav><div className="sidebar-bottom"><div className="sidebar-lines" aria-hidden="true"><i /><i /><i /><i /></div><span>设备 · 生产 · 能源</span><p>信息连接，协同生产</p></div></aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumb"><span>管理平台</span><Icon name="arrow" size={14} /><strong>{active.label}</strong></div><div className="topbar-right"><span className="initialization-tag">欧亚铜业生产管理</span><span className="header-divider" />{debugMode && <span className={`status-pill ${ready.data?.database?.status === 'UP' && !ready.error ? 'up' : 'down'}`}><span className="status-dot" />{ready.data?.database?.status === 'UP' && !ready.error ? '业务数据正常' : '等待业务数据'}</span>}</div></header>
       <main id="main-content" tabIndex={-1}><div className="page-heading"><div><div className="eyebrow"><span />{active.system === 1 ? '铜冶炼区域能源管理系统' : '全生命周期管控与决策支持系统'}</div><h1>{active.label}</h1><p>{page === 'equipment' ? '统一查看生产设备，建立清晰的设备信息底账。' : active.description}</p></div>{page === 'equipment' && <button className="button refresh-button" type="button" onClick={retry}><Icon name="refresh" size={17} /><span>{overview.loading ? '刷新中…' : '刷新数据'}</span></button>}</div>
       {page === 'equipment' ? <EquipmentPage overview={overview.data} refreshToken={refreshToken} /> :
         page === 'operations' ? <MaintenancePage /> :
         PageComponent && <PageComponent item={{...active, id: page}} back={backToEquipment} />}
-      <ConnectionDetails live={live} ready={ready} overview={overview} retry={retry} /></main><footer className="footer"><span>铜冶炼二期管理平台</span><span>设备<span className="footer-dot">·</span>运维<span className="footer-dot">·</span>生产协同</span></footer></div></div></>;
+      {debugMode && <ConnectionDetails live={live} ready={ready} overview={overview} retry={retry} />}</main></div></div></>;
 }

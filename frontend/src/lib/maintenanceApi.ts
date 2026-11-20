@@ -60,6 +60,8 @@ export interface AlertEventItem {
   parameterName?: string | null;
   startedAt: string; triggeredAt: string; recoveredAt: string | null; endedAt: string | null;
   endReason: string | null; eventState: string; handlingState: string;
+  /** 维修联动状态：WAITING_REPAIR 等待维修 / HANDLED 已处理 / NONE 未报修，由关联工单推导。 */
+  repairState?: string | null;
   /** 处理优先级：URGENT / HIGH / NORMAL / LOW，由事件状态与人工处理状态推导。 */
   priority: string;
   /** 触发时的读数与单位：列表直接可见超限程度，不必逐条点开详情。 */
@@ -210,6 +212,9 @@ export const repairOrderApi = {
     {requestId: newRequestId(), ...body}),
   submit: (repairOrderId: string, body: {operatorName: string; expectedVersion: number}) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/submissions`, {requestId: newRequestId(), ...body}),
+  /** 建单后补传现场照片：只追加，不改状态与内容。 */
+  appendPhotos: (repairOrderId: string, body: {operatorName: string; attachmentIds: string[]}) =>
+    request<RepairOrderDetail>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/photos`, {requestId: newRequestId(), ...body}),
   review: (repairOrderId: string, body: {operatorName: string; expectedVersion: number; result: string; reason: string}) =>
     request<RepairActionResult>('POST', `/repair-orders/${encodeURIComponent(repairOrderId)}/reviews`, {requestId: newRequestId(), ...body}),
   recordRepairResult: (repairOrderId: string, body: {
@@ -228,10 +233,18 @@ export interface MaintenanceOverview {
   inspectionCount: number; alertEventCount: number;
   pendingRepairCount: number; completedRepairCount: number;
   averageHandlingSeconds: string | null; handlingSampleCount: number;
+  /** 已完成工单的时长分档：30 分钟以内、30 分钟~2 小时、超过 2 小时。 */
+  durationBuckets?: {within30Minutes: number; within2Hours: number; over2Hours: number};
   equipmentReportCounts: EquipmentReportCount[];
   deadlineReminderCount: number | null;
   /** 期限构成：临期 / 超期 / 缺资料；三者之和通常小于总条数（剩下为状态正常）。 */
   deadlineBreakdown?: {dueSoon: number; expired: number; missing: number};
+  /** 临期与超期按来源拆分：质保 / 维保 / 预计寿命。 */
+  deadlineTypeCounts?: {warranty: number; maintenance: number; expectedLife: number};
+  /** 待补资料涉及的设备台数：条数 = 台数 × 期限类型，二者不是一回事。 */
+  deadlineMissingEquipmentCount?: number;
+  /** 工单时效：在办工单从提交到现在超过 2 小时未结束的数量，与期限提醒无关。 */
+  overdueRepairCount?: number;
   deadlineReminderNote: string | null;
   caliber: Record<string, string>;
 }

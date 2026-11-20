@@ -13,6 +13,7 @@ import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSaveCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSaved;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSubmitCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderReviewCommand;
+import cn.copper.phase2.maintenance.RepairOrderModels.RepairPhotoCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairResultCommand;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -77,6 +78,12 @@ public class RepairOrderController {
     public ApiResponse<RepairActionResult> submit(@PathVariable String repairOrderId,
                                                   @RequestBody RepairOrderSubmitCommand command) {
         return ApiResponse.success(service.submit(repairOrderId, command));
+    }
+
+    @PostMapping("/{repairOrderId}/photos")
+    public ApiResponse<RepairOrderDetail> appendPhotos(@PathVariable String repairOrderId,
+                                                       @RequestBody RepairPhotoCommand command) {
+        return ApiResponse.success(service.appendPhotos(repairOrderId, command));
     }
 
     @PostMapping("/{repairOrderId}/reviews")

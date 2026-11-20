@@ -65,7 +65,7 @@ class RepairOrderApiTest {
     void emptyResultStillReturnsPageEnvelope() throws Exception {
         when(repository.countRepairOrders(any())).thenReturn(0L);
 
-        mvc.perform(get("/api/v1/repair-orders").param("status", "DRAFT"))
+        mvc.perform(get("/api/v1/repair-orders").param("status", "REVIEW_PENDING"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.total").value(0))
@@ -138,14 +138,32 @@ class RepairOrderApiTest {
 
     @Test
     void filtersArePassedToRepositoryAsTrimmedValues() throws Exception {
-        when(repository.countRepairOrders(eq(new RepairOrderQuery("3", "DRAFT", "MANUAL", null, null))))
+        when(repository.countRepairOrders(eq(new RepairOrderQuery("3", "REVIEW_PENDING", "MANUAL", null, null))))
                 .thenReturn(0L);
 
         mvc.perform(get("/api/v1/repair-orders")
                         .param("equipmentId", " 3 ")
-                        .param("status", "DRAFT")
+                        .param("status", "REVIEW_PENDING")
                         .param("sourceType", "MANUAL"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void groupedStatusFilterAcceptsCommaSeparatedValues() throws Exception {
+        when(repository.countRepairOrders(
+                eq(new RepairOrderQuery(null, "REVIEW_PENDING,RETURNED_FOR_INFO", null, null, null))))
+                .thenReturn(0L);
+
+        mvc.perform(get("/api/v1/repair-orders").param("status", " review_pending , returned_for_info "))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void removedDraftStatusIsRejected() throws Exception {
+        mvc.perform(get("/api/v1/repair-orders").param("status", "DRAFT"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.data.fieldErrors[0].field").value("status"));
     }
 
     @Test

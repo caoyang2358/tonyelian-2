@@ -54,12 +54,32 @@ public class AlertEventRepository {
             + " AND r.status NOT IN ('COMPLETED', 'CLOSED'))";
 
     /**
+     * 维修联动状态推导：有未结工单 → 等待维修；没有未结但有已结案的工单 → 已处理；否则未报修。
+     *
+     * <p>「已结案」包含验收通过（COMPLETED）和审核判定无需维修/重复（CLOSED）两种：
+     * 前者是修完了，后者是已有明确结论。若只认 COMPLETED，无需维修关闭后事件会显示
+     * 「已处理状态缺失」，页面又出现「事件已结束、处理状态待处理」的矛盾。</p>
+     *
+     * <p>与 {@link #OPEN_ORDER_EXISTS} 同源，列表标签与优先级判断不会打架。</p>
+     */
+    static final String REPAIR_STATE_COLUMN = "CASE WHEN " + OPEN_ORDER_EXISTS + " THEN '"
+            + AlertEventStates.REPAIR_WAITING + "'"
+            + " WHEN EXISTS (SELECT 1 FROM p2_repair_order r"
+            + " WHERE r.source_alert_event_id = e.event_id"
+            + " AND r.status IN ('COMPLETED', 'CLOSED')) THEN '"
+            + AlertEventStates.REPAIR_HANDLED + "'"
+            + " ELSE '" + AlertEventStates.REPAIR_NONE + "' END";
+
+    /**
      * 处理优先级推导：还坏着没人管最急，还坏着已受理次之，自己好了没人确认再次，其余最低。
      * 与两个状态列同源，排序和展示不会互相打架。
      *
      * <p>"有人管"包含两种情形：登记过处理记录，或已经报修出未结工单。</p>
      */
-    static final String PRIORITY_COLUMN = "CASE WHEN e.ended_at IS NULL AND "
+    static final String PRIORITY_COLUMN = "CASE WHEN " + REPAIR_STATE_COLUMN + " = '"
+            + AlertEventStates.REPAIR_HANDLED + "' THEN '"
+            + AlertEventStates.PRIORITY_LOW + "'"
+            + " WHEN e.ended_at IS NULL AND "
             + HANDLING_STATE_COLUMN + " = '" + AlertEventStates.PENDING + "' AND NOT ("
             + OPEN_ORDER_EXISTS + ") THEN '"
             + AlertEventStates.PRIORITY_URGENT + "'"
@@ -78,7 +98,7 @@ public class AlertEventRepository {
                    e.sensor_id, s.sensor_code,
                    e.parameter_id, p.parameter_code, p.parameter_name,
                    e.started_at, e.triggered_at, e.recovered_at, e.ended_at, e.end_reason,
-                   %s AS event_state, %s AS handling_state, %s AS priority,
+                   %s AS event_state, %s AS handling_state, %s AS repair_state, %s AS priority,
                    e.trigger_value, e.unit_code,
                    JSON_UNQUOTE(JSON_EXTRACT(e.source_reference, '$.type')) AS source_type,
                    (SELECT GROUP_CONCAT(r.repair_order_id ORDER BY r.repair_order_id)
@@ -92,7 +112,7 @@ public class AlertEventRepository {
             JOIN dim_equipment eq ON eq.equipment_id = e.equipment_id
             JOIN dim_sensor s ON s.sensor_id = e.sensor_id
             JOIN dim_sensor_parameter p ON p.parameter_id = e.parameter_id
-            """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, PRIORITY_COLUMN);
+            """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, REPAIR_STATE_COLUMN, PRIORITY_COLUMN);
 
     static final RowMapper<AlertEventItem> EVENT_ITEM_MAPPER = (rs, row) -> new AlertEventItem(
             rs.getString("event_id"),
@@ -110,6 +130,7 @@ public class AlertEventRepository {
             rs.getString("end_reason"),
             rs.getString("event_state"),
             rs.getString("handling_state"),
+            rs.getString("repair_state"),
             rs.getString("priority"),
             rs.getString("trigger_value"),
             rs.getString("unit_code"),
@@ -152,7 +173,7 @@ public class AlertEventRepository {
                        e.sensor_id, s.sensor_code,
                        e.parameter_id, p.parameter_code, p.parameter_name,
                        e.started_at, e.triggered_at, e.recovered_at, e.ended_at, e.end_reason,
-                       %s AS event_state, %s AS handling_state, %s AS priority,
+                       %s AS event_state, %s AS handling_state, %s AS repair_state, %s AS priority,
                        e.trigger_value, e.unit_code, e.source_reference,
                        e.rule_version_id, e.version
                 FROM p2_alert_event e
@@ -160,7 +181,7 @@ public class AlertEventRepository {
                 JOIN dim_sensor s ON s.sensor_id = e.sensor_id
                 JOIN dim_sensor_parameter p ON p.parameter_id = e.parameter_id
                 WHERE e.event_id = ?
-                """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, PRIORITY_COLUMN);
+                """.formatted(EVENT_STATE_COLUMN, HANDLING_STATE_COLUMN, REPAIR_STATE_COLUMN, PRIORITY_COLUMN);
         List<EventRow> rows = jdbc.query(sql, EventRow::map, eventId);
         if (rows.isEmpty()) {
             return null;
@@ -170,7 +191,7 @@ public class AlertEventRepository {
                 row.eventId(), row.equipmentId(), row.equipmentName(),
                 row.sensorId(), row.sensorCode(), row.parameterId(), row.parameterCode(), row.parameterName(),
                 row.startedAt(), row.triggeredAt(), row.recoveredAt(), row.endedAt(), row.endReason(),
-                row.eventState(), row.handlingState(), row.priority(),
+                row.eventState(), row.handlingState(), row.repairState(), row.priority(),
                 row.triggerValue(), row.unitCode(), readJson(row.sourceReferenceJson()),
                 String.valueOf(row.ruleVersionId()),
                 findRuleSnapshot(row.ruleVersionId()),
@@ -195,6 +216,7 @@ public class AlertEventRepository {
             String endReason,
             String eventState,
             String handlingState,
+            String repairState,
             String priority,
             String triggerValue,
             String unitCode,
@@ -219,6 +241,7 @@ public class AlertEventRepository {
                     rs.getString("end_reason"),
                     rs.getString("event_state"),
                     rs.getString("handling_state"),
+                    rs.getString("repair_state"),
                     rs.getString("priority"),
                     decimal(rs, "trigger_value"),
                     rs.getString("unit_code"),

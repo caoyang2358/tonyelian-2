@@ -14,6 +14,7 @@ import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderReviewCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSaveCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSaved;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairOrderSubmitCommand;
+import cn.copper.phase2.maintenance.RepairOrderModels.RepairPhotoCommand;
 import cn.copper.phase2.maintenance.RepairOrderModels.RepairResultCommand;
 import cn.copper.phase2.maintenance.RepairOrderRepository.AlertSource;
 import cn.copper.phase2.maintenance.RepairOrderRepository.InspectionSource;
@@ -45,7 +46,7 @@ import java.util.regex.Pattern;
 @Service
 public class RepairOrderService {
     static final Set<String> REPAIR_ORDER_STATUSES = Set.of(
-            "DRAFT", "REVIEW_PENDING", "RETURNED_FOR_INFO", "IN_REPAIR",
+            "REVIEW_PENDING", "RETURNED_FOR_INFO", "IN_REPAIR",
             "ACCEPTANCE_PENDING", "COMPLETED", "CLOSED");
     static final Set<String> REPAIR_SOURCE_TYPES = Set.of("ALERT_EVENT", "INSPECTION", "MANUAL");
     static final Set<String> REVIEW_RESULTS = Set.of("APPROVE", "RETURN_FOR_INFO", "NO_REPAIR", "DUPLICATE");
@@ -60,6 +61,7 @@ public class RepairOrderService {
     static final String OPERATION_REVIEW = "REPAIR_ORDER_REVIEW";
     static final String OPERATION_REPAIR_RESULT = "REPAIR_ORDER_REPAIR_RESULT";
     static final String OPERATION_ACCEPTANCE = "REPAIR_ORDER_ACCEPTANCE";
+    static final String OPERATION_PHOTOS = "REPAIR_ORDER_PHOTOS";
 
     /**
      * R03 内联返回的动作条数上限。单张工单的动作数通常个位数，
@@ -167,12 +169,13 @@ public class RepairOrderService {
         }
 
         LocalDateTime now = LocalDateTime.now(MaintenanceTimes.ZONE);
+        // 建单即提交：取消待提交环节，录入工单后直接进入待审核，首次提交时间在建单时落定。
         long repairOrderId = repository.insertOrder("PENDING-" + request.requestId(), equipmentId,
                 request.sourceType(), alertEventId, inspectionId, snapshotJson, request.faultCategory(),
-                request.description(), request.reporterName(), now);
+                request.description(), request.reporterName(), RepairOrderWorkflow.REVIEW_PENDING, now, now);
         repository.updateOrderNo(repairOrderId, orderNo(now, repairOrderId));
-        repository.insertAction(repairOrderId, "CREATE", null, null, RepairOrderWorkflow.DRAFT,
-                now, now, request.operatorName(), null, null);
+        repository.insertAction(repairOrderId, "CREATE", null, null,
+                RepairOrderWorkflow.REVIEW_PENDING, now, now, request.operatorName(), "建单即提交", null);
 
         OrderRow row = repository.findOrder(repairOrderId);
         RepairOrderCreated created = new RepairOrderCreated(
@@ -224,6 +227,39 @@ public class RepairOrderService {
         RepairOrderSaved saved = new RepairOrderSaved(after, String.valueOf(changeLogId));
         idempotency.complete(request.requestId(), saved);
         return saved;
+    }
+
+    /**
+     * 补传现场照片。
+     *
+     * <p>建单即提交后没有草稿态可挂照片，报修时上传的照片在建单后走本接口追加：
+     * 只加不删、不改内容、不推进版本，因此不会覆盖审核或维修阶段已挂的证据照片。</p>
+     */
+    @Transactional
+    public RepairOrderDetail appendPhotos(String repairOrderId, RepairPhotoCommand command) {
+        long id = parseId("repairOrderId", repairOrderId);
+        RepairPhotoCommand request = validate(command);
+        Optional<RepairOrderDetail> replayed = idempotency.claim(
+                request.requestId(), OPERATION_PHOTOS, String.valueOf(id), request, RepairOrderDetail.class);
+        if (replayed.isPresent()) {
+            return replayed.get();
+        }
+
+        StatusRow current = lockOrder(id);
+        if (RepairOrderWorkflow.TERMINAL.contains(current.status())) {
+            throw stateConflict(current, "工单已结束，不能再补传照片。");
+        }
+        List<Long> attachmentIds = parseIds("attachmentIds", request.attachmentIds());
+        for (Long attachmentId : attachmentIds) {
+            if (!repository.attachmentBelongsToOrder(attachmentId, id)) {
+                throw new InvalidRequestException("attachmentIds",
+                        "照片 " + attachmentId + " 不属于该工单或已不存在，请重新上传。");
+            }
+        }
+        repository.appendPhotos(id, attachmentIds);
+        RepairOrderDetail detail = detailOf(id);
+        idempotency.complete(request.requestId(), detail);
+        return detail;
     }
 
     /** S1-R05 正式提交：资料齐备才允许进入待审核，首次提交时间只记一次。 */
@@ -282,6 +318,12 @@ public class RepairOrderService {
         long actionId = repository.insertAction(id, RepairOrderWorkflow.actionType(action), request.result(),
                 current.status(), next, now, now, request.operatorName(), request.reason(), null);
         repository.advanceStatus(id, next, now, null, null);
+        if (RepairOrderWorkflow.CLOSED.equals(next)
+                && RepairOrderWorkflow.ACTION_NO_REPAIR.equals(action)) {
+            // 审核判定无需维修，工单已关闭，事件也应闭环；重复单不在这里结束，
+            // 因为同一个异常还有另一张工单在走，应由那张单收口。
+            repository.closeSourceAlertEvent(id, now, AlertEventStates.END_REASON_NO_REPAIR_DECIDED, now);
+        }
         return complete(request.requestId(), id, next, actionId);
     }
 
@@ -349,6 +391,12 @@ public class RepairOrderService {
                 current.status(), next, acceptedAt, now, request.operatorName(), request.reason(), null);
         repository.advanceStatus(id, next, now, null,
                 RepairOrderWorkflow.COMPLETED.equals(next) ? acceptedAt : null);
+        if (RepairOrderWorkflow.COMPLETED.equals(next)) {
+            // 验收通过即异常闭环。采集端没有后续数据时事件不会自动恢复，
+            // 不写这一笔就会出现「工单已结束、事件还在进行中」的矛盾。
+            repository.closeSourceAlertEvent(id, acceptedAt,
+                    AlertEventStates.END_REASON_REPAIR_COMPLETED, now);
+        }
         return complete(request.requestId(), id, next, actionId);
     }
 
@@ -522,7 +570,8 @@ public class RepairOrderService {
                 "MANUAL".equals(sourceType) ? null : sourceId,
                 "MANUAL".equals(sourceType) ? equipmentId : null,
                 faultCategory,
-                optionalText("description", command.description(), 5000),
+                // 建单即提交：故障说明是审核依据，不能再像草稿那样留空。
+                requiredText("description", command.description(), 5000, "故障说明"),
                 optionalText("reporterName", command.reporterName(), 100));
     }
 
@@ -540,6 +589,20 @@ public class RepairOrderService {
                 optionalText("reporterName", command.reporterName(), 100),
                 optionalText("faultCategory", command.faultCategory(), 32),
                 command.photoAttachmentIds());
+    }
+
+    private static RepairPhotoCommand validate(RepairPhotoCommand command) {
+        if (command == null) {
+            throw new InvalidRequestException("body", "请求体不能为空。");
+        }
+        List<String> ids = command.attachmentIds() == null ? List.of() : command.attachmentIds();
+        if (ids.isEmpty()) {
+            throw new InvalidRequestException("attachmentIds", "请至少选择一张要补传的照片。");
+        }
+        return new RepairPhotoCommand(
+                requestId(command.requestId()),
+                operatorName(command.operatorName()),
+                ids);
     }
 
     private static RepairOrderSubmitCommand validate(RepairOrderSubmitCommand command) {
@@ -621,9 +684,19 @@ public class RepairOrderService {
         }
 
         String status = blankToNull(query.status());
-        if (status != null && !REPAIR_ORDER_STATUSES.contains(status)) {
-            throw new InvalidRequestException("status",
-                    "工单状态取值无效，应为 " + String.join(" / ", REPAIR_ORDER_STATUSES.stream().sorted().toList()) + "。");
+        if (status != null) {
+            // 允许 REVEIW_PENDING,RETURNED_FOR_INFO 这类多值，供页面按四类状态筛选。
+            LinkedHashSet<String> normalized = new LinkedHashSet<>();
+            for (String part : status.split(",")) {
+                String item = part.trim().toUpperCase(java.util.Locale.ROOT);
+                if (item.isEmpty() || !REPAIR_ORDER_STATUSES.contains(item)) {
+                    throw new InvalidRequestException("status",
+                            "工单状态取值无效，应为 " + String.join(" / ",
+                                    REPAIR_ORDER_STATUSES.stream().sorted().toList()) + "，多个用逗号分隔。");
+                }
+                normalized.add(item);
+            }
+            status = String.join(",", normalized);
         }
 
         String sourceType = blankToNull(query.sourceType());
